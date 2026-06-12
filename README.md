@@ -6,7 +6,7 @@
 [![Go](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://go.dev)
 [![npm](https://img.shields.io/npm/v/figma-mcp-express.svg)](https://www.npmjs.com/package/figma-mcp-express)
 [![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-compatible-8A2BE2?logo=anthropic)](https://claude.ai/code)
-[![Works with Codex](https://img.shields.io/badge/Codex-compatible-000000)](https://github.com/openai/codex)
+[![Works with Codex](https://img.shields.io/badge/Codex-compatible-555555)](https://github.com/openai/codex)
 
 Enhanced fork of [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go).
 
