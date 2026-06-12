@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "figma-mcp-express": {
+      "command": "npx",
+      "args": ["-y", "figma-mcp-express", "--port", "1994"]
+    }
+  }
+}

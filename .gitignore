@@ -1,0 +1,46 @@
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+*.env
+.mcpregistry_github_token
+.mcpregistry_registry_token
+
+# ── Go ────────────────────────────────────────────────────────────────────────
+/bin/
+/dist/
+*.test
+coverage.out
+coverage.html
+
+# ── Plugin (TypeScript / Bun) ─────────────────────────────────────────────────
+plugin/node_modules/
+plugin/dist/
+
+# ── npm package ───────────────────────────────────────────────────────────────
+npm/node_modules/
+# Platform-specific prebuilt binaries (built by CI on release, not committed)
+npm/bin/darwin-*/
+npm/bin/linux-*/
+npm/bin/windows-*/
+
+# ── Runtime cache ─────────────────────────────────────────────────────────────
+.figma-mcp-cache/
+
+# ── Local project config ──────────────────────────────────────────────────────
+.claude/
+CLAUDE.md
+ai/
+.code-review-graph
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+output/
+example/
+release
+localonly

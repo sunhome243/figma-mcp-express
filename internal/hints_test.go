@@ -1,0 +1,60 @@
+package internal
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestHintFor_TimeoutHeavyRead(t *testing.T) {
+	h := hintFor("get_node", "request timed out")
+	if !strings.Contains(h, "narrower") || !strings.Contains(h, "limit") {
+		t.Errorf("heavy-read timeout hint missing retry-narrower guidance: %q", h)
+	}
+}
+
+func TestHintFor_LocalComponentsTimeout(t *testing.T) {
+	h := hintFor("get_local_components", "request timed out")
+	if !strings.Contains(h, "pageId") {
+		t.Errorf("get_local_components timeout hint should mention pageId scoping: %q", h)
+	}
+}
+
+func TestHintFor_NotConnectedCatalogMentionsREST(t *testing.T) {
+	h := hintFor("get_local_components", "plugin not connected")
+	if !strings.Contains(h, "fetch_library_catalog") || !strings.Contains(h, "FIGMA_TOKEN") {
+		t.Errorf("catalog not-connected hint should offer the REST path: %q", h)
+	}
+}
+
+func TestHintFor_NotConnectedCanvasNoREST(t *testing.T) {
+	h := hintFor("get_node", "plugin not connected")
+	if !strings.Contains(h, "list_channels") {
+		t.Errorf("not-connected hint should point at the plugin/list_channels: %q", h)
+	}
+	if strings.Contains(h, "fetch_library_catalog") {
+		t.Errorf("canvas read must NOT be offered a REST fallback it doesn't have: %q", h)
+	}
+}
+
+func TestHintFor_WriteDrop(t *testing.T) {
+	h := hintFor("create_frame", "send: connection reset")
+	if !strings.Contains(strings.ToLower(h), "re-run") {
+		t.Errorf("write socket-drop hint should advise re-running the plugin: %q", h)
+	}
+}
+
+func TestHintFor_StaleId(t *testing.T) {
+	h := hintFor("set_fills", "Node not found")
+	if !strings.Contains(h, "stale") || !strings.Contains(h, "get_metadata") {
+		t.Errorf("not-found hint should flag a stale id + re-confirm: %q", h)
+	}
+}
+
+func TestHintFor_NoHintForOrdinary(t *testing.T) {
+	if h := hintFor("set_fills", ""); h != "" {
+		t.Errorf("no error text should yield no hint, got %q", h)
+	}
+	if h := hintFor("create_frame", "some unrecognised failure"); h != "" {
+		t.Errorf("unmatched error should yield no hint, got %q", h)
+	}
+}

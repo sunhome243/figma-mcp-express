@@ -1,0 +1,37 @@
+{
+  "name": "figma-mcp-express",
+  "version": "0.0.1-alpha",
+  "description": "Fast, quota-free, agent-ready Figma MCP server — local plugin bridge, no seat-based limits. 70 tools: multi-file routing, batch ops, library automation.",
+  "mcpName": "io.github.sunhome243/figma-mcp-express",
+  "bin": {
+    "figma-mcp-express": "bin/run.js"
+  },
+  "files": [
+    "bin/run.js",
+    "bin/darwin-amd64/",
+    "bin/darwin-arm64/",
+    "bin/linux-amd64/",
+    "bin/linux-arm64/",
+    "bin/windows-amd64/",
+    "bin/windows-arm64/"
+  ],
+  "keywords": [
+    "figma",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "design"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sunhome243/figma-mcp-express.git"
+  },
+  "homepage": "https://github.com/sunhome243/figma-mcp-express#readme",
+  "bugs": {
+    "url": "https://github.com/sunhome243/figma-mcp-express/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

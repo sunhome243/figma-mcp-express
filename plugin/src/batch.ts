@@ -1,0 +1,383 @@
+// Batch — execute many ops (writes and reads) in ONE plugin round-trip.
+//
+// The discrete tools are the typed vocabulary; `batch` is an additive
+// sequencing layer that reuses their existing handlers (read AND write).
+// It covers these shapes uniformly:
+//   • single-type bulk   — set_fills ×20                        (no refs)
+//   • cross-type chains   — create_frame → append → set_fills    using $N.id refs
+//   • read chains         — search_nodes → get_node $0.nodes.0.id (read→read)
+//   • verify-after-write  — create_frame → set_fills $0.id → get_node $0.id
+//
+// No eval: each op is a structured {type, nodeIds, params} dispatched to the
+// same handler the single tool would use. Inter-op data flows via $N.field refs
+// resolved at runtime against earlier ops' results.
+//
+// Reads inside a batch bypass the Go bridge's read singleflight/dedup (the sem
+// is held for the whole batch) and are always LIVE — so use batch reads for
+// dependency chains and write→read verification, NOT as a cache bypass for
+// bulk catalog reads (get_local_components etc. have REST + cache + singleflight).
+
+import { handleWriteRequest } from "./write-handlers";
+import { handleReadRequest } from "./read-handlers";
+
+// A ref is a string of the exact form "$<opIndex>.<dotted.path>", e.g. "$0.id"
+// or "$2.bounds.width". REF_BODY is the single source of that grammar — REF
+// matches a whole string (so ordinary strings containing "$" are left untouched);
+// the same body is reused to cheaply detect whether a batch uses refs at all.
+const REF_BODY = String.raw`\$(\d+)\.([\w.]+)`;
+
+// Named-binding ref grammar — matches a string value that is EXACTLY a named
+// binding ref with optional dotted path, e.g. "$item", "$item.id", "$index".
+// Whole-string anchored only (so "$item costs $5" is left untouched); numeric
+// heads are excluded so "$0.id" stays an op-index ref for resolveRefs.
+// GOTCHA: a loop-var projection like "$item.children[*].id" is NOT matched here
+// ([\w.]+ won't consume "[*]") — it reaches resolveRefs as a literal and silently
+// fails. A future extension should detect "bound head + value contains [*]" and throw.
+const NAMED_BINDING = /^\$([A-Za-z_]\w*)(?:\.([\w.]+))?$/;
+
+// MAP_ITER_CAP: maximum number of items a single map op may iterate.
+// Exceeding this is an EXPLICIT ERROR (never silent truncation) — the error
+// names both the actual count and the cap so callers understand what happened.
+const MAP_ITER_CAP = 500;
+const REF = new RegExp(`^${REF_BODY}$`);
+
+// A projection ref carries exactly one `[*]` wildcard segment:
+//   $N.<pre>[*]          → the elements of the array at <pre> (mapped as-is)
+//   $N.<pre>[*].<post>   → <post> projected out of every element
+// <pre> and <post> are ordinary dotted paths (index segments allowed). It maps
+// over an earlier op's array → an ARRAY, the fan-in that feeds a bulk setter.
+const PROJECTION = new RegExp(String.raw`^\$(\d+)\.([\w.]+)\[\*\](?:\.([\w.]+))?$`);
+
+// A string is "projection-shaped" if it looks like a $N ref carrying a `[*]`.
+// Validity (exactly one `[*]`, well-formed paths) is enforced in resolveProjection
+// so a malformed multi-`[*]` ref throws a clear error instead of slipping through
+// as an untouched literal.
+function isProjectionRef(value: any): boolean {
+  return typeof value === "string" && /^\$\d+\..*\[\*\]/.test(value);
+}
+
+function getPath(obj: any, path: string): any {
+  return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+
+// resolveProjection evaluates one `$N.<pre>[*].<post>` ref to an array. It rejects
+// more than one `[*]` (2-D projection is out of scope), a missing pre-array, and a
+// non-array target — each with a message that names the offending ref.
+function resolveProjection(value: string, results: any[]): any[] {
+  if ((value.match(/\[\*\]/g) || []).length > 1) {
+    throw new Error(`ref ${value}: exactly one [*] wildcard is allowed`);
+  }
+  const m = value.match(PROJECTION);
+  if (!m) {
+    throw new Error(`ref ${value}: malformed projection ($N.<path>[*].<subpath>)`);
+  }
+  const idx = Number(m[1]);
+  const pre = m[2];
+  const post = m[3]; // undefined for the bare `[*]` (project elements themselves)
+  if (idx >= results.length) {
+    throw new Error(
+      `ref ${value} points to op #${idx}, which has not run yet ` +
+        `(only ${results.length} op(s) completed before this one) — ` +
+        `$N.field may reference earlier ops only`,
+    );
+  }
+  const r = results[idx];
+  if (!r || r.error || r.data == null) {
+    throw new Error(`ref ${value} points to op #${idx}, which produced no data`);
+  }
+  const arr = getPath(r.data, pre);
+  if (arr === undefined) {
+    throw new Error(`ref ${value}: op #${idx} result has no field "${pre}"`);
+  }
+  if (!Array.isArray(arr)) {
+    throw new Error(`ref ${value}: field "${pre}" is not an array`);
+  }
+  return post === undefined ? arr : arr.map((el) => getPath(el, post));
+}
+
+// resolveRefs walks value (string | array | object) and replaces every $N.path
+// ref with the resolved value from results[N].data. results holds ONLY ops that
+// already ran, so a forward/self ref (N >= results.length) is rejected. Nested
+// structure is preserved — this is a structural walk, never a string replace.
+export function resolveRefs(value: any, results: any[]): any {
+  if (typeof value === "string") {
+    // Projection refs ($N.path[*]…) resolve to an array. Checked before the
+    // single-value REF (whose anchored match can't consume the `[*]`). As an
+    // object value or a standalone string the array is returned as-is; the array
+    // branch below spreads it in place (flattening) when it is an element.
+    if (isProjectionRef(value)) return resolveProjection(value, results);
+    const m = value.match(REF);
+    if (!m) return value;
+    const idx = Number(m[1]);
+    if (idx >= results.length) {
+      throw new Error(
+        `ref ${value} points to op #${idx}, which has not run yet ` +
+          `(only ${results.length} op(s) completed before this one) — ` +
+          `$N.field may reference earlier ops only`,
+      );
+    }
+    const r = results[idx];
+    if (!r || r.error || r.data == null) {
+      throw new Error(`ref ${value} points to op #${idx}, which produced no data`);
+    }
+    const resolved = getPath(r.data, m[2]);
+    if (resolved === undefined) {
+      throw new Error(`ref ${value}: op #${idx} result has no field "${m[2]}"`);
+    }
+    return resolved;
+  }
+  if (Array.isArray(value)) {
+    // A projection ref AS AN ARRAY ELEMENT spreads in place (flatMap), so
+    // nodeIds:["$0.nodes[*].id"] becomes the flat [id0,id1,…] not [[…]]. The rule
+    // is positional, not count-based: any element that is a projection ref is
+    // spread; every other element resolves to a single value.
+    const out: any[] = [];
+    for (const v of value) {
+      if (isProjectionRef(v)) out.push(...resolveProjection(v, results));
+      else out.push(resolveRefs(v, results));
+    }
+    return out;
+  }
+  if (value && typeof value === "object") {
+    const out: any = {};
+    for (const k of Object.keys(value)) out[k] = resolveRefs(value[k], results);
+    return out;
+  }
+  return value;
+}
+
+// substituteBindings walks value (string | array | object) and replaces ONLY
+// named-binding refs (e.g. $item, $item.foo.bar, $index) with values from
+// `bindings`. It runs BEFORE resolveRefs, leaving $N op-index refs untouched.
+//
+// Resolution rules:
+//   - Whole-string anchored match only (^\$name(\.path)?$).
+//   - Non-numeric head distinguishes $item from $0 (digits → not a named binding).
+//   - Unbound named ref (head not in bindings) → LOUD THROW naming bound keys.
+//   - $index resolves to the iteration number (scalar, in bindings as "index").
+//   - $item resolves to the element; $item.foo.bar projects off the element.
+//   - A non-anchored string ("$item costs $5") is left untouched — known collision
+//     cost: named refs must occupy the whole string value, not a substring.
+//
+// Returns a new value; never mutates input.
+export function substituteBindings(value: any, bindings: Record<string, any>): any {
+  if (typeof value === "string") {
+    const m = value.match(NAMED_BINDING);
+    if (!m) return value;
+    const head = m[1];
+    const path = m[2]; // may be undefined
+    if (!(head in bindings)) {
+      const bound = Object.keys(bindings).join(", ");
+      throw new Error(`unknown binding $${head} (bound: ${bound})`);
+    }
+    const base = bindings[head];
+    if (path === undefined) return base;
+    const resolved = getPath(base, path);
+    if (resolved === undefined) {
+      throw new Error(`binding $${head}.${path}: no field "${path}" on value`);
+    }
+    return resolved;
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => substituteBindings(v, bindings));
+  }
+  if (value && typeof value === "object") {
+    const out: any = {};
+    for (const k of Object.keys(value)) out[k] = substituteBindings(value[k], bindings);
+    return out;
+  }
+  return value;
+}
+
+// executeOp is a small extracted helper that resolves refs on a single concrete op
+// (after any binding substitution has already happened) and dispatches it to the
+// correct handler. Returns { i, type, data } on success; throws on failure.
+// Extracted so both the outer loop and the map inner loop use the same path.
+async function executeOp(
+  op: any,
+  i: number,
+  results: any[],
+  requestId: string,
+): Promise<{ i: number; type: string; data: any }> {
+  if (!op || typeof op.type !== "string") {
+    throw new Error("each op requires a string `type`");
+  }
+  const nodeIds = resolveRefs(op.nodeIds ?? [], results);
+  const params = resolveRefs(op.params ?? {}, results);
+  // Reset the per-op perf flag for EVERY op so a prior op's `true` never leaks into a
+  // later op that omitted it (a batch dispatches inner ops itself, so it re-applies here).
+  figma.skipInvisibleInstanceChildren =
+    params?.skipInvisibleInstanceChildren === true;
+  const opReq = { type: op.type, requestId, nodeIds, params };
+  const out = (await handleReadRequest(opReq)) ?? (await handleWriteRequest(opReq));
+  if (out === null) throw new Error(`unknown op type: ${op.type}`);
+  if (out.error) throw new Error(out.error);
+  return { i, type: op.type, data: out.data };
+}
+
+// runMap implements the map control-flow op. It is NOT dispatched to read/write
+// handlers — the batch loop intercepts it and calls runMap directly.
+//
+// Shape:
+//   { type:"map", over:<arrayRef|literal>, as:<bindingName>, do:<opTemplate> }
+//
+// over:  resolved via resolveRefs (handles $N.path[*] projection and plain arrays).
+// as:    names the loop variable (e.g. "item") → exposes $item / $item.path.
+// do:    op template — substituteBindings runs per-iteration (producing a concrete
+//        op), then resolveRefs handles any outer $N refs still present.
+//
+// Returns { results, okCount, failCount } — same shape as handleBatchRequest's
+// data, so a downstream op can project $M.results[*].data.<field> through the
+// EXISTING projection resolver with no new machinery.
+//
+// Safety:
+//   - over must resolve to an array (clear error if not).
+//   - Iteration cap: MAP_ITER_CAP. Exceeding it throws naming count + cap.
+//   - continueOnError controls inner-loop stop policy (same semantics as outer).
+//   - Throttled progress_update every 10 items or 500ms so the Go bridge inactivity
+//     timer doesn't fire on a long map (the outer loop ticks once per map op, but
+//     without inner ticks a 200-item map is silent mid-run).
+async function runMap(
+  op: any,
+  outerResults: any[],
+  requestId: string,
+  continueOnError: boolean,
+): Promise<{ results: any[]; okCount: number; failCount: number }> {
+  // Resolve the 'over' array using the existing resolver (handles projection + scalar)
+  const rawOver = resolveRefs(op.over, outerResults);
+  if (!Array.isArray(rawOver)) {
+    throw new Error(
+      `map op: 'over' must resolve to an array, got ${typeof rawOver}`,
+    );
+  }
+  if (rawOver.length > MAP_ITER_CAP) {
+    throw new Error(
+      `map op: 'over' has ${rawOver.length} items, exceeding the cap of ${MAP_ITER_CAP}; ` +
+        `reduce the list or split into multiple map ops`,
+    );
+  }
+
+  const bindingName: string = op.as ?? "item";
+  const doTemplate = op.do;
+  if (!doTemplate || typeof doTemplate !== "object") {
+    throw new Error("map op: 'do' must be an op object");
+  }
+
+  const innerResults: any[] = [];
+  let okCount = 0;
+  let failCount = 0;
+  let lastProgressMs = Date.now();
+  const PROGRESS_INTERVAL_MS = 500;
+  const PROGRESS_EVERY_N = 10;
+
+  for (let idx = 0; idx < rawOver.length; idx++) {
+    const element = rawOver[idx];
+    let res: any;
+    try {
+      // Step 1: substitute named bindings ($item, $index) in the do-template
+      const bindings: Record<string, any> = { [bindingName]: element, index: idx };
+      const concreteOp = substituteBindings(doTemplate, bindings);
+      // Step 2: dispatch via executeOp — it owns $N ref resolution via resolveRefs
+      // internally. Passing concreteOp directly avoids calling resolveRefs twice.
+      const result = await executeOp(concreteOp, idx, outerResults, requestId);
+      res = { i: idx, type: concreteOp.type, data: result.data };
+      okCount++;
+    } catch (e) {
+      res = { i: idx, type: doTemplate?.type, error: e instanceof Error ? e.message : String(e) };
+      failCount++;
+      if (!continueOnError) {
+        innerResults.push(res);
+        throw new Error(
+          `map iteration ${idx} failed: ${res.error}`,
+        );
+      }
+    }
+    innerResults.push(res);
+
+    // Throttled progress tick — resets the Go bridge inactivity timer inside the
+    // map loop so a 200-item map doesn't go silent for >120s.
+    const now = Date.now();
+    if (idx % PROGRESS_EVERY_N === 0 || now - lastProgressMs >= PROGRESS_INTERVAL_MS) {
+      figma.ui.postMessage({
+        type: "progress_update",
+        requestId,
+        progress: Math.min(98, Math.round(((idx + 1) / rawOver.length) * 98)),
+        message: `map: item ${idx + 1}/${rawOver.length}`,
+      });
+      lastProgressMs = now;
+    }
+  }
+
+  return { results: innerResults, okCount, failCount };
+}
+
+// handleBatchRequest runs request.params.ops sequentially in one round-trip.
+// Stop policy (deliberate): if any op carries a $N ref the batch is a dependent
+// chain → stop on first error (downstream refs would break). With no refs it is
+// independent bulk → continue and report every op, so one stale id does not
+// abort an otherwise-good batch. `params.continueOnError` overrides either way.
+// Returns null for non-batch requests so the dispatcher can fall through.
+export async function handleBatchRequest(request: any): Promise<any> {
+  if (request.type !== "batch") return null;
+  const requestId = request.requestId;
+  const ops = request.params?.ops;
+  if (!Array.isArray(ops)) {
+    return { type: "batch", requestId, error: "batch requires params.ops (array)" };
+  }
+
+  const hasRefs = new RegExp(REF_BODY).test(JSON.stringify(ops));
+  const continueOnError =
+    typeof request.params?.continueOnError === "boolean"
+      ? request.params.continueOnError
+      : !hasRefs;
+
+  const results: any[] = [];
+  let okCount = 0;
+  let failCount = 0;
+  let failedAt = -1;
+
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    let res: any;
+    try {
+      if (!op || typeof op.type !== "string") {
+        throw new Error("each op requires a string `type`");
+      }
+      if (op.type === "map") {
+        // map is a control-flow op interpreted here — NOT dispatched to handlers.
+        // The per-op skipInvisibleInstanceChildren flag is NOT set for map itself
+        // (it has no nodeIds); executeOp sets it for each inner op instead.
+        const mapData = await runMap(op, results, requestId, continueOnError);
+        res = { i, type: "map", data: mapData };
+        okCount++;
+      } else {
+        // Standard op — executeOp resolves refs, sets the per-op perf flag, and dispatches.
+        const result = await executeOp(op, i, results, requestId);
+        res = { i, type: result.type, data: result.data };
+        okCount++;
+      }
+    } catch (e) {
+      res = { i, type: op?.type, error: e instanceof Error ? e.message : String(e) };
+      failCount++;
+      if (failedAt < 0) failedAt = i;
+    }
+    results.push(res);
+
+    // One progress tick per op resets the Go-bridge per-request timeout, so a
+    // long batch never trips the 120s ceiling mid-run.
+    figma.ui.postMessage({
+      type: "progress_update",
+      requestId,
+      progress: Math.min(99, Math.round(((i + 1) / ops.length) * 99)),
+      message: `batch: op ${i + 1}/${ops.length} (${op?.type})`,
+    });
+
+    if (res.error && !continueOnError) break;
+  }
+
+  return {
+    type: "batch",
+    requestId,
+    data: { results, okCount, failCount, failedAt },
+  };
+}

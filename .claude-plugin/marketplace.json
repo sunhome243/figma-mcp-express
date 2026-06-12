@@ -1,0 +1,13 @@
+{
+  "name": "figma-mcp-express",
+  "owner": {
+    "name": "sunhome243"
+  },
+  "plugins": [
+    {
+      "name": "figma-mcp-express",
+      "source": ".",
+      "description": "Figma MCP with batch ops, multi-channel routing, library automation, and design best-practice skills."
+    }
+  ]
+}

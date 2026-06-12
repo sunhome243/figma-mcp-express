@@ -1,0 +1,229 @@
+package internal
+
+import (
+	"context"
+	"encoding/base64"
+	"fmt"
+	"os"
+
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+)
+
+func registerWriteCreateTools(s *server.MCPServer, node *Node) {
+	createFrameOpts := []mcp.ToolOption{
+		mcp.WithDescription("Create a new frame on the current page or inside a parent node. Optional layout-sizing params (FILL/HUG) size the frame within an auto-layout parent."),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithNumber("width", mcp.Description("Width in pixels (default 100)")),
+		mcp.WithNumber("height", mcp.Description("Height in pixels (default 100)")),
+		mcp.WithString("name", mcp.Description("Frame name")),
+		mcp.WithString("fillColor", mcp.Description("Fill color as hex e.g. #FFFFFF")),
+		mcp.WithNumber("cornerRadius", mcp.Description("Corner radius in pixels")),
+		mcp.WithBoolean("clipsContent", mcp.Description("Whether the frame clips its children to its bounds (default true)")),
+		mcp.WithNumber("opacity", mcp.Description("Opacity from 0 to 1 (default 1)")),
+		mcp.WithString("layoutMode", mcp.Description("Auto-layout direction: HORIZONTAL, VERTICAL, or NONE")),
+		mcp.WithNumber("paddingTop", mcp.Description("Auto-layout top padding (raw pixels)")),
+		mcp.WithNumber("paddingRight", mcp.Description("Auto-layout right padding (raw pixels)")),
+		mcp.WithNumber("paddingBottom", mcp.Description("Auto-layout bottom padding (raw pixels)")),
+		mcp.WithNumber("paddingLeft", mcp.Description("Auto-layout left padding (raw pixels)")),
+		mcp.WithNumber("itemSpacing", mcp.Description("Auto-layout gap between children (raw pixels)")),
+		mcp.WithString("paddingTopVariableId", mcp.Description("Design variable ID to bind to paddingTop (e.g. 'VariableID:1234:5'). When set, binds the variable instead of a raw pixel value.")),
+		mcp.WithString("paddingRightVariableId", mcp.Description("Design variable ID to bind to paddingRight.")),
+		mcp.WithString("paddingBottomVariableId", mcp.Description("Design variable ID to bind to paddingBottom.")),
+		mcp.WithString("paddingLeftVariableId", mcp.Description("Design variable ID to bind to paddingLeft.")),
+		mcp.WithString("itemSpacingVariableId", mcp.Description("Design variable ID to bind to itemSpacing (gap between children).")),
+		mcp.WithString("primaryAxisAlignItems", mcp.Description("Main-axis alignment: MIN, CENTER, MAX, or SPACE_BETWEEN")),
+		mcp.WithString("counterAxisAlignItems", mcp.Description("Cross-axis alignment: MIN, CENTER, MAX, or BASELINE")),
+		mcp.WithString("primaryAxisSizingMode", mcp.Description("Main-axis sizing: FIXED or AUTO (hug)")),
+		mcp.WithString("counterAxisSizingMode", mcp.Description("Cross-axis sizing: FIXED or AUTO (hug)")),
+		mcp.WithString("layoutWrap", mcp.Description("Wrap behaviour: NO_WRAP or WRAP")),
+		mcp.WithNumber("counterAxisSpacing", mcp.Description("Gap between wrapped rows/columns (only when layoutWrap is WRAP)")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+	}
+	createFrameOpts = append(createFrameOpts, layoutSizingParams()...)
+	createFrameOpts = append(createFrameOpts, channelParam())
+	s.AddTool(mcp.NewTool("create_frame", createFrameOpts...),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			params := req.GetArguments()
+			resp, err := node.Send(ctx, "create_frame", nil, withChannel(req, params))
+			return renderResponse(resp, err)
+		})
+
+	s.AddTool(mcp.NewTool("create_rectangle",
+		mcp.WithDescription("Create a new rectangle on the current page or inside a parent node. Use cornerRadius for uniform rounding or the per-corner params for asymmetric rounding."),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithNumber("width", mcp.Description("Width in pixels (default 100)")),
+		mcp.WithNumber("height", mcp.Description("Height in pixels (default 100)")),
+		mcp.WithString("name", mcp.Description("Rectangle name")),
+		mcp.WithString("fillColor", mcp.Description("Fill color as hex e.g. #FF5733")),
+		mcp.WithNumber("cornerRadius", mcp.Description("Uniform corner radius in pixels (shorthand for all four corners)")),
+		mcp.WithNumber("topLeftRadius", mcp.Description("Top-left corner radius in pixels (overrides cornerRadius for this corner)")),
+		mcp.WithNumber("topRightRadius", mcp.Description("Top-right corner radius in pixels (overrides cornerRadius for this corner)")),
+		mcp.WithNumber("bottomLeftRadius", mcp.Description("Bottom-left corner radius in pixels (overrides cornerRadius for this corner)")),
+		mcp.WithNumber("bottomRightRadius", mcp.Description("Bottom-right corner radius in pixels (overrides cornerRadius for this corner)")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "create_rectangle", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("create_ellipse",
+		mcp.WithDescription("Create a new ellipse (circle/oval) on the current page or inside a parent node."),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithNumber("width", mcp.Description("Width in pixels (default 100)")),
+		mcp.WithNumber("height", mcp.Description("Height in pixels (default 100)")),
+		mcp.WithString("name", mcp.Description("Ellipse name")),
+		mcp.WithString("fillColor", mcp.Description("Fill color as hex e.g. #3B82F6")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "create_ellipse", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	createTextOpts := []mcp.ToolOption{
+		mcp.WithDescription("Create a new text node on the current page or inside a parent node. The font is loaded automatically before insertion. Optional styling params (alignment, autoResize, spacing, case, decoration) can be set at creation. Returns the created node ID and bounds. Use set_text to update an existing text node."),
+		mcp.WithString("text",
+			mcp.Required(),
+			mcp.Description("Text content to display"),
+		),
+		mcp.WithNumber("x", mcp.Description("X position in pixels (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position in pixels (default 0)")),
+		mcp.WithNumber("fontSize", mcp.Description("Font size in pixels (default 14)")),
+		mcp.WithString("fontFamily", mcp.Description("Font family name e.g. 'Inter', 'Roboto', 'SF Pro Display' (default Inter). Must be a font installed in Figma.")),
+		mcp.WithString("fontStyle", mcp.Description("Font style variant e.g. 'Regular', 'Bold', 'Italic', 'Medium', 'SemiBold' (default Regular). Must match an available style for the chosen fontFamily.")),
+		mcp.WithString("fillColor", mcp.Description("Text color as hex e.g. #000000 (default black)")),
+		mcp.WithString("name", mcp.Description("Node name shown in the layers panel (defaults to the text content)")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+	}
+	createTextOpts = append(createTextOpts, textStyleParams()...)
+	createTextOpts = append(createTextOpts, channelParam())
+	s.AddTool(mcp.NewTool("create_text", createTextOpts...),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			params := req.GetArguments()
+			resp, err := node.Send(ctx, "create_text", nil, withChannel(req, params))
+			return renderResponse(resp, err)
+		})
+
+	s.AddTool(mcp.NewTool("import_image",
+		mcp.WithDescription("Import an image into Figma as a rectangle with an image fill. Provide EITHER imagePath (a local file path on this machine — the server reads + base64-encodes it for you; PREFER THIS for files on disk so you never inline base64) OR imageData (raw base64 PNG/JPG). imagePath wins if both are given."),
+		mcp.WithString("imagePath",
+			mcp.Description("Local file path to a PNG/JPG on this machine. The server reads and base64-encodes it — no need to inline base64. Preferred over imageData for on-disk assets (logos, exported PNGs)."),
+		),
+		mcp.WithString("imageData",
+			mcp.Description("Base64-encoded image data (PNG or JPG). Use imagePath instead when the image is a file on disk."),
+		),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithNumber("width", mcp.Description("Width in pixels (default 200)")),
+		mcp.WithNumber("height", mcp.Description("Height in pixels (default 200)")),
+		mcp.WithString("name", mcp.Description("Node name")),
+		mcp.WithString("scaleMode", mcp.Description("Image scale mode: FILL (default), FIT, CROP, or TILE")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		imageData, _ := req.GetArguments()["imageData"].(string)
+		if imagePath, _ := req.GetArguments()["imagePath"].(string); imagePath != "" {
+			workDir, wdErr := os.Getwd()
+			if wdErr != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("import_image: cannot determine working directory: %v", wdErr)), nil
+			}
+			confined, confErr := resolveOutputPath(imagePath, workDir)
+			if confErr != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("import_image: imagePath must be inside the working directory: %v", confErr)), nil
+			}
+			raw, err := os.ReadFile(confined)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("import_image: cannot read imagePath %q: %v", imagePath, err)), nil
+			}
+			imageData = base64.StdEncoding.EncodeToString(raw)
+		}
+		if imageData == "" {
+			return mcp.NewToolResultError("import_image: provide either imagePath (a local file) or imageData (base64)"), nil
+		}
+		params := map[string]interface{}{
+			"imageData": imageData,
+		}
+		if x, ok := req.GetArguments()["x"].(float64); ok {
+			params["x"] = x
+		}
+		if y, ok := req.GetArguments()["y"].(float64); ok {
+			params["y"] = y
+		}
+		if w, ok := req.GetArguments()["width"].(float64); ok {
+			params["width"] = w
+		}
+		if h, ok := req.GetArguments()["height"].(float64); ok {
+			params["height"] = h
+		}
+		if n, ok := req.GetArguments()["name"].(string); ok && n != "" {
+			params["name"] = n
+		}
+		if sm, ok := req.GetArguments()["scaleMode"].(string); ok && sm != "" {
+			params["scaleMode"] = sm
+		}
+		if pid, ok := req.GetArguments()["parentId"].(string); ok && pid != "" {
+			params["parentId"] = pid
+		}
+		resp, err := node.Send(ctx, "import_image", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("create_component",
+		mcp.WithDescription("Convert an existing node (frame, group, or shape) into a reusable local COMPONENT in place, preserving ALL properties, bound variables (tokens), and effects (native figma.createComponentFromNode). Rejects nodes that are already a COMPONENT/COMPONENT_SET or an INSTANCE."),
+		mcp.WithString("nodeId",
+			mcp.Required(),
+			mcp.Description("Node ID to convert, in colon format e.g. '4029:12345'"),
+		),
+		mcp.WithString("name", mcp.Description("Optional name for the component. Defaults to the node's current name.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		nodeID, _ := req.GetArguments()["nodeId"].(string)
+		nodeID = NormalizeNodeID(nodeID)
+		params := map[string]interface{}{}
+		if name, ok := req.GetArguments()["name"].(string); ok && name != "" {
+			params["name"] = name
+		}
+		resp, err := node.Send(ctx, "create_component", []string{nodeID}, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("create_section",
+		mcp.WithDescription("Create a Figma Section node on the current page or inside a specified parent. Sections are the modern way to organize frames and groups on a page."),
+		mcp.WithString("name", mcp.Description("Section name (default 'Section')")),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithNumber("width", mcp.Description("Width in pixels")),
+		mcp.WithNumber("height", mcp.Description("Height in pixels")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page. The parent must support children (e.g. a frame or page).")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := map[string]interface{}{}
+		if name, ok := req.GetArguments()["name"].(string); ok && name != "" {
+			params["name"] = name
+		}
+		if x, ok := req.GetArguments()["x"].(float64); ok {
+			params["x"] = x
+		}
+		if y, ok := req.GetArguments()["y"].(float64); ok {
+			params["y"] = y
+		}
+		if w, ok := req.GetArguments()["width"].(float64); ok {
+			params["width"] = w
+		}
+		if h, ok := req.GetArguments()["height"].(float64); ok {
+			params["height"] = h
+		}
+		if pid, ok := req.GetArguments()["parentId"].(string); ok && pid != "" {
+			params["parentId"] = pid
+		}
+		resp, err := node.Send(ctx, "create_section", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+}

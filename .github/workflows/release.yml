@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Extract version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          for GOOS in darwin linux windows; do
+            for GOARCH in amd64 arm64; do
+              BIN="figma-mcp-express"
+              if [ "$GOOS" = "windows" ]; then BIN="figma-mcp-express.exe"; fi
+
+              OUTDIR="npm/bin/${GOOS}-${GOARCH}"
+              mkdir -p "$OUTDIR"
+
+              GOOS=$GOOS GOARCH=$GOARCH go build \
+                -ldflags "-X main.version=$VERSION" \
+                -o "$OUTDIR/$BIN" \
+                ./cmd/figma-mcp-express
+
+              if [ "$GOOS" != "windows" ]; then chmod +x "$OUTDIR/$BIN"; fi
+            done
+          done
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Build plugin
+        working-directory: plugin
+        run: bun install && bun run build
+
+      - name: Package plugin
+        run: zip -r plugin.zip plugin/manifest.json plugin/dist/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: plugin.zip
+          generate_release_notes: true
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish to npm
+        working-directory: npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          cp ../README.md .
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm publish --access public
+
+      - name: Set version in server.json
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish
