@@ -4,13 +4,17 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://go.dev)
-[![Build from source](https://img.shields.io/badge/install-build%20from%20source-green.svg)](#installation)
+[![npm](https://img.shields.io/npm/v/figma-mcp-express.svg)](https://www.npmjs.com/package/figma-mcp-express)
+[![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-compatible-8A2BE2?logo=anthropic)](https://claude.ai/code)
+[![Works with Codex](https://img.shields.io/badge/Codex-compatible-000000)](https://github.com/openai/codex)
 
 Enhanced fork of [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go).
 
 ---
 
 **Fast, quota-free, agent-ready Figma MCP.** Give AI agents direct read/write access to Figma through a local Desktop plugin, with batch execution, multi-file routing, and stable concurrent sessions that are not capped by Figma's official MCP server tool-call limits.
+
+> **Claude Code, Codex, and other coding agents** that can use the local filesystem is **recommended.** Unlike cloud-only MCPs, figma-mcp-express uses the filesystem to optimize the performance and stability.
 
 If you are building design migration, audit, or handoff agents, give it a try.
 
@@ -32,6 +36,7 @@ If you are building design migration, audit, or handoff agents, give it a try.
 
 ## Who this is for
 
+- **Coding agents (Claude Code, Codex)** — the primary target. Skills ship with the server and load from the local filesystem, so the agent has structured guidance without burning context on docs. Spill-to-disk keeps large Figma reads out of the context window entirely.
 - Design systems teams migrating products to a new component library or token system
 - Product designers cleaning up large production files without doing every replacement by hand
 - Frontend engineers who need better design-to-code context than screenshots and comments
@@ -146,42 +151,39 @@ Two paths depending on what you need.
 
 ### Option A — Plugin install (recommended)
 
-Includes the MCP server (via `npx`, no build step) + three skills (`/figma-mcp-express`, `/figma-design-patterns`, `/figma-design-md`) + a PreToolUse hook. No clone required.
+Includes the MCP server + three skills (`/figma-mcp-express`, `/figma-design-patterns`, `/figma-design-md`) + a PreToolUse hook. No clone or build step required.
 
 **Claude Code:**
 
 ```bash
-claude plugin marketplace add <github-owner>/figma-mcp-express
+claude plugin marketplace add sunhome243/figma-mcp-express
 claude plugin install figma-mcp-express@figma-mcp-express
 ```
 
 **Codex:**
 
 ```bash
-codex plugin marketplace add <github-owner>/figma-mcp-express
+codex plugin marketplace add sunhome243/figma-mcp-express
 codex plugin install figma-mcp-express@figma-mcp-express
 ```
 
-Replace `<github-owner>` with the actual repo owner once published. Both commands pull the plugin manifest directly from GitHub — no clone, no build step.
-
-For project-scoped install (Claude Code only, affects current project):
+Both commands pull the plugin manifest directly from GitHub. For project-scoped install (Claude Code only):
 
 ```bash
 claude plugin install figma-mcp-express@figma-mcp-express --scope project
 ```
 
-### Option B — MCP server only (no skills/hooks)
+### Option B — Build from source
 
-For integrating into other MCP clients or self-hosted setups.
+For integrating into other MCP clients, or if you want to modify the server.
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/sunhome243/figma-mcp-express.git
 cd figma-mcp-express
-make build          # produces bin/figma-mcp-express (+ the plugin bundle)
+make build          # produces bin/figma-mcp-express + plugin/dist/
 ```
 
-Add to your `.mcp.json` (the `command` MUST match the Makefile output path —
-`bin/figma-mcp-express` — or a server reload will keep launching a stale binary):
+Add to your `.mcp.json` (or `claude_desktop_config.json` for Claude Desktop):
 
 ```json
 {
@@ -194,17 +196,44 @@ Add to your `.mcp.json` (the `command` MUST match the Makefile output path —
 }
 ```
 
-Restart Claude Code. Tools load on demand.
+> The `command` path must match the Makefile output (`bin/figma-mcp-express`). Run `figma-mcp-express --version` to confirm the server reloaded your fresh build.
+
+Restart Claude Code / Codex. Tools load on demand.
 
 ---
 
 ## Figma Desktop plugin setup
 
-1. **Plugins → Development → Import plugin from manifest...** → select `plugin/manifest.json`
-2. Open a file and run **Plugins → Development → Figma MCP Express**
-3. The plugin shows the WebSocket URL and assigned channel id
+The plugin runs inside **Figma Desktop** (not the browser). It connects to the local MCP server over WebSocket and gives the AI agent direct access to the open file.
 
-For multiple files: open each file and run the plugin in each — they connect on separate channel ids.
+### Option A — Download from Releases (no clone required)
+
+1. Go to the [Releases page](https://github.com/sunhome243/figma-mcp-express/releases/latest) and download **plugin.zip**
+2. Unzip it anywhere — e.g. `~/figma-mcp-express-plugin/`
+3. In Figma Desktop: **Plugins → Development → Import plugin from manifest...**
+4. Navigate to the unzipped folder and select `manifest.json`
+
+### Option B — From a cloned repo (build from source)
+
+After running `make build` (see [DEV-SETUP.md](DEV-SETUP.md)):
+
+1. In Figma Desktop: **Plugins → Development → Import plugin from manifest...**
+2. Navigate to `plugin/` inside the cloned repo and select `manifest.json`
+
+> **Where is "Import plugin from manifest..."?**
+> Open any file in Figma Desktop → top menu bar → **Plugins** → hover **Development** → click **Import plugin from manifest...** in the submenu. If you don't see the Development submenu, make sure you are on Figma Desktop (not the web app).
+
+### Running the plugin
+
+1. Open a Figma file
+2. **Plugins → Development → Figma MCP Express**
+3. The plugin panel shows:
+   - **Status** — `Connected` once the MCP server is running, `Waiting for server` otherwise
+   - **WebSocket URL** — the address the plugin connected to (default `ws://127.0.0.1:1994`)
+   - **Channel ID** — a unique ID for this file's session (pass this as `channel:` in multi-file workflows)
+4. Minimize the panel with the **−** button — it collapses to a small pill and stays out of the way
+
+**Multiple files:** open each file and run the plugin in each — every file gets its own channel ID and can be targeted independently.
 
 ---
 
@@ -262,6 +291,15 @@ Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MI
 ### Community UI kits are not importable by key unless published as a library
 
 If a community kit has only been published to Community, its components are still **unpublished local components**. This is a Figma platform constraint, not a server bug.
+
+Figma has two *unrelated* meanings of "published" — community kits satisfy only the first:
+
+| "Published" | Means | Community kits |
+| --- | --- | --- |
+| Published **to Community** | the *file* is shared so anyone can view / duplicate it | ✅ yes |
+| Published **as a library** | the *components* are importable via `import_component_by_key` | ❌ no |
+
+So even the kit's *own* file cannot import its components by key, and the Plugin API has **no cross-file copy** — this server bridges several open files and moves *data* between them, but it cannot fabricate a cross-document component *link*. (REST `components: 0` / `404` is **not** the arbiter, either — a kit published as a library after the fact imports fine even while REST still 404s. The live `import_component_by_key` probe decides.)
 
 In that state:
 
