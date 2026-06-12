@@ -12,6 +12,8 @@ Enhanced fork of [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp
 
 **Fast, quota-free, agent-ready Figma MCP.** Give AI agents direct read/write access to Figma through a local Desktop plugin, with batch execution, multi-file routing, and stable concurrent sessions that are not capped by Figma's official MCP server tool-call limits.
 
+Built for **Claude Code, Codex, and other coding agents** that can use the local filesystem. Unlike cloud-only MCPs, figma-mcp-express spills large responses to disk, caches reads in a local directory, and ships skills that the agent loads directly from the filesystem — so the agent works with full context rather than truncated payloads, and expensive reads don't burn the context window.
+
 If you are building design migration, audit, or handoff agents, give it a try.
 
 | Promise         | What it means in practice                                                                                                                                  |
@@ -32,6 +34,7 @@ If you are building design migration, audit, or handoff agents, give it a try.
 
 ## Who this is for
 
+- **Coding agents (Claude Code, Codex)** — the primary target. Skills ship with the server and load from the local filesystem, so the agent has structured guidance without burning context on docs. Spill-to-disk keeps large Figma reads out of the context window entirely.
 - Design systems teams migrating products to a new component library or token system
 - Product designers cleaning up large production files without doing every replacement by hand
 - Frontend engineers who need better design-to-code context than screenshots and comments
@@ -142,46 +145,15 @@ large payloads ─▶ .figma-mcp-cache/       library catalog ─▶ Figma REST 
 
 ## Installation
 
-Two paths depending on what you need.
-
-### Option A — Plugin install (recommended)
-
-Includes the MCP server (via `npx`, no build step) + three skills (`/figma-mcp-express`, `/figma-design-patterns`, `/figma-design-md`) + a PreToolUse hook. No clone required.
-
-**Claude Code:**
+### Build from source
 
 ```bash
-claude plugin marketplace add <github-owner>/figma-mcp-express
-claude plugin install figma-mcp-express@figma-mcp-express
-```
-
-**Codex:**
-
-```bash
-codex plugin marketplace add <github-owner>/figma-mcp-express
-codex plugin install figma-mcp-express@figma-mcp-express
-```
-
-Replace `<github-owner>` with the actual repo owner once published. Both commands pull the plugin manifest directly from GitHub — no clone, no build step.
-
-For project-scoped install (Claude Code only, affects current project):
-
-```bash
-claude plugin install figma-mcp-express@figma-mcp-express --scope project
-```
-
-### Option B — MCP server only (no skills/hooks)
-
-For integrating into other MCP clients or self-hosted setups.
-
-```bash
-git clone <this-repo>
+git clone https://github.com/sunhome243/figma-mcp-express.git
 cd figma-mcp-express
-make build          # produces bin/figma-mcp-express (+ the plugin bundle)
+make build          # produces bin/figma-mcp-express + plugin/dist/
 ```
 
-Add to your `.mcp.json` (the `command` MUST match the Makefile output path —
-`bin/figma-mcp-express` — or a server reload will keep launching a stale binary):
+Add to your `.mcp.json` (or `claude_desktop_config.json` for Claude Desktop):
 
 ```json
 {
@@ -194,7 +166,13 @@ Add to your `.mcp.json` (the `command` MUST match the Makefile output path —
 }
 ```
 
-Restart Claude Code. Tools load on demand.
+> The `command` path must match the Makefile output (`bin/figma-mcp-express`). Run `figma-mcp-express --version` to confirm the server reloaded your fresh build.
+
+Restart Claude Code / Codex. Tools load on demand.
+
+**Claude Code and Codex users:** the repo includes skills (`skills/figma-mcp-express/`, `skills/figma-design-patterns/`) and a PreToolUse hook (`hooks/pre-tool.py`). Wire them up by adding the skills path to your agent config — the skills load from the local filesystem and give the agent structured guidance without burning context.
+
+> **npm package and Claude Code plugin coming soon.** Once published, installation will be a single command with no clone or build step required.
 
 ---
 
