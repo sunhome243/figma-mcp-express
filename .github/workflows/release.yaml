@@ -9,6 +9,11 @@ permissions:
   contents: write
   id-token: write   # required for npm Trusted Publishing (OIDC) and MCP Registry
 
+env:
+  # Opt JS actions (e.g. softprops/action-gh-release) into Node 24 ahead of the
+  # 2026-06-16 forced migration off the deprecated Node 20 runtime.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
