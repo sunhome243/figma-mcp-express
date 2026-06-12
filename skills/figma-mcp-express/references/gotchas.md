@@ -5,11 +5,11 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 ---
 
-## Plugin thread jams
+## Slow import delays the queue (bounded, self-clears — not a jam)
 
-**Symptom:** a call hangs with no timeout, yet `save_screenshots` / `list_channels` still work.
-**Cause:** `import_component_by_key` with an invalid key blocks the single-threaded plugin loop; later calls queue behind it.
-**Fix:** wait out the inactivity timeout (~600s heavy/batch, ~120s light) → retry ONCE with a key validated via `get_local_components`/`fetch_library_catalog` → still hung? ask the user to close+reopen the plugin. Never validate-by-retrying in a loop.
+**Symptom:** a call sits "in progress" a long time while `save_screenshots` / `list_channels` still respond.
+**Cause:** `import_component_by_key` with an invalid/unpublished key has no progress ticks, so it holds the channel's serial queue slot until its inactivity timeout fires (~120s light / ~600s heavy); calls queued behind it wait that long, then the queue drains on its own. NOT a permanent jam — the queue + inactivity-timeout clear it (concurrent calls are otherwise safe and pipeline normally).
+**Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; don't loop-retry (each try queues another timeout window). Calls behind it complete once it clears — no reopen needed (reopen only if the WebSocket actually dropped — a different "connection closed" error).
 
 ---
 
