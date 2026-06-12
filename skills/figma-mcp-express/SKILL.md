@@ -166,7 +166,7 @@ Skip this for organisms → broken instances that must be deleted and rebuilt.
 
 **Import rules:**
 - `import_component_by_key` rejects a COMPONENT_SET key → use the default variant's own key
-- Failed import can jam the plugin thread. Hang = wait for timeout expiry, retry ONCE. Never loop.
+- A bad import key just head-of-line-delays the channel queue until its inactivity timeout (bounded — the queue drains on its own, no reopen). Validate the key first; don't loop-retry (each try queues another timeout window).
 - After `create_instance()`: always configure with real content. Default stubs = FAIL.
 
 **Configure rules:**
@@ -251,7 +251,7 @@ create_instance(channel: "auto-2", ...)      → build in the product file
 **Safe multi-agent pattern (3 rules):**
 1. **Partition by region** — one agent per screen/section; non-overlapping write sets = zero semantic conflict.
 2. **Coordinator creates shared resources once upfront** (page scaffold, nav, header, imported variables) before fan-out; agents create only their own content — no existence ambiguity, no verify-before-create in the hot path.
-3. **No lock** — partition + coordinator-shared-once removes the need. Agents read the on-disk cache in parallel (no plugin); live reads funnel through the coordinator, never fan out concurrent live reads on one channel (false parallelism, plugin jam).
+3. **No lock** — partition + coordinator-shared-once removes the need; the per-channel queue makes concurrent calls safe anyway. Fan out live calls freely — they queue safely (no corruption) and pipeline *faster* than sequential calls (no LLM round-trip between each). Agents also read the on-disk cache in parallel (no plugin). For *overlapping* execution, use separate channels.
 
 **verify-before-create:** a cache miss ≠ "doesn't exist." Before any create-if-absent decision, do one bounded live `search_nodes` to confirm. Rare when the coordinator owns shared resources.
 
@@ -315,7 +315,7 @@ Audit + bulk-fix loop:
 | Node ID not found | Hyphen format instead of colon | `94-78539` → `94:78539` |
 | Response at `.figma-mcp-cache/` path | Response > 25KB gating threshold | Query `.ndjson` sidecar with grep/jq |
 | Wrong file targeted (multi-file) | Missing `channel:` param | `list_channels` → add `channel: "auto-N"` |
-| Import hangs indefinitely | Thread jammed by prior failed import | Wait for expiry; retry ONCE; user reopens plugin |
+| Import slow; calls queue behind it | Bad key has no progress ticks → head-of-line delay until its inactivity timeout (bounded; self-clears) | Validate the key first; don't loop-retry; no reopen needed |
 | Dark mode doesn't cascade to children | Mode set on child, not wrapper | `set_variable_mode` on TOP-LEVEL wrapper |
 | `set_text` fails on locked font | Font unavailable in sandbox | Use fallback font; flag in build output |
 | "connection closed" / "channel disconnected" | WebSocket drop during in-flight call | Plugin auto-reconnects; wait a few seconds, retry once — see `references/gotchas.md § Connection drop` |

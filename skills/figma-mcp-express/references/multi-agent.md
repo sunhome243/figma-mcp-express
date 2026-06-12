@@ -71,19 +71,14 @@ Agents (parallel):
   Agent 3 → create_frame "Section C", parentId=wrapperId
 ```
 
-### 3c. One write-coordinator funnels live calls per channel; agents read cache in parallel
+### 3c. Fan out live calls freely — the server queues them, safely and faster
 
-**Never fan out concurrent live reads on one channel.** The single-threaded plugin serializes them anyway — "parallel" live reads on one channel are actually sequential, queued, and they jam import threads.
+Concurrent live calls on one channel are **safe** (the per-channel queue + singleflight serialize them, no drops/races/corruption) **and faster**: N agents firing N calls pipeline them into the queue, so the plugin runs them back-to-back instead of idling for an LLM round-trip between each sequential call — and that round-trip usually dominates, so the speedup is real. Execution stays serial per channel; for *overlapping* execution use separate channels.
 
 ```
-WRONG:
-  Agent 1: get_node(channel="auto-1", ...)   ┐
-  Agent 2: get_node(channel="auto-1", ...)   │ false parallelism
-  Agent 3: get_node(channel="auto-1", ...)   ┘
-
-RIGHT:
-  Coordinator: get_node(channel="auto-1", ...)  → writes result to shared cache / disk
-  Agent 1, 2, 3: grep the on-disk cache (no plugin call)
+SEQUENTIAL (one agent): emit -> wait full round-trip -> emit -> wait -> ...  (LLM gap between each)
+PIPELINED (N agents):   all calls hit the queue at once -> plugin runs them back-to-back   <- faster
+TRULY PARALLEL:         separate channels (each open file = its own plugin thread)
 ```
 
 Reads that agents need before their work should be done by the coordinator and passed as structured data, or written to disk (`.figma-mcp-cache/` or project cache files) for agents to `grep`/`jq` locally.
@@ -128,7 +123,7 @@ Pass `channel: "auto-N"` explicitly on every call. Missing `channel:` defaults t
 | Symptom | Cause | Recovery |
 |---|---|---|
 | Call returns `"connection closed: plugin disconnected"` | WebSocket drop during in-flight call | Plugin auto-reconnects. For **reads**: retry freely (idempotent). For **writes**: call `get_node` first to verify whether the effect was applied, THEN retry if not — never blind-retry a non-idempotent write. |
-| Import (`import_component_by_key`) hangs; subsequent calls queue | Prior failed import jammed the single thread; `importInFlight` marker still set | Do NOT retry the import in a loop — each retry re-poisons the thread. Do other work (clone_node, set_text, set_fills, save_screenshots) until the in-flight marker clears (plugin response or timeout expiry). |
+| Import (`import_component_by_key`) is slow; calls queue behind it | A bad/unpublished key has no progress ticks, so it head-of-line-delays the channel queue until its inactivity timeout (bounded — then the queue drains on its own; no reopen) | Don't loop-retry — each retry just queues another timeout window. Validate the key (`get_local_components`/`fetch_library_catalog`) before retrying, or do other work (clone_node, set_text) meanwhile. Calls behind it complete once it clears. |
 | Agent gets "node not found" mid-task | Another agent deleted the node, or ID was from a stale cache snapshot | Coordinator re-queries the live ID and re-dispatches. Scope partition prevents recurrence. |
 | Reads return stale data after an external Figma Desktop edit | 3 s TTL window on the read-cache | Wait up to 3 s, or issue any write on the channel (instant invalidation). For must-be-live reads, the staleness window is ≤ 3 s. |
 | Two agents create the same named frame | No coordinator-shared-once; both agents raced existence check | Design fix: coordinator creates the frame upfront, passes the ID to both agents. |
@@ -141,7 +136,7 @@ Pass `channel: "auto-N"` explicitly on every call. Missing `channel:` defaults t
 |---|---|
 | Should agents use a lock for shared resources? | Almost never — partition + coordinator-shared-once removes the need. A lock = design smell. |
 | Can agents read from the on-disk/project cache in parallel? | Yes — no plugin involved, full parallelism. |
-| Can agents issue concurrent live reads on the same channel? | Technically yes (calls queue, all complete), but it is false parallelism — they serialize. Route live reads through the coordinator, deliver results as data. |
+| Can agents issue concurrent live reads on the same channel? | Yes — safe AND faster: firing them in parallel pipelines them into the queue (the plugin runs them back-to-back, no LLM round-trip between each). Execution is serial per channel; for *overlapping* execution use separate channels. |
 | Can agents issue concurrent live reads on DIFFERENT channels? | Yes — truly parallel. |
 | Should I verify-before-create on every call? | Only at shared-resource creation decisions where existence is ambiguous. Rare if the coordinator created shared resources upfront. |
 | Can I retry a write after a connection drop? | Only after verifying the write's effect was NOT applied (get_node first). Blind retry risks double-apply. |
