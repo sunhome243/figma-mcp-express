@@ -6,10 +6,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- `delete_nodes` no longer aborts the whole batch when one node is un-removable (e.g. an instance child, which Figma natively refuses) — each node is guarded independently and reports a per-node `{nodeId, error}`, matching the not-found path. A `Removing this node is not allowed` error now carries an intent-ordered recovery hint: to actually remove the node, delete it on the master component (propagates) or `detach_instance` first then delete; to replace it, swap the nested instance; `set_visible:false` is called out as a hide, not a delete.
-
 ## [1.0.0] — 2026-06-11
 
 Initial release as figma-mcp-express, forked from [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go).
@@ -61,11 +57,11 @@ Initial release as figma-mcp-express, forked from [vkhanhqui/figma-mcp-go](https
 - **Timeouts are server-managed** — removed the client `timeoutMs` param. Ceilings are set by op type: `FIGMA_MCP_READ_TIMEOUT` (default 600s) for heavy reads + `batch`, 120s for light ops. A timeout means **re-scope narrower**, never "raise a timeout." The timer is inactivity-based — a read that ticks progress never trips it.
 - **Style and variable workflows are broader than upstream** — paint/effect styles accept richer `paints[]` / `effects[]` payloads, and `bind_variable_to_node` now supports a much larger set of bindable fields with stricter request-level validation for unsupported ones.
 - **Reparenting is less destructive by default** — `reparent_nodes` now preserves absolute canvas position unless callers explicitly opt out.
-
 ### Fixed
 
 - `set_opacity` / `set_visible` are LIVE top-level tools (previously mislabeled as demoted) — they are _also_ valid `batch` ops.
 - `rotate_nodes` batch param is `rotation` (not `angle`); positive rotation = counter-clockwise.
+- `delete_nodes` no longer aborts the whole batch when one node is un-removable (e.g. an instance child, which Figma natively refuses) — each node is guarded independently and reports a per-node `{nodeId, error}`, matching the not-found path. A `Removing this node is not allowed` error now carries an intent-ordered recovery hint: to actually remove the node, delete it on the master component (propagates) or `detach_instance` first then delete; to replace it, swap the nested instance; `set_visible:false` is called out as a hide, not a delete.
 - Spill provenance manifest no longer appends a duplicate line on a cache-hit re-gate of a spilled+cacheable read (unbounded-growth fix).
 - Live-state reads (`get_screenshot`, `get_selection`, `get_viewport`) are no longer cached, so callers do not receive stale viewport / selection / image data from the short-TTL read cache.
 - Omitted-channel and explicit-channel reads now canonicalize to the same cache entry, and post-write invalidation clears both paths correctly instead of serving stale reads after a mutation.
