@@ -4,7 +4,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://go.dev)
-[![Build from source](https://img.shields.io/badge/install-build%20from%20source-green.svg)](#installation)
+[![npm](https://img.shields.io/npm/v/figma-mcp-express.svg)](https://www.npmjs.com/package/figma-mcp-express)
+[![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-compatible-8A2BE2?logo=anthropic)](https://claude.ai/code)
+[![Works with Codex](https://img.shields.io/badge/Codex-compatible-000000?logo=openai)](https://openai.com/codex)
 
 Enhanced fork of [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go).
 
@@ -12,7 +14,7 @@ Enhanced fork of [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp
 
 **Fast, quota-free, agent-ready Figma MCP.** Give AI agents direct read/write access to Figma through a local Desktop plugin, with batch execution, multi-file routing, and stable concurrent sessions that are not capped by Figma's official MCP server tool-call limits.
 
-> **Claude Code, Codex, and other coding agents** that can use the local filesystem is recommended. Unlike cloud-only MCPs, figma-mcp-express uses the filesystem to optimize the performance and stability.
+> **Claude Code, Codex, and other coding agents** that can use the local filesystem is **recommended.** Unlike cloud-only MCPs, figma-mcp-express uses the filesystem to optimize the performance and stability.
 
 If you are building design migration, audit, or handoff agents, give it a try.
 
