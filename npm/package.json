@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-express",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Fast, quota-free, agent-ready Figma MCP server — local plugin bridge, no seat-based limits. 70 tools: multi-file routing, batch ops, library automation.",
   "mcpName": "io.github.sunhome243/figma-mcp-express",
   "bin": {

@@ -6,6 +6,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-06-12
+
+### Changed
+
+- **README** — restructured Known Limitations into named subsections (Desktop required, single-threaded execution, memory on large files, community kit import); trimmed prose
+- **figma-go skill** — probe rule calibrated: full probe for organisms only; property-name check for unfamiliar atoms; skip for already-used atoms. Removed private-skill cross-references (`/figma-matching`, hardcoded paths). Component configuration rules now point to `figma-design-patterns/references/component-usage.md`. Clear role separation: figma-go = tool mechanics, figma-design-patterns = composition rules
+
 ## [1.0.1] — 2026-06-12
 
 ### Fixed
