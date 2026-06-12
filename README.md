@@ -173,8 +173,6 @@ Both commands pull the plugin manifest directly from GitHub. For project-scoped 
 claude plugin install figma-mcp-express@figma-mcp-express --scope project
 ```
 
-> **npm package coming soon.** The plugin install path above works today via GitHub. Once the npm package is published, the MCP server binary will also be available as `npx figma-mcp-express` — no build step needed.
-
 ### Option B — Build from source
 
 For integrating into other MCP clients, or if you want to modify the server.
