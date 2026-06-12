@@ -75,7 +75,13 @@ jobs:
           npm --version
           cp ../README.md .
           npm version "$VERSION" --no-git-tag-version --allow-same-version
-          npm publish --access public --provenance
+          # Idempotent: re-running a tag (e.g. to fix a later step) must not 404 on an
+          # already-published version — skip publish if this version is already on npm.
+          if npm view "figma-mcp-express@$VERSION" version >/dev/null 2>&1; then
+            echo "figma-mcp-express@$VERSION already on npm — skipping publish"
+          else
+            npm publish --access public --provenance
+          fi
 
       - name: Set version in server.json
         env:
