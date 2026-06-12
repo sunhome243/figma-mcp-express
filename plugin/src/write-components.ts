@@ -48,8 +48,18 @@ export const handleWriteComponentRequest = async (request: any) => {
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid);
         if (!n) { results.push({ nodeId: nid, error: "Node not found" }); continue; }
-        n.remove();
-        results.push({ nodeId: nid, deleted: true });
+        // Per-node guard: one un-removable node (e.g. an instance child, which
+        // Figma natively refuses) must not abort the rest of the batch.
+        try {
+          n.remove();
+          results.push({ nodeId: nid, deleted: true });
+        } catch (e: any) {
+          let error = e?.message ?? String(e);
+          if (/Removing this node is not allowed/i.test(error)) {
+            error += " — instance children are structure-locked. To actually remove it: delete it on the master component (propagates to every instance), or detach_instance first then delete on the resulting plain frame. To replace it: swap the nested instance. set_visible:false only HIDES it (the node still exists — not a delete; use only when visual suppression, not removal, is the intent).";
+          }
+          results.push({ nodeId: nid, error });
+        }
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };

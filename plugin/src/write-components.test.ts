@@ -308,3 +308,56 @@ describe("ungroup_nodes", () => {
     expect(res).toBeNull();
   });
 });
+
+// ── delete_nodes (per-node partial success + actionable hint) ─────────────────
+
+describe("delete_nodes", () => {
+  it("deletes valid nodes and reports a per-node error WITHOUT aborting the rest", async () => {
+    let removedA = false, removedC = false;
+    mockNodes["a:1"] = { id: "a:1", name: "A", type: "FRAME", remove() { removedA = true; } };
+    // An instance child / property-backing node: Figma natively throws on remove().
+    mockNodes["I1:1;2:2"] = {
+      id: "I1:1;2:2", name: "locked", type: "FRAME",
+      remove() { throw new Error("Removing this node is not allowed"); },
+    };
+    mockNodes["c:3"] = { id: "c:3", name: "C", type: "FRAME", remove() { removedC = true; } };
+
+    const res = await handleWriteComponentRequest(
+      makeRequest("delete_nodes", ["a:1", "I1:1;2:2", "c:3"]),
+    );
+    const results = res?.data.results;
+    expect(results).toHaveLength(3);
+    // the good nodes are deleted even though the middle one threw (no abort)
+    expect(removedA).toBe(true);
+    expect(removedC).toBe(true);
+    expect(results[0]).toEqual({ nodeId: "a:1", deleted: true });
+    expect(results[2]).toEqual({ nodeId: "c:3", deleted: true });
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("attaches an actionable hint to the 'Removing this node is not allowed' error", async () => {
+    mockNodes["I1:1;2:2"] = {
+      id: "I1:1;2:2", name: "locked", type: "FRAME",
+      remove() { throw new Error("Removing this node is not allowed"); },
+    };
+    const res = await handleWriteComponentRequest(
+      makeRequest("delete_nodes", ["I1:1;2:2"]),
+    );
+    const r = res?.data.results[0];
+    expect(r.nodeId).toBe("I1:1;2:2");
+    expect(r.deleted).toBeUndefined();
+    expect(r.error).toContain("Removing this node is not allowed");
+    expect(r.error).toContain("detach_instance");
+  });
+
+  it("reports not-found per node", async () => {
+    const res = await handleWriteComponentRequest(makeRequest("delete_nodes", ["nope:1"]));
+    expect(res?.data.results[0]).toEqual({ nodeId: "nope:1", error: "Node not found" });
+  });
+
+  it("throws for empty nodeIds", async () => {
+    await expect(
+      handleWriteComponentRequest(makeRequest("delete_nodes", []))
+    ).rejects.toThrow("nodeIds is required");
+  });
+});

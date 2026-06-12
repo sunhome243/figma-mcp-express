@@ -6,6 +6,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `delete_nodes` no longer aborts the whole batch when one node is un-removable (e.g. an instance child, which Figma natively refuses) — each node is guarded independently and reports a per-node `{nodeId, error}`, matching the not-found path. A `Removing this node is not allowed` error now carries an intent-ordered recovery hint: to actually remove the node, delete it on the master component (propagates) or `detach_instance` first then delete; to replace it, swap the nested instance; `set_visible:false` is called out as a hide, not a delete.
+
 ## [1.0.0] — 2026-06-11
 
 Initial release as figma-mcp-express, forked from [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go).
