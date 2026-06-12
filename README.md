@@ -12,7 +12,7 @@ Enhanced fork of [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp
 
 **Fast, quota-free, agent-ready Figma MCP.** Give AI agents direct read/write access to Figma through a local Desktop plugin, with batch execution, multi-file routing, and stable concurrent sessions that are not capped by Figma's official MCP server tool-call limits.
 
-Built for **Claude Code, Codex, and other coding agents** that can use the local filesystem. Unlike cloud-only MCPs, figma-mcp-express spills large responses to disk, caches reads in a local directory, and ships skills that the agent loads directly from the filesystem — so the agent works with full context rather than truncated payloads, and expensive reads don't burn the context window.
+> **Claude Code, Codex, and other coding agents** that can use the local filesystem is recommended. Unlike cloud-only MCPs, figma-mcp-express uses the filesystem to optimize the performance and stability.
 
 If you are building design migration, audit, or handoff agents, give it a try.
 
@@ -145,7 +145,37 @@ large payloads ─▶ .figma-mcp-cache/       library catalog ─▶ Figma REST 
 
 ## Installation
 
-### Build from source
+Two paths depending on what you need.
+
+### Option A — Plugin install (recommended)
+
+Includes the MCP server + three skills (`/figma-mcp-express`, `/figma-design-patterns`, `/figma-design-md`) + a PreToolUse hook. No clone or build step required.
+
+**Claude Code:**
+
+```bash
+claude plugin marketplace add sunhome243/figma-mcp-express
+claude plugin install figma-mcp-express@figma-mcp-express
+```
+
+**Codex:**
+
+```bash
+codex plugin marketplace add sunhome243/figma-mcp-express
+codex plugin install figma-mcp-express@figma-mcp-express
+```
+
+Both commands pull the plugin manifest directly from GitHub. For project-scoped install (Claude Code only):
+
+```bash
+claude plugin install figma-mcp-express@figma-mcp-express --scope project
+```
+
+> **npm package coming soon.** The plugin install path above works today via GitHub. Once the npm package is published, the MCP server binary will also be available as `npx figma-mcp-express` — no build step needed.
+
+### Option B — Build from source
+
+For integrating into other MCP clients, or if you want to modify the server.
 
 ```bash
 git clone https://github.com/sunhome243/figma-mcp-express.git
@@ -169,10 +199,6 @@ Add to your `.mcp.json` (or `claude_desktop_config.json` for Claude Desktop):
 > The `command` path must match the Makefile output (`bin/figma-mcp-express`). Run `figma-mcp-express --version` to confirm the server reloaded your fresh build.
 
 Restart Claude Code / Codex. Tools load on demand.
-
-**Claude Code and Codex users:** the repo includes skills (`skills/figma-mcp-express/`, `skills/figma-design-patterns/`) and a PreToolUse hook (`hooks/pre-tool.py`). Wire them up by adding the skills path to your agent config — the skills load from the local filesystem and give the agent structured guidance without burning context.
-
-> **npm package and Claude Code plugin coming soon.** Once published, installation will be a single command with no clone or build step required.
 
 ---
 
