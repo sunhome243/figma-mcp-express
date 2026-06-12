@@ -67,11 +67,12 @@ jobs:
       - name: Publish to npm
         working-directory: npm
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           cp ../README.md .
           npm version "$VERSION" --no-git-tag-version --allow-same-version
-          npm publish --access public --provenance
+          npm publish --access public
 
       - name: Set version in server.json
         env:
