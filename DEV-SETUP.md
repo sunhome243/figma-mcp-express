@@ -73,7 +73,7 @@ Restart your AI tool (Claude Code: `claude mcp list` to confirm the server appea
 
 1. Open Figma Desktop
 2. **Plugins → Development → Import plugin from manifest…**
-3. Select `plugin/manifest.json` from the repo root (not the upstream release zip)
+3. Navigate to the `plugin/` folder inside the cloned repo and select `manifest.json` (not the upstream release zip — that zip is for users who don't clone)
 4. Open a Figma file
 5. **Plugins → Development → Figma MCP Express** → Run
 6. The plugin UI shows the connection status and assigned channel ID (e.g. `Channel: auto-1`)

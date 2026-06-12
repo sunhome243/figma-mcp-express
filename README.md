@@ -200,11 +200,36 @@ Restart Claude Code. Tools load on demand.
 
 ## Figma Desktop plugin setup
 
-1. **Plugins → Development → Import plugin from manifest...** → select `plugin/manifest.json`
-2. Open a file and run **Plugins → Development → Figma MCP Express**
-3. The plugin shows the WebSocket URL and assigned channel id
+The plugin runs inside **Figma Desktop** (not the browser). It connects to the local MCP server over WebSocket and gives the AI agent direct access to the open file.
 
-For multiple files: open each file and run the plugin in each — they connect on separate channel ids.
+### Option A — Download from Releases (no clone required)
+
+1. Go to the [Releases page](https://github.com/sunhome243/figma-mcp-express/releases/latest) and download **plugin.zip**
+2. Unzip it anywhere — e.g. `~/figma-mcp-express-plugin/`
+3. In Figma Desktop: **Plugins → Development → Import plugin from manifest...**
+4. Navigate to the unzipped folder and select `manifest.json`
+
+### Option B — From a cloned repo (build from source)
+
+After running `make build` (see [DEV-SETUP.md](DEV-SETUP.md)):
+
+1. In Figma Desktop: **Plugins → Development → Import plugin from manifest...**
+2. Navigate to `plugin/` inside the cloned repo and select `manifest.json`
+
+> **Where is "Import plugin from manifest..."?**
+> Open any file in Figma Desktop → top menu bar → **Plugins** → hover **Development** → click **Import plugin from manifest...** in the submenu. If you don't see the Development submenu, make sure you are on Figma Desktop (not the web app).
+
+### Running the plugin
+
+1. Open a Figma file
+2. **Plugins → Development → Figma MCP Express**
+3. The plugin panel shows:
+   - **Status** — `Connected` once the MCP server is running, `Waiting for server` otherwise
+   - **WebSocket URL** — the address the plugin connected to (default `ws://127.0.0.1:1994`)
+   - **Channel ID** — a unique ID for this file's session (pass this as `channel:` in multi-file workflows)
+4. Minimize the panel with the **−** button — it collapses to a small pill and stays out of the way
+
+**Multiple files:** open each file and run the plugin in each — every file gets its own channel ID and can be targeted independently.
 
 ---
 
