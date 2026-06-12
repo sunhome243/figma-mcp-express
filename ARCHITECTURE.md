@@ -1,6 +1,7 @@
 # ARCHITECTURE.md — figma-mcp-express
 
 This document covers:
+
 1. [How this MCP works](#how-this-mcp-works) — the plugin-bridge model and request lifecycle
 2. [How this fork improves on the original](#improvements-over-the-original) — what was added and why
 3. [System deep-dives](#system-deep-dives) — Response Gating, Read Singleflight, Batch, Multi-Channel
@@ -42,12 +43,12 @@ Figma file (live, in-memory)
 
 The plugin runs in a **sandboxed JavaScript environment** inside Figma Desktop. This gives it full access to the open file's node tree, styles, variables, and components — but imposes a few constraints:
 
-| Can do | Cannot do |
-|--------|-----------|
-| Read/write any node in the open file | Access files that are not currently open |
-| Import components and variables from subscribed libraries | Search published components across Figma (requires REST) |
-| Read/write design variables and styles | `eval()` or `new Function()` — the sandbox forbids dynamic code execution |
-| Multi-file work via channel routing | Create new files (requires REST) |
+| Can do                                                    | Cannot do                                                                 |
+| --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Read/write any node in the open file                      | Access files that are not currently open                                  |
+| Import components and variables from subscribed libraries | Search published components across Figma (requires REST)                  |
+| Read/write design variables and styles                    | `eval()` or `new Function()` — the sandbox forbids dynamic code execution |
+| Multi-file work via channel routing                       | Create new files (requires REST)                                          |
 
 This is why the `use_figma` pattern (arbitrary script injection) from official Figma MCP cannot be ported here. All operations are exposed as **typed MCP tools** instead.
 
@@ -80,6 +81,7 @@ The original [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go)
 **This fork:** The `batch` tool sends an ordered array of ops to the plugin in a single WebSocket message. Later ops can reference earlier ops' results via `$N.path` refs — the plugin resolves them at runtime without returning to the LLM.
 
 **Why it matters:**
+
 - A 10-op build sequence goes from 10 LLM round-trips to 1 plugin round-trip
 - The LLM never needs to handle intermediate `nodeId` values — refs wire ops together internally
 - Write-then-verify patterns (create frame → read it back to check structure) become a single atomic call
@@ -119,6 +121,7 @@ The original [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go)
 **Original behavior:** No tools for importing library assets or creating instances. All component placement had to be done manually via Figma's UI.
 
 **This fork:** 8 new tools covering the full library automation workflow:
+
 - `import_component_by_key` / `import_variable_by_key` / `import_style_by_key` — import from subscribed libraries
 - `create_instance` — import a component set variant and place an instance
 - `set_instance_properties` — set variant/slot properties on a placed instance
@@ -135,6 +138,7 @@ The original [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go)
 **Original behavior:** `get_design_context` returned visual structure but not the semantic information needed for code generation.
 
 **This fork:** `get_design_context` accepts `detail: "codegen"` to serialize:
+
 - `autoLayout` — flex semantics (axis, alignment, gap, sizing mode) for CSS/React mapping
 - `tokens` — names of bound design variables per node, for token-to-CSS-variable mapping
 - `componentRef` — `mainComponent` key + name for code-component mapping
@@ -147,6 +151,7 @@ The original [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go)
 **Original behavior:** No tools for enumerating library assets without opening the library file.
 
 **This fork:** 3 new REST-path tools for library discovery:
+
 - `fetch_library_catalog` — fetch published components + thumbnails from Figma's REST API (requires `FIGMA_TOKEN`)
 - `get_local_components` — enumerate unpublished components page-by-page via the plugin (no token required)
 - `get_library_variables` — enumerate subscribed library variable collections, bypassing Enterprise 403 gates
@@ -184,6 +189,7 @@ Every tool response passes through `internal/gate.go`. If the serialized JSON ex
 ```
 
 Query patterns:
+
 ```bash
 # Fast: grep the NDJSON index (no full parse, constant RAM)
 grep '"type":"INSTANCE"' .figma-mcp-cache/get_node-a1b2c3d4.ndjson | jq -c '{id,name}'
@@ -226,8 +232,8 @@ Only read operations are deduped: `get_*`, `scan_*`, `search_*`, `export_tokens`
 {
   "ops": [
     { "type": "create_frame", "params": { "name": "Card", "width": 320, "height": 200 } },
-    { "type": "set_fills",    "nodeIds": ["$0.id"], "params": { "color": "#FFFFFF" } },
-    { "type": "get_node",     "nodeIds": ["$0.id"], "params": { "depth": 1 } }
+    { "type": "set_fills", "nodeIds": ["$0.id"], "params": { "color": "#FFFFFF" } },
+    { "type": "get_node", "nodeIds": ["$0.id"], "params": { "depth": 1 } }
   ]
 }
 ```
@@ -235,6 +241,7 @@ Only read operations are deduped: `get_*`, `scan_*`, `search_*`, `export_tokens`
 `$N.path` refs are resolved at runtime against op N's `data` field. Dot notation and array indexing are supported (`$0.nodes.0.id`). Forward refs (pointing to an op that has not run yet) are rejected.
 
 **Stop policy:**
+
 - Any `$N` ref present → stop at first error (dependent chain — downstream refs would be broken)
 - No refs → continue past errors, report all results (independent bulk)
 - `continueOnError: true/false` overrides either default
@@ -274,17 +281,20 @@ Recently landed and actively tuned improvements to the architecture. The shared 
 `FIGMA_MCP_TIMEOUT` (default 120s) and `FIGMA_MCP_READ_TIMEOUT` (default 600s) are **inactivity ceilings**, not hard per-request deadlines. Every `progress_update` the plugin emits resets the timer. A heavy read that keeps ticking progress — `get_node` on a large frame, `get_design_context` on a complex component — runs indefinitely as long as it stays active.
 
 The two ceilings apply by op type:
+
 - **`FIGMA_MCP_TIMEOUT` (120s):** lightweight ops — writes, `get_metadata`, `get_styles`, `get_pages`, and similar cheap reads.
 - **`FIGMA_MCP_READ_TIMEOUT` (600s):** heavy reads (`get_node`, `get_nodes_info`, `get_design_context`, `get_document`, `scan_nodes_by_types`, `scan_text_nodes`, `search_nodes`, `get_local_components`) and `batch`.
 
-The timeout only fires during a **silent stretch**: a single blocking plugin call with no yields. When it fires, the correct response is *retry with a narrower scope*, not *raise the ceiling*. Raising the ceiling converts a recoverable inactivity signal into a permanent plugin jam.
+The timeout only fires during a **silent stretch**: a single blocking plugin call with no yields. When it fires, the correct response is _retry with a narrower scope_, not _raise the ceiling_. Raising the ceiling converts a recoverable inactivity signal into a permanent plugin jam.
 
 Three failure modes are handled, all fast-fail:
+
 - Plugin returns an error response → resolved immediately (no waiting for the ceiling).
 - Plugin WebSocket drops → ALL pending requests for that connection resolve immediately with "connection closed: plugin disconnected" — not after the 600s ceiling.
 - Silent inactivity (connected but no response or progress tick) → inactivity timer fires at the ceiling.
 
 Three resource axes are handled independently:
+
 - Output too large → spill gate (`FIGMA_MCP_SPILL_BYTES`)
 - Compute time → cooperative yield + inactivity timer
 - Connection liveness → drain-on-disconnect (immediate resolution)
