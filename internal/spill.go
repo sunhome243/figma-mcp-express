@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -177,9 +176,8 @@ func appendSpillManifest(dir string, rec manifestRecord) {
 	}
 	defer f.Close()
 
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err == nil {
-		defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	}
+	unlock := lockManifest(f)
+	defer unlock()
 	_, _ = f.Write(line)
 }
 

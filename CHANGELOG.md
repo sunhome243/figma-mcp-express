@@ -6,6 +6,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-06-12
+
+### Fixed
+
+- **Windows cross-compile** — `appendSpillManifest` called `syscall.Flock` (Unix-only) inline, which broke the `GOOS=windows` builds in the release matrix (`undefined: syscall.Flock`). The advisory spill-manifest lock is now platform-split (`spill_lock_unix.go` uses `flock`; `spill_lock_windows.go` is a no-op — a single `O_APPEND` line write is atomic on local filesystems, so the lock is best-effort by design). All six release targets (darwin/linux/windows × amd64/arm64) build again.
+
 ## [1.0.0] — 2026-06-11
 
 Initial release as figma-mcp-express, forked from [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go).
