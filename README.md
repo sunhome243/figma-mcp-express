@@ -292,6 +292,15 @@ Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MI
 
 If a community kit has only been published to Community, its components are still **unpublished local components**. This is a Figma platform constraint, not a server bug.
 
+Figma has two *unrelated* meanings of "published" — community kits satisfy only the first:
+
+| "Published" | Means | Community kits |
+| --- | --- | --- |
+| Published **to Community** | the *file* is shared so anyone can view / duplicate it | ✅ yes |
+| Published **as a library** | the *components* are importable via `import_component_by_key` | ❌ no |
+
+So even the kit's *own* file cannot import its components by key, and the Plugin API has **no cross-file copy** — this server bridges several open files and moves *data* between them, but it cannot fabricate a cross-document component *link*. (REST `components: 0` / `404` is **not** the arbiter, either — a kit published as a library after the fact imports fine even while REST still 404s. The live `import_component_by_key` probe decides.)
+
 In that state:
 
 - `import_component_by_key` fails with `Cannot import component ... since it is unpublished`
