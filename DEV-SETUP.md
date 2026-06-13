@@ -1,7 +1,7 @@
 # DEV-SETUP.md — figma-mcp-express
 
 This guide covers building, registering, and using the fork locally.
-The custom tools (Track A: library import/instance, Track C: codegen, Track F: REST catalog, Batch, Multi-channel) are **not in the published npm package** — you must build from source.
+Use the published npm package for normal installs. Build from source when developing or verifying local changes so the MCP client launches the freshly built binary and plugin bundle.
 
 ---
 
@@ -25,7 +25,7 @@ Figma Desktop
 Go MCP Server  (port 1994, stdio to AI tool)
   ├── Bridge — routes requests to plugins by channel id
   ├── Gate   — spills large responses (>25KB) to .figma-mcp-cache/
-  └── 70 MCP tools exposed via stdio
+  └── compact core MCP tools via stdio (full legacy surface opt-in)
 ```
 
 Two processes must be running simultaneously: the **Go binary** (MCP server, speaks stdio to your AI tool) and the **Figma plugin** (WebSocket client inside Figma Desktop). The bridge links them.
@@ -98,7 +98,9 @@ list_channels → [
 
 # Target a specific file by passing the channel param
 get_styles(channel: "auto-1")        → reads from UI Kit
-create_frame(channel: "auto-2", ...) → writes to Product App
+batch(channel: "auto-2", ops: [
+  { "type": "create_frame", "params": { "name": "Draft", "width": 320, "height": 200 } }
+])                                  → writes to Product App
 ```
 
 When only one file is open, omit `channel` — the single connection is used automatically.
@@ -119,10 +121,12 @@ To **use** a published component you only need its key — the library file does
 Create a `.env` file in the repo root (gitignored). The server auto-loads it on startup.
 
 ```bash
-# Required for REST-path tools (fetch_library_catalog, get_library_variables)
+# Required for REST library catalog fetches (`fetch_library_catalog`)
 FIGMA_TOKEN=figd_xxxxxxxxxxxxxxxx
 
 # Optional tuning
+FIGMA_MCP_TOOL_PROFILE=core       # default. Set full for the legacy top-level tool surface.
+FIGMA_MCP_TOOL_SCHEMA_MODE=compact # compact tools/list descriptions. Set verbose for full schema docs.
 FIGMA_MCP_SPILL_BYTES=25000   # Response gate threshold (bytes). Default: 25000
 FIGMA_MCP_TIMEOUT=120         # Inactivity ceiling (seconds) for lightweight ops. Default: 120
 FIGMA_MCP_READ_TIMEOUT=600    # Inactivity ceiling (seconds) for heavy reads + batch. Default: 600
@@ -130,11 +134,15 @@ FIGMA_MCP_READ_TIMEOUT=600    # Inactivity ceiling (seconds) for heavy reads + b
 
 ---
 
-## 6. Available tools (this fork)
+## 6. Available capabilities (this fork)
 
-### Track A — Library workflow (8 new tools)
+In the default `core` profile, many low-level operations below are batch/FigmaPlan
+op types rather than top-level MCP tools. Use `search_batch_ops` and
+`get_batch_op_spec` for exact availability and params.
 
-| Tool | Purpose |
+### Track A — Library workflow
+
+| Operation | Purpose |
 |------|---------|
 | `import_component_by_key` | Import a published component or component set by key |
 | `import_variable_by_key` | Import a library variable; returns local variable ID |
@@ -155,18 +163,24 @@ FIGMA_MCP_READ_TIMEOUT=600    # Inactivity ceiling (seconds) for heavy reads + b
 - `componentRef` — `mainComponent` key + name for code mapping
 - `codeConnect` — optional `codeConnectMap` param for local Code Connect resolution
 
-### Track F — REST catalog (3 new tools)
+### Track F — Library catalog and token discovery
 
-| Tool | Purpose |
+| Operation | Purpose |
 |------|---------|
 | `fetch_library_catalog` | Fetch published components + thumbnails via REST (requires `FIGMA_TOKEN`) |
 | `get_local_components` | Enumerate unpublished library components page by page (plugin path) |
-| `get_library_variables` | Enumerate subscribed library variable collections without hitting Enterprise 403 |
+| `get_library_variables` | Enumerate variables from a subscribed library collection through the plugin/teamLibrary path |
 
 ### Batch — multi-op sequencing
 
+In the default `core` profile, low-level write/read primitives are used as validated
+`batch` op types rather than top-level MCP tools. Discover them with
+`search_batch_ops`, inspect exact params with `get_batch_op_spec`, and dry-run a
+generated plan with `validateOnly:true` before mutation.
+
 ```json
 {
+  "validateOnly": true,
   "ops": [
     { "type": "create_frame", "params": { "name": "Card", "width": 320, "height": 200 } },
     { "type": "set_fills",    "nodeIds": ["$0.id"], "params": { "color": "#FFFFFF" } },
@@ -175,7 +189,9 @@ FIGMA_MCP_READ_TIMEOUT=600    # Inactivity ceiling (seconds) for heavy reads + b
 }
 ```
 
-`$0.id` is resolved at runtime — no round-trip back to the LLM between ops. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full stop-policy and ref syntax.
+`$0.id` is resolved at runtime — no round-trip back to the LLM between ops. Remove
+`validateOnly` or set it to `false` to execute after validation passes. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the full stop-policy and ref syntax.
 
 ---
 
@@ -202,7 +218,7 @@ cd plugin && bun test
 
 ## Known constraints
 
-- **No arbitrary script eval.** The Figma plugin sandbox forbids `eval` / `new Function`, so the upstream `use_figma` arbitrary-script pattern cannot be ported here. All operations are exposed as 70 typed MCP tools instead. The `batch` tool partially addresses this: it chains N typed ops with `$N.field` ref resolution in one round-trip, so the LLM never needs to receive intermediate `nodeId` values between dependent steps. What batch cannot replace: loops, conditionals, and custom algorithms — those still require the LLM to orchestrate multi-step tool sequences.
+- **No arbitrary script eval.** The Figma plugin sandbox forbids `eval` / `new Function`, so the upstream `use_figma` arbitrary-script pattern cannot be ported here. The supported replacement is declarative `batch` / FigmaPlan JSON: validated op types, `$N.field` ref resolution, projection, and `map` for bounded per-item variation. Script-like fields such as `script`, `code`, `js`, `eval`, and `function` are rejected before plugin execution.
 - **Desktop only.** The plugin WebSocket bridge requires Figma Desktop. The web app does not support local WebSocket connections.
 - **`figma.teamLibrary` requires Team/Org plan.** `list_library_variable_collections` and related team-library calls fail on the free plan.
 - **`enablePrivatePluginApi`.** The plugin uses a private API to expose `figma.fileKey`. This means it cannot be published to the public Figma Community — it is intended as a self-hosted developer plugin only.

@@ -14,6 +14,22 @@ import (
 // against an Unknown-role Node (no real Figma connection).
 func newTestServer(t *testing.T) (*server.MCPServer, *Node) {
 	t.Helper()
+	return newTestServerWithProfile(t, "full")
+}
+
+func newTestServerWithProfile(t *testing.T, profile string) (*server.MCPServer, *Node) {
+	t.Helper()
+	t.Setenv("FIGMA_MCP_TOOL_PROFILE", profile)
+	s := server.NewMCPServer("test", "0.0.1")
+	node := NewNode("127.0.0.1", 19940, "test")
+	RegisterTools(s, node)
+	RegisterPrompts(s)
+	return s, node
+}
+
+func newTestServerDefaultProfile(t *testing.T) (*server.MCPServer, *Node) {
+	t.Helper()
+	t.Setenv("FIGMA_MCP_TOOL_PROFILE", "")
 	s := server.NewMCPServer("test", "0.0.1")
 	node := NewNode("127.0.0.1", 19940, "test")
 	RegisterTools(s, node)
