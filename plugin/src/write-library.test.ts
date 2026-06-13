@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { handleWriteLibraryRequest } from "./write-library";
+import { handleWriteLibraryRequest, withImportTimeout, IMPORT_TIMEOUT_MS } from "./write-library";
 
 // ── Figma global mock ─────────────────────────────────────────────────────────
 
@@ -698,5 +698,54 @@ describe("create_instance — droppedSlotKeys in response (new feature)", () => 
     expect(inst._props["Label#2:1"]).toBe("Hello");
     // SLOT prop must not be in applied props
     expect(inst._props["Slot#2:2"]).toBeUndefined();
+  });
+});
+
+// ── withImportTimeout (hung-import guard) ─────────────────────────────────────
+// Root cause this fixes: figma.importByKeyAsync can hang forever with no built-in
+// timeout/progress; a hung import then occupies the single plugin thread until the
+// server's 120s ceiling, and concurrency re-arms that window so it looks permanent.
+describe("withImportTimeout (hung-import guard)", () => {
+  it("rejects a hung import within the timeout, fast, with a clear message", async () => {
+    const neverResolves = new Promise<never>(() => {}); // simulates a hung importByKeyAsync
+    const start = Date.now();
+    await expect(
+      withImportTimeout(neverResolves, "importComponentByKeyAsync(key-x)", 20),
+    ).rejects.toThrow(/timed out after 20ms/);
+    // settled at ~20ms, NOT after the underlying hang — proves the race fired
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
+  it("passes a resolving import through unchanged (real call wins the race)", async () => {
+    const result = await withImportTimeout(
+      Promise.resolve({ id: "1:2", name: "Button" }),
+      "importComponentByKeyAsync(key-button)",
+      20,
+    );
+    expect(result).toEqual({ id: "1:2", name: "Button" });
+  });
+
+  it("propagates the real rejection (not the timeout) when the import rejects first", async () => {
+    await expect(
+      withImportTimeout(Promise.reject(new Error("library disabled")), "x", 1000),
+    ).rejects.toThrow("library disabled");
+  });
+
+  it("timeout error message lacks 'not found' so it never triggers the COMPONENT_SET fallback", async () => {
+    // importComponentOrSet only falls back to the set importer on "not found"/"not a
+    // component" — a timeout must NOT match, else a hung component import would re-hang
+    // on the set importer.
+    let msg = "";
+    try {
+      await withImportTimeout(new Promise<never>(() => {}), "importComponentByKeyAsync(k)", 20);
+    } catch (e: any) {
+      msg = String(e?.message ?? "").toLowerCase();
+    }
+    expect(msg).not.toContain("not found");
+    expect(msg).not.toContain("not a component");
+  });
+
+  it("defaults to a 15s ceiling", () => {
+    expect(IMPORT_TIMEOUT_MS).toBe(15000);
   });
 });
