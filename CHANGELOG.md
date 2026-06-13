@@ -19,6 +19,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **Batch validation now uses a catalog source of truth** — hidden and demoted ops are validated against `BatchOpCatalog`, so wrong params like `characters` and script-like fields are rejected before mutation instead of being silently ignored by the plugin.
 - **Batch `map` validation is stricter** — invalid named bindings, string-interpolation attempts such as `"Section $index"`, named-binding projections, reserved `map.as` values, and nested `map` ops are rejected before plugin execution.
 
+### Fixed
+
+- **Import keys fail fast before reaching the plugin** — `import_component_by_key` / `import_style_by_key` now reject node IDs, truncated keys, and malformed non-40-char lowercase hex keys in the Go server, and `import_variable_by_key` rejects empty keys and bare node IDs without forcing component/style key rules. Cached library catalogs now inject `assetType` for component-set keys so the plugin skips the slow component-first fallback when the key type is already known.
+
 ## [1.0.3] — 2026-06-13
 
 ### Fixed
