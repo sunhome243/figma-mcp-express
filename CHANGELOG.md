@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-06-13
+
 ### Fixed
 
 - **Hung library import no longer wedges the plugin thread** — `figma.importComponentByKeyAsync` / `importComponentSetByKeyAsync` / `importVariableByKeyAsync` / `importStyleByKeyAsync` can hang and never resolve or reject (a COMPONENT_SET key passed to the component importer, or an unpublished/unreachable library), with no built-in timeout or progress tick. Such a hang occupied the single plugin thread until the server-side 120s inactivity ceiling fired, and under concurrent load each fresh attempt re-armed that window — so the import path appeared permanently wedged until a manual plugin restart (observed in a 4-screen concurrent redesign run). All four `import_*_by_key` calls in `plugin/src/write-library.ts` are now wrapped in `withImportTimeout` (a `Promise.race` against a 15s reject-on-timeout, timer always cleared on settle), so a hung import fails fast — the server clears its `importInFlight` marker and the next import proceeds without a restart. The timeout message deliberately omits "not found"/"not a component" so it never triggers the COMPONENT_SET fallback (which would re-hang on the set importer). Covered by 5 new `withImportTimeout` tests.
