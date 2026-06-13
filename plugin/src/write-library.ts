@@ -3,20 +3,66 @@
 
 import { bulkApply } from "./write-helpers";
 
+// Default ceiling for a single library import. Figma's importByKeyAsync calls can
+// HANG and never resolve/reject (a COMPONENT_SET key passed to the component
+// importer, or an unpublished/unreachable library) — there is no built-in timeout
+// or progress tick. Without this guard a hung import occupies the SINGLE plugin
+// thread until the server-side inactivity ceiling (120s) fires; under concurrent
+// load each fresh attempt re-arms that window, so the import path looks permanently
+// wedged until a plugin restart. A short plugin-side timeout makes a hung import
+// fail FAST (reject) so the server clears its in-flight marker and the next import
+// proceeds. Real imports finish in well under a second; 15s is generous headroom.
+export const IMPORT_TIMEOUT_MS = 15000;
+
+// withImportTimeout races a library-import promise against a reject-on-timeout so a
+// hung Figma import API call cannot occupy the plugin thread indefinitely. The timer
+// is always cleared on settle (no leak). Exported for direct unit testing with a
+// small ms. NOTE: a timeout error message contains "timed out" (not "not found"), so
+// it never triggers importComponentOrSet's COMPONENT_SET fallback — a hung component
+// import is re-thrown, not retried against the set importer (which would re-hang).
+export const withImportTimeout = <T>(
+  p: Promise<T>,
+  label: string,
+  ms: number = IMPORT_TIMEOUT_MS,
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `${label} timed out after ${ms}ms — the Figma import API hung (the key may be a COMPONENT_SET passed to the component importer, or the library is unpublished/unreachable). Re-scope or verify the key; do not retry-loop.`,
+          ),
+        ),
+      ms,
+    );
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+};
+
 const importComponentOrSet = async (key: string, assetType?: string) => {
   if (assetType === "COMPONENT_SET") {
-    return await figma.importComponentSetByKeyAsync(key);
+    return await withImportTimeout(
+      figma.importComponentSetByKeyAsync(key),
+      `importComponentSetByKeyAsync(${key})`,
+    );
   }
   try {
-    return await figma.importComponentByKeyAsync(key);
+    return await withImportTimeout(
+      figma.importComponentByKeyAsync(key),
+      `importComponentByKeyAsync(${key})`,
+    );
   } catch (e: any) {
     // Only fall back to COMPONENT_SET import when the error indicates a type
     // mismatch or a simple "not found" — i.e. the key may belong to a set.
-    // Any other error (library disabled, network, permission) is re-thrown as-is
-    // to avoid masking the real root cause.
+    // A timeout or any other error (library disabled, network, permission) is
+    // re-thrown as-is to avoid masking the root cause or re-hanging on the set importer.
     const msg: string = (e?.message ?? "").toLowerCase();
     if (msg.includes("not found") || msg.includes("not a component")) {
-      return await figma.importComponentSetByKeyAsync(key);
+      return await withImportTimeout(
+        figma.importComponentSetByKeyAsync(key),
+        `importComponentSetByKeyAsync(${key})`,
+      );
     }
     throw e;
   }
@@ -200,7 +246,10 @@ export const handleWriteLibraryRequest = async (request: any) => {
       if (!p.key) throw new Error("key is required");
       // Unlike the component/style import calls (top-level on figma), variable
       // import lives on figma.variables (plugin-typings line 2181).
-      const variable: any = await figma.variables.importVariableByKeyAsync(p.key);
+      const variable: any = await withImportTimeout(
+        figma.variables.importVariableByKeyAsync(p.key),
+        `importVariableByKeyAsync(${p.key})`,
+      );
       return {
         type: request.type,
         requestId: request.requestId,
@@ -211,7 +260,10 @@ export const handleWriteLibraryRequest = async (request: any) => {
     case "import_style_by_key": {
       const p = request.params || {};
       if (!p.key) throw new Error("key is required");
-      const style: any = await figma.importStyleByKeyAsync(p.key);
+      const style: any = await withImportTimeout(
+        figma.importStyleByKeyAsync(p.key),
+        `importStyleByKeyAsync(${p.key})`,
+      );
       return {
         type: request.type,
         requestId: request.requestId,
