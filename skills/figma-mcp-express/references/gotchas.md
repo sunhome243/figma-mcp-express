@@ -8,16 +8,16 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 ## Slow import delays the queue (bounded, self-clears — not a jam)
 
 **Symptom:** a call sits "in progress" a long time while `save_screenshots` / `list_channels` still respond.
-**Cause:** `import_component_by_key` with an invalid/unpublished key has no progress ticks, so it holds the channel's serial queue slot until its inactivity timeout fires (~120s light / ~600s heavy); calls queued behind it wait that long, then the queue drains on its own. NOT a permanent jam — the queue + inactivity-timeout clear it (concurrent calls are otherwise safe and pipeline normally).
-**Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; don't loop-retry (each try queues another timeout window). Calls behind it complete once it clears — no reopen needed (reopen only if the WebSocket actually dropped — a different "connection closed" error).
+**Cause:** malformed/truncated/node-id keys now fail fast in the Go server, but valid-looking unpublished, wrong-library, or permission-blocked keys can still reach the Plugin API and wait for its import timeout; calls queued behind it wait, then the queue drains on its own. NOT a permanent jam — the queue + timeout clear it.
+**Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; pass `assetType:"COMPONENT_SET"` for set keys or fetch the catalog first so the server injects it. Don't loop-retry — each try queues another timeout window. Calls behind it complete once it clears — no reopen needed unless the WebSocket actually dropped.
 
 ---
 
 ## COMPONENT_SET vs COMPONENT key
 
 **Symptom:** `import_component_by_key` returns "not found" for a seemingly-correct key.
-**Cause:** Figma URLs expose the COMPONENT_SET key; import needs a COMPONENT (variant) key.
-**Fix:** `get_local_components(pageId)` → find the set → use a child variant's `key`. Store `assetType` with every cataloged key; never pass a SET key to import directly (or pass `assetType:"COMPONENT_SET"`).
+**Cause:** The key may be a COMPONENT_SET without a type hint, or the library may be unpublished/not available to the target file.
+**Fix:** `get_local_components(pageId)` or `fetch_library_catalog` → confirm the entry type. For sets, pass `assetType:"COMPONENT_SET"` or use a child variant's `key`; cached REST catalog results let the server inject `assetType` automatically.
 
 ---
 
@@ -130,7 +130,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 **Symptom:** `import_component_by_key` on a community kit returns `Cannot import component … since it is unpublished`; `fetch_library_catalog` returns `components: 0` / REST `404`.
 **Cause:** "Published to **Community**" (file is duplicatable) ≠ "published as a **library**" (components importable by key). Community kits are only the former → **unpublished local components**, and the Plugin API has no cross-file copy (the multi-channel server moves *data*, not component *links*). Two states only: published/enabled library → linked instances; else → detached copies.
 **REST is NOT the arbiter — the live probe is.** REST `404`/`components:0` reflects token access + REST-publish state, not the import path. Proven: after the user published a `shadcn (Copy)` as a library, `fetch_library_catalog` *still* returned 404, yet its `get_local_components` keys imported into another file as real `remote:true` instances (publishing doesn't change keys). Material/iOS kits failed only because never published.
-**Fix:** catalog keys via `get_local_components` (any publish state) → ONE live `import_component_by_key` probe into the *target* channel decides it. `remote:true` → `create_instance`. `unpublished` → fall back: **Publish as library** (Assets panel, paid) for real links, or one-time Cmd+C/V into the target (detached local copies). Never loop retries on an unpublished key (jams the plugin).
+**Fix:** catalog keys via `get_local_components` (any publish state) → ONE live `import_component_by_key` probe into the *target* channel decides it. `remote:true` → `create_instance`. `unpublished` → fall back: **Publish as library** (Assets panel, paid) for real links, or one-time Cmd+C/V into the target (detached local copies). Never loop retries on an unpublished key; each attempt can wait for the bounded import timeout.
 
 ---
 

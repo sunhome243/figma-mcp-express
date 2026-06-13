@@ -165,8 +165,9 @@ Skip this for organisms → broken instances that must be deleted and rebuilt.
 ```
 
 **Import rules:**
-- `import_component_by_key` rejects a COMPONENT_SET key → use the default variant's own key
-- A bad import key just head-of-line-delays the channel queue until its inactivity timeout (bounded — the queue drains on its own, no reopen). Validate the key first; don't loop-retry (each try queues another timeout window).
+- Component/style import keys are full 40-char lowercase hex published keys; node IDs, truncated keys, and malformed keys fail fast before reaching the plugin.
+- For COMPONENT_SET keys, pass `assetType:"COMPONENT_SET"` or fetch the library catalog first so the server can inject it. Without type info, the plugin may still probe component first.
+- Valid-looking but unpublished/wrong-library keys can still delay until the plugin import timeout. Validate with `fetch_library_catalog`/`get_local_components`; don't loop-retry.
 - After `create_instance()`: always configure with real content. Default stubs = FAIL.
 
 **Configure rules:**
@@ -311,11 +312,11 @@ Audit + bulk-fix loop:
 | "plugin not connected" | Plugin not running | Open file, run plugin — do NOT loop |
 | Timeout / no response | Read unbounded (page-level, no scope) | Re-scope: frame nodeId + `depth: 2`; never raise a timeout |
 | FILL sizing has no effect | Node set FILL before `appendChild` | `appendChild` first, then set FILL |
-| `import_component_by_key` "not found" | COMPONENT_SET key, not variant key | Use the default variant's own key |
+| `import_component_by_key` "not found" | COMPONENT_SET key without type hint, unpublished key, or wrong library | Pass `assetType:"COMPONENT_SET"` for sets, or use a variant key; verify library access |
 | Node ID not found | Hyphen format instead of colon | `94-78539` → `94:78539` |
 | Response at `.figma-mcp-cache/` path | Response > 25KB gating threshold | Query `.ndjson` sidecar with grep/jq |
 | Wrong file targeted (multi-file) | Missing `channel:` param | `list_channels` → add `channel: "auto-N"` |
-| Import slow; calls queue behind it | Bad key has no progress ticks → head-of-line delay until its inactivity timeout (bounded; self-clears) | Validate the key first; don't loop-retry; no reopen needed |
+| Import slow; calls queue behind it | Valid-looking key is unpublished, wrong-library, or missing assetType | Validate with catalog/local components; pass `assetType` for sets; don't loop-retry |
 | Dark mode doesn't cascade to children | Mode set on child, not wrapper | `set_variable_mode` on TOP-LEVEL wrapper |
 | `set_text` fails on locked font | Font unavailable in sandbox | Use fallback font; flag in build output |
 | "connection closed" / "channel disconnected" | WebSocket drop during in-flight call | Plugin auto-reconnects; wait a few seconds, retry once — see `references/gotchas.md § Connection drop` |

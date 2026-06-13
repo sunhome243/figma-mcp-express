@@ -85,7 +85,7 @@ parent.appendChild(inst)
 inst.setProperties({ "State": "Hover", "Size": "Medium" })
 ```
 
-`importComponentByKeyAsync` rejects a COMPONENT_SET key — it only accepts a single COMPONENT key. Import the default variant's key, then use `setProperties` to switch variants.
+Raw `figma.components.importComponentByKeyAsync` accepts COMPONENT keys only. Through the MCP, pass `assetType:"COMPONENT_SET"` for set keys or import the default variant's key, then use `setProperties` to switch variants.
 
 ---
 
