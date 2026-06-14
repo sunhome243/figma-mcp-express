@@ -6,8 +6,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [1.0.4] — 2026-06-14
-
 ### Added
 
 - **Progressive batch op discovery** — added `search_batch_ops` and `get_batch_op_spec` so agents can search the validated FigmaPlan/batch catalog first, inspect one op's exact params only when needed, then execute through `batch`.
