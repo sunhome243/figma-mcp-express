@@ -103,10 +103,12 @@ type pendingEntry struct {
 	// keeps its complete window, not a hardcoded 120s.
 	resetTimeout time.Duration
 	once         sync.Once // guards channel close/send — prevents panic on concurrent timeout + response
-	// onResolve (nil except for import requests) clears the connEntry.importInFlight
-	// marker. resolveOnce makes it fire exactly once, at WHICHEVER resolution site
-	// wins (plugin response, timeout timer, write-error, or Close) — but NOT on a
-	// client-context-cancel, which deliberately leaves the marker set.
+	// onResolve releases the per-channel serial slot (and, for imports, clears the
+	// connEntry.importInFlight marker). resolveOnce makes it fire exactly once, at
+	// WHICHEVER resolution site wins (plugin response, timeout timer, write-error, or
+	// Close) — but NOT on a client-context-cancel, which deliberately leaves the slot
+	// held (and the import marker set) until the request truly resolves, so the next
+	// request never overlaps the still-busy single-threaded plugin.
 	onResolve   func()
 	resolveOnce sync.Once
 }
@@ -137,12 +139,13 @@ type connEntry struct {
 	connectedAt time.Time
 
 	// importInFlight marks that an import_*_by_key is currently occupying the
-	// single-threaded plugin. Unlike sem (released when sendOnce returns, i.e. as
-	// early as the client's ~10s cancel), this marker stays set until the import's
-	// pendingEntry actually RESOLVES (plugin response or the request-timeout timer)
-	// — so it outlives a client-cancel of a still-hung import. A second import that
-	// arrives while it is set is rejected with ErrImportInFlight instead of being
-	// dispatched and re-jamming the thread (the ~118× retry-loop amplifier).
+	// single-threaded plugin. It shares the slot's lifetime — both are held from
+	// dispatch until the import's pendingEntry actually RESOLVES (plugin response or
+	// the request-timeout timer), surviving a client-cancel of a still-hung import.
+	// The marker is what the slot alone cannot do: it lets a RETRIED import be rejected
+	// EARLY with ErrImportInFlight (before it even queues on sem) instead of being
+	// dispatched and re-jamming the thread (the ~118× retry-loop amplifier). Cleared
+	// via onResolve at the same instant the slot is released.
 	inFlightMu     sync.Mutex
 	importInFlight bool
 }
@@ -621,7 +624,9 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 	// time spent queued before acquisition. Both feed the C1 response metadata.
 	queueDepth := entry.waiters.Add(-1) // returns the post-decrement count = others still waiting
 	queueWaitMs := time.Since(enqueued).Milliseconds()
-	defer func() { <-entry.sem }()
+	// The serial slot is intentionally NOT released on return. Release flows through
+	// pe.onResolve (true resolution only), so a client-cancelled-but-still-running
+	// request holds the slot until the plugin finishes. See pe.onResolve below.
 	if queueWaitMs > 50 {
 		bridgeLogger.Printf("⧗ %s waited %dms for plugin slot, queueDepth=%d (channel %q)", requestType, queueWaitMs, queueDepth, channel)
 	}
@@ -636,10 +641,19 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 
 	ch := make(chan BridgeResponse, 1)
 	pe := &pendingEntry{ch: ch, conn: entry}
-	if isImport {
-		// Clear the import marker only when THIS import resolves (response or the
-		// timeout below) — never on client-cancel. See pendingEntry.onResolve.
-		pe.onResolve = func() { entry.setImportInFlight(false) }
+	// Release the per-channel serial slot at TRUE resolution (plugin response, server
+	// inactivity timer, write error, or connection-drop drain) — NOT when sendOnce
+	// returns. resolveOnce fires this exactly once at whichever resolution site wins,
+	// so the slot is freed exactly once (a double <-sem would steal the next holder's
+	// token). Crucially it does NOT fire on a client ctx-cancel — that branch returns
+	// without resolving — so a cancelled-but-still-running request keeps the slot until
+	// the plugin actually finishes, and the next request cannot overlap the busy
+	// single-threaded plugin. For imports, clear the import-jam marker at the same instant.
+	pe.onResolve = func() {
+		if isImport {
+			entry.setImportInFlight(false)
+		}
+		<-entry.sem
 	}
 
 	// Resolve the per-request inactivity ceiling (server-managed by op type).
@@ -699,11 +713,14 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 		resp.QueueDepth = int(queueDepth)
 		return resp, nil
 	case <-ctx.Done():
-		pe.timer.Stop()
-		b.mu.Lock()
-		delete(b.pending, requestID)
-		b.mu.Unlock()
-		bridgeLogger.Printf("→ %s %s context cancelled: %v", requestID, requestType, ctx.Err())
+		// Plugin is single-threaded and STILL executing this request. Do NOT release the
+		// slot or tear down pe here: leave it registered with its timer running so the
+		// eventual plugin response (readLoop) or the server inactivity timer resolves it —
+		// that resolution releases the serial slot (and clears the import marker via
+		// onResolve). Releasing now would let the next request overlap the busy plugin
+		// thread (the slot-release edge case). The buffered ch (cap 1) means a late
+		// readLoop send never blocks; pe is GC'd once its resolution deletes it from pending.
+		bridgeLogger.Printf("→ %s %s context cancelled (slot held until plugin resolves): %v", requestID, requestType, ctx.Err())
 		return BridgeResponse{}, ctx.Err()
 	}
 }
