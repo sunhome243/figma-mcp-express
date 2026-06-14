@@ -9,7 +9,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** a call sits "in progress" a long time while `save_screenshots` / `list_channels` still respond.
 **Cause:** malformed/truncated/node-id keys now fail fast in the Go server, but valid-looking unpublished, wrong-library, or permission-blocked keys can still reach the Plugin API and wait for its import timeout; calls queued behind it wait, then the queue drains on its own. NOT a permanent jam — the queue + timeout clear it.
-**Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; pass `assetType:"COMPONENT_SET"` for set keys or fetch the catalog first so the server injects it. Don't loop-retry — each try queues another timeout window. Calls behind it complete once it clears — no reopen needed unless the WebSocket actually dropped.
+**Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; pass `assetType:"COMPONENT_SET"` for set keys or fetch the catalog first so the server injects the component-set route hint. Don't loop-retry — each try queues another timeout window. Calls behind it complete once it clears — no reopen needed unless the WebSocket actually dropped.
 
 ---
 
@@ -17,7 +17,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** `import_component_by_key` returns "not found" for a seemingly-correct key.
 **Cause:** The key may be a COMPONENT_SET without a type hint, or the library may be unpublished/not available to the target file.
-**Fix:** `get_local_components(pageId)` or `fetch_library_catalog` → confirm the entry type. For sets, pass `assetType:"COMPONENT_SET"` or use a child variant's `key`; cached REST catalog results let the server inject `assetType` automatically.
+**Fix:** `get_local_components(pageId)` or `fetch_library_catalog` → confirm the entry type. For sets, pass `assetType:"COMPONENT_SET"` or use a child variant's `key`; cached REST catalog results let the server inject the component-set route hint automatically.
 
 ---
 
