@@ -117,6 +117,41 @@ func TestBatchCatalogMetaTools(t *testing.T) {
 	}
 }
 
+// search_batch_ops must match natural multi-word queries (AND over whitespace
+// tokens), not just one contiguous substring — so "create frame" finds create_frame
+// even though the op name uses an underscore. Regression for the usability finding.
+func TestSearchBatchOps_MultiWordQueryMatches(t *testing.T) {
+	s, _ := newTestServer(t)
+	cases := []struct{ query, wantOp string }{
+		{"create frame", "create_frame"},
+		{"auto layout", "set_auto_layout"},
+		{"delete node", "delete_nodes"},
+	}
+	for _, tc := range cases {
+		search := callToolResult(t, s, "search_batch_ops", map[string]any{"query": tc.query, "limit": float64(30)})
+		if search.IsError {
+			t.Fatalf("search %q errored: %s", tc.query, resultText(t, search))
+		}
+		var out struct {
+			Matches []struct {
+				Name string `json:"name"`
+			} `json:"matches"`
+		}
+		if err := json.Unmarshal([]byte(resultText(t, search)), &out); err != nil {
+			t.Fatalf("unmarshal %q: %v", tc.query, err)
+		}
+		found := false
+		for _, m := range out.Matches {
+			if m.Name == tc.wantOp {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("search %q did not find %q; got %#v", tc.query, tc.wantOp, out.Matches)
+		}
+	}
+}
+
 func TestBatchCatalogMetaToolsReturnStructuredContent(t *testing.T) {
 	s, _ := newTestServer(t)
 

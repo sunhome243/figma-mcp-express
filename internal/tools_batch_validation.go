@@ -107,6 +107,7 @@ func normalizeBatchNodeIDs(rawOps []interface{}) {
 			}
 			continue
 		}
+		hoistNodeIDsFromParams(op)
 		if nids, ok := op["nodeIds"].([]interface{}); ok {
 			for j, v := range nids {
 				if s, ok := v.(string); ok {
@@ -143,6 +144,30 @@ func isBatchNodeIDParam(name string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// hoistNodeIDsFromParams makes node-target ops forgiving of a common composition
+// mistake: get_batch_op_spec lists `nodeIds` under paramKeys (it is the op's input
+// schema), so callers composing straight from the spec nest the target in `params` —
+// but a batch op takes its mutate-target as the OP-LEVEL `nodeIds` field. When the
+// op-level field is absent/empty and a plural `nodeIds` was nested in params, hoist it.
+//
+// ONLY the plural `nodeIds` is hoisted: no op uses a plural `nodeIds` param as anything
+// other than its targets. The SINGULAR `nodeId` is deliberately left in params — read
+// /scan ops (scan_nodes_by_types, scan_text_nodes, get_design_context, …) legitimately
+// take `nodeId` as a subtree ROOT param, so hoisting it would break them.
+func hoistNodeIDsFromParams(op map[string]interface{}) {
+	if existing, ok := op["nodeIds"].([]interface{}); ok && len(existing) > 0 {
+		return // op-level target already provided — never override it
+	}
+	params, ok := op["params"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if pn, ok := params["nodeIds"]; ok {
+		op["nodeIds"] = pn
+		delete(params, "nodeIds")
 	}
 }
 

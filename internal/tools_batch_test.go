@@ -119,6 +119,65 @@ func TestRegisterBatchTools_ToolRegistered(t *testing.T) {
 
 // ── Schema / input validation (handler-level, before any bridge call) ─────────
 
+// Node-target ops are forgiving when the target is nested in params (a common
+// mistake because get_batch_op_spec lists nodeIds/nodeId under paramKeys): the
+// normalizer hoists it to the op-level nodeIds field. Regression for the usability
+// finding where a delete_nodes composed straight from its spec failed.
+func TestHoistNodeIDsFromParams(t *testing.T) {
+	// params.nodeIds (array) → op-level nodeIds; removed from params.
+	op := map[string]interface{}{
+		"type":   "delete_nodes",
+		"params": map[string]interface{}{"nodeIds": []interface{}{"1:2", "3:4"}},
+	}
+	normalizeBatchNodeIDs([]interface{}{op})
+	if got, ok := op["nodeIds"].([]interface{}); !ok || len(got) != 2 || got[0] != "1:2" || got[1] != "3:4" {
+		t.Fatalf("expected hoisted nodeIds [1:2 3:4], got %#v", op["nodeIds"])
+	}
+	if op["params"].(map[string]interface{})["nodeIds"] != nil {
+		t.Fatal("params.nodeIds should be removed after hoist")
+	}
+
+	// Singular `nodeId` is a legit ROOT param for read/scan ops — it must NOT be hoisted
+	// (hoisting it would strip the scan root and break the op).
+	op2 := map[string]interface{}{
+		"type":   "scan_nodes_by_types",
+		"params": map[string]interface{}{"nodeId": "5:6", "types": []interface{}{"FRAME"}},
+	}
+	normalizeBatchNodeIDs([]interface{}{op2})
+	if _, hoisted := op2["nodeIds"]; hoisted {
+		t.Fatalf("singular nodeId (scan root) must NOT be hoisted, got nodeIds=%#v", op2["nodeIds"])
+	}
+	if p := op2["params"].(map[string]interface{}); p["nodeId"] != "5:6" {
+		t.Fatalf("scan root nodeId must be preserved in params, got %#v", p)
+	}
+
+	// op-level nodeIds already set → top-level wins, params target untouched.
+	op3 := map[string]interface{}{
+		"type":    "delete_nodes",
+		"nodeIds": []interface{}{"7:8"},
+		"params":  map[string]interface{}{"nodeIds": []interface{}{"9:10"}},
+	}
+	normalizeBatchNodeIDs([]interface{}{op3})
+	if got := op3["nodeIds"].([]interface{}); len(got) != 1 || got[0] != "7:8" {
+		t.Fatalf("op-level nodeIds must win, got %#v", op3["nodeIds"])
+	}
+}
+
+// End-to-end: a delete_nodes composed with the target in params (as get_batch_op_spec
+// suggests) now validates, because the hoist runs on the validateOnly path too.
+func TestRegisterBatchTools_HoistsParamsNodeIDsValidateOnly(t *testing.T) {
+	s, _ := newTestServer(t)
+	res := callToolResult(t, s, "batch", map[string]any{
+		"validateOnly": true,
+		"ops": []any{
+			map[string]any{"type": "delete_nodes", "params": map[string]any{"nodeIds": []any{"1:2"}}},
+		},
+	})
+	if res.IsError {
+		t.Fatalf("validateOnly with params.nodeIds should pass after hoist, got: %s", resultText(t, res))
+	}
+}
+
 func TestRegisterBatchTools_OpsRequired(t *testing.T) {
 	s, _ := newTestServer(t)
 
