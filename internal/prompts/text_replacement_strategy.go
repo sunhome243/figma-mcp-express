@@ -42,18 +42,20 @@ get_node(nodeId: "node-id")  // optional for extra context
 - Create a safe copy of the node before bulk replacements
 - Replace text chunk by chunk with continuous progress updates
 - After each chunk is processed:
-  * Export that section with get_screenshot for visual verification
+  * Export that section with save_screenshots for visual verification
   * Verify text fits properly and maintains design integrity
   * Fix issues before proceeding to the next chunk
 
-// Clone the node to create a safe copy
-clone_node(nodeId: "selected-node-id", x: newX, y: newY)
+// Clone the node to create a safe copy through a validated batch op
+batch(validateOnly: true, ops: [{type: "clone_node", nodeIds: ["selected-node-id"], params: {x: newX, y: newY}}])
+batch(ops: [{type: "clone_node", nodeIds: ["selected-node-id"], params: {x: newX, y: newY}}])
 
-// Replace text one node at a time or in batches
-set_text(nodeId: "node-id", text: "New text")
+// Replace text through a validated batch op
+batch(validateOnly: true, ops: [{type: "set_text", nodeIds: ["node-id"], params: {text: "New text"}}])
+batch(ops: [{type: "set_text", nodeIds: ["node-id"], params: {text: "New text"}}])
 
 // Verify chunk with targeted image export
-get_screenshot(nodeIds: ["chunk-node-id"], format: "PNG", scale: 0.5)
+save_screenshots(items: [{nodeId: "chunk-node-id", outputPath: "/tmp/text-chunk.png"}], format: "PNG", scale: 0.5)
 
 ## 4. Intelligent Handling for Table Data
 - For tabular content:

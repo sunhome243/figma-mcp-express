@@ -9,15 +9,13 @@ Structural and semantic patterns for the most common UI regions. Use these as th
 - Use **text style references** from the design library — never set font/size/weight manually.
 - `textAutoResize = "HEIGHT"` for all body copy, descriptions, and multi-line labels. `"NONE"` is almost always wrong — it clips text silently.
 - `textAutoResize = "WIDTH_AND_HEIGHT"` for single-line display text that should shrink the frame to its content.
-- **`loadFontAsync()` before any text mutation.** Load all expected font families and styles at the top of the script — before creating any text node. Missing this causes silent failures or crashes mid-script.
+- **Declare font intent before text mutation.** Use `create_text` / `set_text` params for `fontFamily`, `fontStyle`, and `fontSize` so the server can load fonts before applying text changes. Missing font intent causes fallback fonts or failed text styling.
 
 ```
-// Load all fonts used in the script before any text work
-await Promise.all([
-  figma.loadFontAsync({ family: "YourFont", style: "Regular" }),
-  figma.loadFontAsync({ family: "YourFont", style: "Medium" }),
-  figma.loadFontAsync({ family: "YourFont", style: "SemiBold" }),
-])
+Batch text pattern:
+  op 0: create_text with text, fontFamily, fontStyle, fontSize, textAutoResize
+  op 1: set_text for later content/style changes
+  op 2: get_node to verify style fields and textAutoResize
 ```
 
 ---
@@ -151,10 +149,10 @@ Do not build a modal from a Frame + drop shadow + raw button. Use the library's 
 
 ## Color and fills (all patterns)
 
-- All fills use design variable tokens: `setBoundVariableForPaint("fills", colorToken)`.
-- Dark/light mode: one call on the top-level wrapper sets `setExplicitVariableModeForCollection(collectionId, modeId)`. Variable tokens cascade to every child automatically. Never manually rebind children for dark mode.
+- All fills use design variable tokens through `set_fills` with `variableId` or `bind_variable_to_node`.
+- Dark/light mode: set variable mode on the top-level wrapper. Variable tokens cascade to every child automatically. Never manually rebind children for dark mode.
 - Effects (shadows, blurs): use effect style references from the library — never set raw `boxShadow` values.
-- Stroke: bind `strokeWeight` to the library's border-width token; bind stroke color via `setBoundVariableForPaint("strokes", borderToken)`.
+- Stroke: bind stroke width and stroke color to library tokens through the matching catalog-backed batch ops.
 
 ---
 

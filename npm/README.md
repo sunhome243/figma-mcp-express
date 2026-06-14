@@ -22,7 +22,7 @@ If you are building design migration, audit, or handoff agents, give it a try.
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Fast**        | Build with fewer LLM ↔ plugin round-trips by batching dependent operations into one call.                                                                  |
 | **Quota-free**  | Plugin-side work is not capped by Figma's official MCP server limits, such as 6 calls/month for View/Collab seats or 200-600 calls/day for Dev/Full seats. |
-| **Agent-ready** | Multiple agents can share a compact default tool surface safely through channel routing, reconnects, read dedup, and a hardened request queue.             |
+| **Agent-ready** | Multiple agents can share a session safely through channel routing, reconnects, read dedup, and a hardened request queue.                                  |
 
 ### Why this fork exists
 
@@ -135,6 +135,14 @@ large payloads ─▶ .figma-mcp-cache/       library catalog ─▶ Figma REST 
 ```
 
 ---
+
+## Limitations
+
+- RAM usage can be high on very large files, especially when reads spill large payloads to disk and multiple agents are active at once.
+- Some runs may still feel slow because the Figma plugin itself is single-threaded. This fork reduces the bottleneck, but it does not remove the underlying Figma execution model.
+- Most live workflows require the target file to be open in Figma Desktop with the plugin running. This includes reading nodes, editing frames, applying styles or variables, importing components into the file, and multi-file channel-based work.
+- The plugin cannot operate on unopened files.
+- Catalog-only workflows are the main exception, but they still need a `FIGMA_TOKEN` because published library discovery uses the REST path when the plugin cannot run in that file.
 
 ---
 
@@ -283,43 +291,37 @@ Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MI
 
 ## Known limitations
 
-### Figma Desktop required for live operations
-
-Most tools require the target file open in Figma Desktop with the plugin running. The plugin cannot operate on unopened files. `fetch_library_catalog` is the main exception — it uses the REST API and only needs a `FIGMA_TOKEN`.
-
-### Single-threaded plugin execution
-
-The Figma plugin runs on a single thread. This server adds a per-channel queue, cooperative yield, and singleflight deduplication to reduce contention, but back-to-back operations on the same file still serialize.
-
-### Memory on large files
-
-Reads that exceed the inline response limit spill to disk. On very large files with many concurrent agents, this can drive up RAM. Scope reads narrowly (`nodeId` + `types` + `limit`) to keep payloads small.
-
 ### Community UI kits are not importable by key unless published as a library
 
-Community kits are published to Community (viewable/duplicatable), but their components are **not** published as a library (importable via `import_component_by_key`). This is a Figma platform constraint.
+If a community kit has only been published to Community, its components are still **unpublished local components**. This is a Figma platform constraint, not a server bug.
 
-| "Published"                | What it means                                          | Community kits |
-| -------------------------- | ------------------------------------------------------ | -------------- |
-| Published **to Community** | File is shared; anyone can view or duplicate it        | ✅             |
-| Published **as a library** | Components are importable via `import_component_by_key` | ❌             |
+Figma has two _unrelated_ meanings of "published" — community kits satisfy only the first:
 
-Note: REST `components: 0` / `404` is not the arbiter. A kit published as a library after the fact will import fine even while REST still returns 404. The live `import_component_by_key` probe is the real test.
+| "Published"                | Means                                                         | Community kits |
+| -------------------------- | ------------------------------------------------------------- | -------------- |
+| Published **to Community** | the _file_ is shared so anyone can view / duplicate it        | ✅ yes         |
+| Published **as a library** | the _components_ are importable via `import_component_by_key` | ❌ no          |
 
-When a kit is not published as a library:
+So even the kit's _own_ file cannot import its components by key, and the Plugin API has **no cross-file copy** — this server bridges several open files and moves _data_ between them, but it cannot fabricate a cross-document component _link_. (REST `components: 0` / `404` is **not** the arbiter, either — a kit published as a library after the fact imports fine even while REST still 404s. The live `import_component_by_key` probe decides.)
+
+In that state:
 
 - `import_component_by_key` fails with `Cannot import component ... since it is unpublished`
 - `fetch_library_catalog` may return `components: 0`
-- Cross-file linked instances are not possible; only detached copies
+- cross-file linked instances are not possible; only detached copies
 
 > **Workaround**
 >
-> **Option A — publish the duplicated kit as a library** _(linked instances)_
-> 1. Duplicate the kit into your drafts or team workspace.
-> 2. Open the duplicate and publish it from the **Assets** panel.
-> 3. Re-run `import_component_by_key` → `create_instance` in the target file.
+> **Option A — publish the duplicated kit as a library**
 >
-> **Option B — paste without publishing** _(detached copies)_
-> 1. Open both the kit file and the target file in Figma Desktop.
-> 2. Copy the needed components from the kit and paste them into the target file.
-> 3. Use those local copies for future instances — no link back to the kit.
+> 1. Duplicate the community kit into your drafts or team workspace.
+> 2. Open that duplicate in Figma and publish it from the **Assets** panel.
+> 3. Re-run `import_component_by_key` and then `create_instance` in the target file.
+> 4. This gives you real linked instances with normal variant behavior.
+>
+> **Option B — no publish**
+>
+> 1. Open both the kit file and the target file.
+> 2. Copy the needed components from the kit and paste them into the target file once.
+> 3. Use those pasted local components for future instances in the target file.
+> 4. This works, but the instances are detached local copies, not links back to the kit.
