@@ -333,7 +333,7 @@ func registerBatchCatalogTools(s *server.MCPServer) {
 		matches := []batchOpSearchMatch{}
 		for _, spec := range allBatchOpSpecs() {
 			haystack := strings.ToLower(spec.Name + " " + spec.Description + " " + strings.Join(spec.ParamKeys, " ") + " " + catalogSchemaSearchText(spec.InputSchema))
-			if query != "" && !strings.Contains(haystack, strings.ToLower(query)) {
+			if query != "" && !matchesBatchOpQuery(haystack, query) {
 				continue
 			}
 			if category != "" && spec.Category != category {
@@ -474,6 +474,21 @@ func cloneCatalogValue(v any) any {
 	default:
 		return x
 	}
+}
+
+// matchesBatchOpQuery reports whether every whitespace-separated token in query
+// appears as a substring of the (already-lowercased) haystack — AND semantics.
+// A single contiguous substring is no longer required, so natural multi-word
+// queries like "create frame", "auto layout", or "delete node" match ops named
+// create_frame / set_auto_layout / delete_nodes (whose names use underscores). A
+// whitespace-only query matches everything (no tokens → vacuously true).
+func matchesBatchOpQuery(haystack, query string) bool {
+	for _, tok := range strings.Fields(strings.ToLower(query)) {
+		if !strings.Contains(haystack, tok) {
+			return false
+		}
+	}
+	return true
 }
 
 func catalogSchemaSearchText(v any) string {

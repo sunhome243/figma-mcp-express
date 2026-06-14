@@ -7,6 +7,10 @@ Load this before composing any `batch` call. Part 1 = ready-to-use recipes (incl
 ## Part 1 — Canonical recipes
 
 > Every `type` used in the recipes below (`create_frame`, `set_fills`, `set_auto_layout`, `import_component_by_key`, …) is a **`batch` op type**, NOT a top-level tool in the default `core` profile. They are only callable inside a `batch(ops:[…])` call. Ref syntax is `$N.field` (dot-path, e.g. `$0.nodes.0.id`); the wildcard projection is `$N.field[*].id`. There is no top-level `create_frame`/`set_fills` to call directly in `core`.
+>
+> **Node target = the op-level `nodeIds` field**, not a param: write `{ "type": "delete_nodes", "nodeIds": ["$0.id"] }`, not `{ …, "params": { "nodeIds": […] } }` — even though `get_batch_op_spec` lists `nodeIds` under `paramKeys` (a plural `params.nodeIds` is auto-hoisted, but op-level is canonical). The singular `nodeId` IS a real param for read/scan ops (`scan_nodes_by_types`, `get_design_context`) — there it's the subtree root, kept in `params`.
+>
+> `search_batch_ops` matches **all whitespace-separated tokens** (AND), so `"create frame"` / `"auto layout"` find `create_frame` / `set_auto_layout` — no need to guess the exact underscore name.
 
 ---
 
