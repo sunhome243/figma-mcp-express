@@ -42,10 +42,10 @@ Use a separate component when structure or semantic role changes: collapsed vs e
 
 ## Never Clone By Appearance
 
-Do not use a detached visual clone to fake a library component. Use batch ops:
+Do not use a detached visual clone to fake a library component. Use these **`batch` op types** (chained in one `batch(ops:[…])` call via `$N.id` refs — they are not top-level tools in `core`):
 
 1. `import_component_by_key` with a concrete variant component key.
-2. `create_instance` with the imported component id.
+2. `create_instance` with the imported component id (`$0.id`).
 3. `set_instance_properties` to select the intended variant/state/content.
 4. `resize_nodes` if the instance requires a specific size.
 

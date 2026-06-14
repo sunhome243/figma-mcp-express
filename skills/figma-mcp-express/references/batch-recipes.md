@@ -6,6 +6,8 @@ Load this before composing any `batch` call. Part 1 = ready-to-use recipes (incl
 
 ## Part 1 — Canonical recipes
 
+> Every `type` used in the recipes below (`create_frame`, `set_fills`, `set_auto_layout`, `import_component_by_key`, …) is a **`batch` op type**, NOT a top-level tool in the default `core` profile. They are only callable inside a `batch(ops:[…])` call. Ref syntax is `$N.field` (dot-path, e.g. `$0.nodes.0.id`); the wildcard projection is `$N.field[*].id`. There is no top-level `create_frame`/`set_fills` to call directly in `core`.
+
 ---
 
 ### Recipe 1: Create frame → bind token fills → set auto layout → verify

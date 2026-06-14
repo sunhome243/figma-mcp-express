@@ -9,7 +9,7 @@ Structural and semantic patterns for the most common UI regions. Use these as th
 - Use **text style references** from the design library — never set font/size/weight manually.
 - `textAutoResize = "HEIGHT"` for all body copy, descriptions, and multi-line labels. `"NONE"` is almost always wrong — it clips text silently.
 - `textAutoResize = "WIDTH_AND_HEIGHT"` for single-line display text that should shrink the frame to its content.
-- **Declare font intent before text mutation.** Use `create_text` / `set_text` params for `fontFamily`, `fontStyle`, and `fontSize` so the server can load fonts before applying text changes. Missing font intent causes fallback fonts or failed text styling.
+- **Declare font intent before text mutation.** Use the `create_text` / `set_text` **batch op** params for `fontFamily`, `fontStyle`, and `fontSize` so the server can load fonts before applying text changes. Missing font intent causes fallback fonts or failed text styling.
 
 ```
 Batch text pattern:
@@ -149,7 +149,7 @@ Do not build a modal from a Frame + drop shadow + raw button. Use the library's 
 
 ## Color and fills (all patterns)
 
-- All fills use design variable tokens through `set_fills` with `variableId` or `bind_variable_to_node`.
+- All fills use design variable tokens through the `set_fills` (with `variableId`) or `bind_variable_to_node` **batch op types**.
 - Dark/light mode: set variable mode on the top-level wrapper. Variable tokens cascade to every child automatically. Never manually rebind children for dark mode.
 - Effects (shadows, blurs): use effect style references from the library — never set raw `boxShadow` values.
 - Stroke: bind stroke width and stroke color to library tokens through the matching catalog-backed batch ops.

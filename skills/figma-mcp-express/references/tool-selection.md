@@ -25,6 +25,8 @@ Avoid page-level deep reads. If a result spills to `.figma-mcp-cache/`, query th
 3. Use `batch(validateOnly:true)` before generated or unfamiliar mutations.
 4. Execute the same plan with `batch` only after validation passes.
 
+In the default `core` profile, **ALL writes go through `batch`** — there are no top-level write tools (`create_frame`, `set_fills`, `import_component_by_key`, … are batch op types). When unsure whether a capability exists, `search_batch_ops` FIRST rather than guessing a top-level tool name. (Reads in the decision tree above stay top-level.)
+
 Do not mirror operation schemas in this file. `BatchOpCatalog` is the source of truth.
 
 ## Validate After Write

@@ -11,6 +11,18 @@ This file documents the broader compatibility/catalog vocabulary. Tools marked
 tool has new params or behavior. Set `FIGMA_MCP_TOOL_PROFILE=full` to expose
 the legacy top-level compatibility surface for debugging or older clients.
 
+**The core 21 top-level tools** (everything else below is a `batch` op type or
+full-profile-only — NOT directly callable in `core`): `batch`, `search_batch_ops`,
+`get_batch_op_spec`, `get_metadata`, `get_node`, `get_nodes_info`, `get_pages`,
+`get_selection`, `get_design_context`, `get_styles`, `get_variable_defs`,
+`scan_nodes_by_types`, `scan_text_nodes`, `search_nodes`, `get_local_components`,
+`list_channels`, `list_library_variable_collections`, `fetch_library_catalog`,
+`export_tokens`, `export_frames_to_pdf`, `save_screenshots`. Every `## Write —*`
+section and the `import_*` library ops are batch op types in `core`; the legacy
+reads under `## Read — Document` not named above (`get_document`, `get_reactions`,
+`get_viewport`, `get_fonts`, `get_annotations`, `get_screenshot`) are
+full-profile-only — use `get_metadata` / `get_node` / `save_screenshots` in `core`.
+
 Plugin-facing top-level tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. For `batch`, pass `channel` on the outer `batch` call only; per-op `params.channel` is rejected because op contracts come from `BatchOpCatalog`. Node IDs are always in colon format, e.g. `4029:12345`, never hyphens.
 
 ---
@@ -243,6 +255,8 @@ Export screenshots for multiple nodes and write them to the local filesystem. Re
 
 ## Write — Create
 
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+
 ### create_frame
 
 Create a new frame on the current page or inside a parent node. Optional layout-sizing params (FILL/HUG) size the frame within an auto-layout parent.
@@ -420,6 +434,8 @@ Clone an existing node, optionally repositioning it or placing it in a new paren
 
 ## Write — Modify
 
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+
 ### rename_node [BATCH OP]
 
 > **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
@@ -555,6 +571,8 @@ Combine two or more vector nodes using a boolean operation, producing a new merg
 
 ## Write — Components [NEW/ENHANCED]
 
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+
 ### swap_component
 
 Swap the main component of an existing INSTANCE node, replacing it with a different component while keeping position and size. Uses Figma's override-preserving `swapComponent()` (not `mainComponent=`), so text and variant overrides survive the swap.
@@ -599,6 +617,8 @@ Import a component (or component set) from a subscribed library by its key, maki
 ---
 
 ## Write — Styles
+
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
 
 ### apply_style_to_node
 
@@ -877,6 +897,8 @@ Import a paint, text, or effect style from a subscribed library by its key, maki
 
 ## Write — Variables
 
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+
 ### create_variable_collection
 
 Create a new local variable collection with an optional initial mode name. Note: Figma free plan limits each collection to 1 mode. For multi-mode theming on the free plan, use the name-prefix workaround: prefix each variable name with its mode e.g. `light/color-bg` and `dark/color-bg`.
@@ -993,6 +1015,8 @@ Get all variables in a subscribed library collection by its key. Returns name, r
 
 ## Write — Prototype
 
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+
 ### set_reactions
 
 Set prototype reactions on a node. Use `mode="replace"` (default) to overwrite all reactions, or `"append"` to add to existing ones.
@@ -1035,6 +1059,8 @@ Find and replace text content across all TEXT nodes in a subtree. Searches the e
 ---
 
 ## Write — Page
+
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
 
 ### navigate_to_page
 
@@ -1082,6 +1108,8 @@ Delete a page from the Figma document. Cannot delete the only remaining page.
 ---
 
 ## Library [NEW]
+
+> **Core profile:** `fetch_library_catalog` and `list_library_variable_collections` are **core top-level tools**. The `import_*` ops below (`import_component_by_key`, `import_style_by_key`, `import_variable_by_key`, `import_image`) are **`batch` op types** in `core` — invoke via `batch(ops:[…])`, or set `FIGMA_MCP_TOOL_PROFILE=full` for the legacy top-level surface.
 
 ### fetch_library_catalog
 

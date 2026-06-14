@@ -5,6 +5,12 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 ---
 
+## Write tool "not found" / "unknown tool" as a top-level call
+
+**Symptom:** Calling `create_frame`, `set_fills`, `set_auto_layout`, `import_component_by_key`, `create_instance`, etc. as a top-level MCP tool returns "method/tool not found".
+**Cause:** The default `core` profile does NOT expose low-level write primitives as top-level tools — they are `batch` op TYPES. (Pre-2.0.0 habit / training-data assumes they're top-level.)
+**Fix:** Invoke them inside `batch(ops:[{ "type": "create_frame", "params": {…} }])`. Discover the exact op + params via `search_batch_ops` → `get_batch_op_spec`, validate with `batch(validateOnly:true)`. Only if a legacy client genuinely needs the old top-level surface, set `FIGMA_MCP_TOOL_PROFILE=full`.
+
 ## Slow import delays the queue (bounded, self-clears — not a jam)
 
 **Symptom:** a call sits "in progress" a long time while `save_screenshots` / `list_channels` still respond.

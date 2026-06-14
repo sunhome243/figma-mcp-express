@@ -15,8 +15,8 @@ Use the compact core surface first. In default `core` profile, low-level write p
 
 ## Tool Surface
 
-- `core` profile exposes read/high-value tools plus `batch`, `search_batch_ops`, and `get_batch_op_spec`.
-- `full` profile is compatibility/debug mode for the legacy top-level surface.
+- `core` (default) profile exposes read/high-value tools plus `batch`, `search_batch_ops`, and `get_batch_op_spec`. Low-level write primitives (`create_frame`, `set_fills`, `import_component_by_key`, …) are NOT top-level tools here — they are `batch` op types.
+- `full` profile is compatibility/debug mode for the legacy top-level surface. Set `FIGMA_MCP_TOOL_PROFILE=full` to restore the legacy top-level write tools; set `FIGMA_MCP_TOOL_SCHEMA_MODE=verbose` to restore full in-schema guidance (default is compact).
 - For unfamiliar writes: `search_batch_ops` -> `get_batch_op_spec` -> `batch(validateOnly:true)` -> `batch`.
 - Do not write raw Plugin API JS, `use_figma`-style scripts, `eval`, or code strings. Use declarative `FigmaPlan` batch ops only.
 
