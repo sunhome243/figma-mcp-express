@@ -287,8 +287,8 @@ func TestNpmPackageDescriptionMatchesCoreProfilePositioning(t *testing.T) {
 func TestPublishedManifestVersionsStayInSync(t *testing.T) {
 	paths := []string{
 		filepath.Join("..", "npm", "package.json"),
+		filepath.Join("..", ".claude-plugin", "plugin.json"),
 		filepath.Join("..", ".codex-plugin", "plugin.json"),
-		filepath.Join("..", ".Codex-plugin", "plugin.json"),
 	}
 	versions := map[string]string{}
 	for _, path := range paths {
