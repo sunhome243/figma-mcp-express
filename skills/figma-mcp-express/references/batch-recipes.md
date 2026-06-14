@@ -30,7 +30,7 @@ Stop policy: `$N` refs present → stops at first error. Trailing `get_node` is 
 ```json
 {
   "ops": [
-    { "type": "import_component_by_key",  "params": { "key": "<variant-key>" } },
+    { "type": "import_component_by_key",  "params": { "key": "<component-set-key>", "assetType": "COMPONENT_SET" } },
     { "type": "create_instance",          "params": { "componentId": "$0.id", "parentId": "<wrapper-id>" } },
     { "type": "set_instance_properties",  "nodeIds": ["$1.id"], "params": { "properties": { "Variant": "Primary", "State": "Default" } } },
     { "type": "set_variable_mode",        "nodeIds": ["$1.id"], "params": { "collectionId": "<col-id>", "modeId": "<dark-mode-id>" } }
@@ -38,7 +38,7 @@ Stop policy: `$N` refs present → stops at first error. Trailing `get_node` is 
 }
 ```
 
-`create_instance` *requires* `componentId` — thread the imported component's `$0.id` into it. (`componentKey` is an optional fallback the handler auto-imports only when `componentId` doesn't resolve; with the import op present, use the returned id directly.) Stop policy: every op refs `$N` → stops at first error, so if import fails there's no create attempt.
+Use `assetType:"COMPONENT_SET"` only for component-set keys; omit it for concrete component/variant keys. `create_instance` *requires* `componentId` — thread the imported component's `$0.id` into it. (`componentKey` is an optional fallback the handler auto-imports only when `componentId` doesn't resolve; with the import op present, use the returned id directly.) Stop policy: every op refs `$N` → stops at first error, so if import fails there's no create attempt.
 
 ---
 
@@ -174,7 +174,7 @@ Use `map` when you need **different param values for each node** (e.g. set each 
 ```json
 {
   "ops": [
-    { "type": "import_component_by_key", "params": { "key": "<key>" } },
+    { "type": "import_component_by_key", "params": { "key": "<component-set-key>", "assetType": "COMPONENT_SET" } },
     { "type": "create_instance",  "params": { "componentId": "$0.id", "parentId": "<page-root-id>" } },
     { "type": "get_node",         "nodeIds": ["$1.id"], "params": { "depth": 6 } },
     { "type": "save_screenshots", "nodeIds": ["$1.id"], "params": { "outputPath": ".figma-mcp-cache/probe-<name>.png" } },
@@ -184,6 +184,7 @@ Use `map` when you need **different param values for each node** (e.g. set each 
 ```
 
 Use before building N instances of any unfamiliar component. `get_node(depth:6)` reveals text node IDs, actual rendered heights, and property names for `set_instance_properties`.
+For concrete component/variant keys, omit `assetType`; for component-set keys, pass `assetType:"COMPONENT_SET"` or fetch the library catalog first so the server can inject the route hint.
 
 ---
 
@@ -220,6 +221,7 @@ Do not copy op-specific schemas into skills, prompts, or hooks. `BatchOpCatalog`
 - unknown op fields (`type`, `nodeIds`, `params`; for `map`: `type`, `over`, `as`, `do`)
 - `nodeIds` not an array of strings; `params` not an object
 - unknown params; stale aliases such as `characters` for `create_text`/`set_text` (use `text`)
+- invalid component import `assetType` (allowed: `COMPONENT`, `COMPONENT_SET`)
 - script-like keys anywhere: `script`, `code`, `js`, `eval`, `function`
 - self/forward refs (`$N` must point to an earlier op), malformed refs, more than one `[*]`
 - invalid `map.over`, `map.as`, or `map.do`; `map.do` is validated like any other catalog op

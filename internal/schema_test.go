@@ -1452,6 +1452,15 @@ func TestValidateRPC_ImportByKey(t *testing.T) {
 			t.Errorf("%s: uppercase/non-lowercase key should mention 40-char hex, got: %s", tool, msg)
 		}
 	}
+	if msg := ValidateRPC("import_component_by_key", nil, map[string]interface{}{"key": validPublishedKey, "assetType": "COMPONENT"}); msg != "" {
+		t.Errorf("import_component_by_key: unexpected error for valid COMPONENT assetType: %s", msg)
+	}
+	if msg := ValidateRPC("import_component_by_key", nil, map[string]interface{}{"key": validPublishedKey, "assetType": "COMPONENT_SET"}); msg != "" {
+		t.Errorf("import_component_by_key: unexpected error for valid COMPONENT_SET assetType: %s", msg)
+	}
+	if msg := ValidateRPC("import_component_by_key", nil, map[string]interface{}{"key": validPublishedKey, "assetType": "STYLE"}); !containsCI(msg, "assetType") {
+		t.Errorf("import_component_by_key: invalid assetType should be rejected, got: %s", msg)
+	}
 
 	if msg := ValidateRPC("import_variable_by_key", nil, map[string]interface{}{"key": "VariableID:123:456"}); msg != "" {
 		t.Errorf("import_variable_by_key: unexpected error for VariableID key: %s", msg)
