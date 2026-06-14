@@ -713,6 +713,11 @@ func TestRegisterBatchTools_ValidateOnlyRejectsBadImportKeysBeforeBridge(t *test
 			op:   map[string]any{"type": "import_component_by_key", "params": map[string]any{"key": strings.Repeat("z", 40)}},
 			want: "malformed component key",
 		},
+		{
+			name: "component bad assetType",
+			op:   map[string]any{"type": "import_component_by_key", "params": map[string]any{"key": strings.Repeat("a", 40), "assetType": "STYLE"}},
+			want: "assetType",
+		},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -734,6 +739,33 @@ func TestRegisterBatchTools_ValidateOnlyRejectsBadImportKeysBeforeBridge(t *test
 	}
 }
 
+func TestRegisterBatchTools_ValidateOnlyAllowsSchemaRefs(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"validateOnly": true,
+		"ops": []any{
+			map[string]any{"type": "get_node", "nodeIds": []any{"1:1"}, "params": map[string]any{"depth": float64(1)}},
+			map[string]any{
+				"type":    "resize_nodes",
+				"nodeIds": []any{"$0.id"},
+				"params": map[string]any{
+					"width":  "$0.bounds.width",
+					"height": "$0.bounds.height",
+				},
+			},
+		},
+	})
+	if res.IsError {
+		t.Fatalf("schema validation should allow runtime refs for typed params, got %s", resultText(t, res))
+	}
+	if captured.Tool != "" {
+		t.Fatalf("validateOnly should not call bridge, captured tool %q", captured.Tool)
+	}
+}
+
 func TestRegisterBatchTools_ValidateOnlyAllowsRefImportKeys(t *testing.T) {
 	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
 		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
@@ -748,6 +780,36 @@ func TestRegisterBatchTools_ValidateOnlyAllowsRefImportKeys(t *testing.T) {
 	})
 	if res.IsError {
 		t.Fatalf("ref import key should validate before runtime resolution, got %s", resultText(t, res))
+	}
+	if captured.Tool != "" {
+		t.Fatalf("validateOnly should not call bridge, captured tool %q", captured.Tool)
+	}
+}
+
+func TestRegisterBatchTools_ValidateOnlyAllowsNamedRefImportKeysInsideMap(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"validateOnly": true,
+		"ops": []any{
+			map[string]any{
+				"type": "map",
+				"over": []any{
+					map[string]any{"key": strings.Repeat("a", 40), "assetType": "COMPONENT"},
+					map[string]any{"key": strings.Repeat("b", 40), "assetType": "COMPONENT_SET"},
+				},
+				"as": "asset",
+				"do": map[string]any{
+					"type":   "import_component_by_key",
+					"params": map[string]any{"key": "$asset.key", "assetType": "$asset.assetType"},
+				},
+			},
+		},
+	})
+	if res.IsError {
+		t.Fatalf("named binding import refs should validate before runtime resolution, got %s", resultText(t, res))
 	}
 	if captured.Tool != "" {
 		t.Fatalf("validateOnly should not call bridge, captured tool %q", captured.Tool)
@@ -787,6 +849,53 @@ func TestRegisterBatchTools_InjectsCatalogAssetTypeInsideBatch(t *testing.T) {
 	}
 	if params["assetType"] != "COMPONENT_SET" {
 		t.Fatalf("assetType = %v, want COMPONENT_SET", params["assetType"])
+	}
+}
+
+func TestRegisterBatchTools_InjectsCatalogAssetTypeInsideMapDo(t *testing.T) {
+	resetLibraryCatalogIndexForTest()
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+	key := strings.Repeat("e", 40)
+	rememberLibraryCatalogKeys(map[string]any{
+		key: map[string]any{"type": "COMPONENT_SET", "name": "Card"},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"ops": []any{map[string]any{
+			"type": "map",
+			"over": []any{
+				map[string]any{"id": "1:1"},
+				map[string]any{"id": "1:2"},
+			},
+			"do": map[string]any{
+				"type":   "import_component_by_key",
+				"params": map[string]any{"key": key},
+			},
+		}},
+	})
+	if res.IsError {
+		t.Fatalf("valid nested batch import unexpectedly failed: %s", resultText(t, res))
+	}
+	forwardedOps, ok := captured.Params["ops"].([]any)
+	if !ok || len(forwardedOps) != 1 {
+		t.Fatalf("forwarded params.ops = %#v", captured.Params["ops"])
+	}
+	op0, ok := forwardedOps[0].(map[string]any)
+	if !ok {
+		t.Fatalf("forwarded op[0] = %#v", forwardedOps[0])
+	}
+	do, ok := op0["do"].(map[string]any)
+	if !ok {
+		t.Fatalf("forwarded map.do = %#v", op0["do"])
+	}
+	params, ok := do["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("forwarded map.do.params = %#v", do["params"])
+	}
+	if params["assetType"] != "COMPONENT_SET" {
+		t.Fatalf("nested assetType = %v, want COMPONENT_SET", params["assetType"])
 	}
 }
 

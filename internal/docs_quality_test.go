@@ -242,6 +242,25 @@ func TestPublicReadmesDocumentToolProfileAndSchemaMode(t *testing.T) {
 	}
 }
 
+func TestToolsDocDocumentsCoreSurfaceContract(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "TOOLS.md"))
+	for _, required := range []string{
+		"FIGMA_MCP_TOOL_PROFILE=core",
+		"compact 21-tool MCP surface",
+		"batch",
+		"FigmaPlan",
+		"search_batch_ops",
+		"get_batch_op_spec",
+		"batch(validateOnly:true)",
+		"FIGMA_MCP_TOOL_PROFILE=full",
+		"legacy top-level compatibility surface",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("TOOLS.md must document production tool-surface contract; missing %q", required)
+		}
+	}
+}
+
 func TestNpmPackageDescriptionMatchesCoreProfilePositioning(t *testing.T) {
 	for _, path := range []string{
 		filepath.Join("..", "npm", "package.json"),
