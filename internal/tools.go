@@ -27,9 +27,13 @@ func RegisterTools(s *server.MCPServer, node *Node) {
 	registerLibraryTools(s, node)
 	registerChannelTools(s, node)
 	registerBatchTools(s, node)
+	registerBatchCatalogTools(s)
 	// Snapshot every tool's declared param keys so the schema-derived unknown-param
 	// allowlist (registeredParamKeys) is available to ValidateRPC + the batch loop.
 	recordToolParamKeys(s)
+	syncBatchCatalogFromRegisteredTools(s)
+	compactToolSchemas(s)
+	applyToolProfile(s)
 }
 
 // registerChannelTools registers tools for inspecting connected plugin channels.
@@ -147,7 +151,9 @@ var createTextHints = map[string]string{
 // hand-maintained, so it can never drift from the real schema. Add an entry here
 // only to upgrade the message for a tool with a notorious Plugin-API-name confusion.
 var toolParamHints = map[string]map[string]string{
-	"create_text": createTextHints,
+	"create_text":       createTextHints,
+	"set_text":          createTextHints,
+	"set_corner_radius": {"radius": "cornerRadius"},
 }
 
 // registeredParamKeys maps each registered tool to the set of param keys its MCP
@@ -157,12 +163,13 @@ var toolParamHints = map[string]map[string]string{
 // (ValidateRPC, leader.go) AND each op inside a `batch` (which bypasses ValidateRPC).
 // The plugin silently ignores unrecognized params, so a Plugin-API-name typo
 // (characters, fills, padding) would otherwise produce an empty/default node with no
-// signal. Demoted batch-only ops are unregistered → absent here → not guarded (safe).
+// signal. Catalog-only batch ops are guarded by BatchOpCatalog schemas.
 var registeredParamKeys = map[string]map[string]bool{}
 
 // recordToolParamKeys snapshots every registered tool's declared param keys into
 // registeredParamKeys. Called once at the end of RegisterTools.
 func recordToolParamKeys(s *server.MCPServer) {
+	registeredParamKeys = map[string]map[string]bool{}
 	for name, st := range s.ListTools() {
 		if st == nil {
 			continue
@@ -176,8 +183,9 @@ func recordToolParamKeys(s *server.MCPServer) {
 }
 
 // rejectUnknownToolParams rejects any param key the tool's registered schema does not
-// declare. Returns "" for an unregistered tool (e.g. a demoted batch-only op) or when
-// the registry is empty (pure unit tests that skip RegisterTools) — a safe no-op.
+// declare. Returns "" for an unregistered tool (catalog-only batch ops use
+// rejectUnknownBatchOpParams) or when the registry is empty (pure unit tests that
+// skip RegisterTools) — a safe no-op.
 func rejectUnknownToolParams(tool string, params map[string]interface{}) string {
 	allowed, ok := registeredParamKeys[tool]
 	if !ok {

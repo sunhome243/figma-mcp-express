@@ -40,6 +40,8 @@ const NAMED_BINDING = /^\$([A-Za-z_]\w*)(?:\.([\w.]+))?$/;
 // names both the actual count and the cap so callers understand what happened.
 const MAP_ITER_CAP = 500;
 const REF = new RegExp(`^${REF_BODY}$`);
+const PUBLISHED_KEY = /^[0-9a-f]{40}$/;
+const BARE_NODE_ID = /^[0-9]+:[0-9]+$/;
 
 // A projection ref carries exactly one `[*]` wildcard segment:
 //   $N.<pre>[*]          → the elements of the array at <pre> (mapped as-is)
@@ -189,6 +191,157 @@ export function substituteBindings(value: any, bindings: Record<string, any>): a
   return value;
 }
 
+function validatePublishedImportKey(kind: "component" | "style", key: any): string | null {
+  if (typeof key !== "string" || key === "") return "key is required";
+  if (PUBLISHED_KEY.test(key)) return null;
+  if (BARE_NODE_ID.test(key)) {
+    return `that's a node id, not a published ${kind} key`;
+  }
+  if (key.length < 40) return `${kind} key looks truncated (got ${key.length} chars, expected 40)`;
+  return `malformed ${kind} key; expected 40-char hex`;
+}
+
+function validateVariableImportKey(key: any): string | null {
+  if (typeof key !== "string" || key === "") return "key is required";
+  if (BARE_NODE_ID.test(key)) {
+    return "that's a node id, not a published variable key";
+  }
+  return null;
+}
+
+function validateComponentAssetType(assetType: any): string | null {
+  if (assetType == null || assetType === "") return null;
+  if (assetType === "COMPONENT" || assetType === "COMPONENT_SET") return null;
+  return "assetType must be COMPONENT or COMPONENT_SET";
+}
+
+function validateResolvedImportOp(type: string, params: any): void {
+  switch (type) {
+    case "import_component_by_key": {
+      const keyError = validatePublishedImportKey("component", params?.key);
+      if (keyError) throw new Error(keyError);
+      const assetTypeError = validateComponentAssetType(params?.assetType);
+      if (assetTypeError) throw new Error(assetTypeError);
+      return;
+    }
+    case "import_style_by_key": {
+      const keyError = validatePublishedImportKey("style", params?.key);
+      if (keyError) throw new Error(keyError);
+      return;
+    }
+    case "import_variable_by_key": {
+      const keyError = validateVariableImportKey(params?.key);
+      if (keyError) throw new Error(keyError);
+      return;
+    }
+  }
+}
+
+function requireNodeIds(type: string, nodeIds: any): void {
+  if (!Array.isArray(nodeIds) || nodeIds.length === 0) {
+    throw new Error(`${type}: nodeIds is required`);
+  }
+}
+
+function hasOwn(obj: any, key: string): boolean {
+  return obj != null && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function requireColorOrPaints(type: string, params: any): void {
+  if (Array.isArray(params?.paints)) return;
+  if (typeof params?.color === "string" && params.color !== "") return;
+  throw new Error(`${type}: color or paints is required`);
+}
+
+function validateMode(type: string, params: any): void {
+  if (params?.mode == null || params.mode === "") return;
+  if (params.mode !== "replace" && params.mode !== "append") {
+    throw new Error(`${type}: mode must be 'replace' or 'append'`);
+  }
+}
+
+function validateResolvedEffects(params: any): void {
+  if (!Array.isArray(params?.effects)) throw new Error("set_effects: effects array is required");
+  const valid = new Set(["DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR"]);
+  params.effects.forEach((effect: any, index: number) => {
+    if (!effect || typeof effect !== "object") {
+      throw new Error(`set_effects: effects[${index}] must be an object`);
+    }
+    if (!valid.has(effect.type)) {
+      throw new Error(
+        `set_effects: effects[${index}].type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, or BACKGROUND_BLUR`,
+      );
+    }
+  });
+}
+
+function validateResolvedOp(type: string, nodeIds: any, params: any): void {
+  validateResolvedImportOp(type, params);
+  switch (type) {
+    case "set_fills":
+      requireNodeIds(type, nodeIds);
+      requireColorOrPaints(type, params);
+      validateMode(type, params);
+      return;
+    case "set_strokes":
+      requireNodeIds(type, nodeIds);
+      requireColorOrPaints(type, params);
+      validateMode(type, params);
+      return;
+    case "set_corner_radius":
+      requireNodeIds(type, nodeIds);
+      if (
+        !hasOwn(params, "cornerRadius") &&
+        !hasOwn(params, "topLeftRadius") &&
+        !hasOwn(params, "topRightRadius") &&
+        !hasOwn(params, "bottomLeftRadius") &&
+        !hasOwn(params, "bottomRightRadius")
+      ) {
+        throw new Error(
+          "set_corner_radius: at least one of cornerRadius, topLeftRadius, topRightRadius, bottomLeftRadius, or bottomRightRadius is required",
+        );
+      }
+      return;
+    case "set_constraints":
+      requireNodeIds(type, nodeIds);
+      if (!hasOwn(params, "horizontal") && !hasOwn(params, "vertical")) {
+        throw new Error("set_constraints: at least one of horizontal or vertical is required");
+      }
+      return;
+    case "set_effects":
+      requireNodeIds(type, nodeIds);
+      validateResolvedEffects(params);
+      return;
+    case "delete_variable":
+      if (!params?.variableId && !params?.collectionId) {
+        throw new Error("delete_variable: variableId or collectionId is required");
+      }
+      return;
+    case "delete_page":
+      if (!params?.pageId && !params?.pageName) {
+        throw new Error("delete_page: pageId or pageName is required");
+      }
+      return;
+    case "rename_page":
+      if (!params?.pageId && !params?.pageName) {
+        throw new Error("rename_page: pageId or pageName is required");
+      }
+      if (!params?.newName) throw new Error("rename_page: newName is required");
+      return;
+    case "update_paint_style":
+      if (!params?.styleId) throw new Error("update_paint_style: styleId is required");
+      if (
+        !hasOwn(params, "name") &&
+        !hasOwn(params, "color") &&
+        !hasOwn(params, "paints") &&
+        !hasOwn(params, "description")
+      ) {
+        throw new Error("update_paint_style: at least one of name, color, paints, or description is required");
+      }
+      return;
+  }
+}
+
 // executeOp is a small extracted helper that resolves refs on a single concrete op
 // (after any binding substitution has already happened) and dispatches it to the
 // correct handler. Returns { i, type, data } on success; throws on failure.
@@ -204,6 +357,7 @@ async function executeOp(
   }
   const nodeIds = resolveRefs(op.nodeIds ?? [], results);
   const params = resolveRefs(op.params ?? {}, results);
+  validateResolvedOp(op.type, nodeIds, params);
   // Reset the per-op perf flag for EVERY op so a prior op's `true` never leaks into a
   // later op that omitted it (a batch dispatches inner ops itself, so it re-applies here).
   figma.skipInvisibleInstanceChildren =

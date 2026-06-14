@@ -186,7 +186,8 @@ func TestRejectUnknownToolParams_Generic(t *testing.T) {
 	if msg := rejectUnknownToolParams("create_text", map[string]interface{}{"text": "hi", "characters": "x"}); msg == "" || !strings.Contains(msg, "text") {
 		t.Errorf("create_text `characters` should be rejected with a hint to `text`, got %q", msg)
 	}
-	// An unregistered tool name (e.g. a demoted batch-only op) is a safe no-op.
+	// Direct-tool validation ignores unregistered names; batch/FigmaPlan validation
+	// has its own catalog-backed param guard.
 	if msg := rejectUnknownToolParams("definitely_not_a_tool", map[string]interface{}{"whatever": 1}); msg != "" {
 		t.Errorf("unregistered tool must be a no-op, got %q", msg)
 	}
@@ -655,6 +656,9 @@ func TestValidateRPC_UpdatePaintStyle(t *testing.T) {
 	}
 	if msg := ValidateRPC("update_paint_style", nil, map[string]interface{}{"styleId": "S:abc", "color": "#fff"}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
+	}
+	if msg := ValidateRPC("update_paint_style", nil, map[string]interface{}{"styleId": "S:abc", "paints": []interface{}{map[string]interface{}{"type": "SOLID"}}}); msg != "" {
+		t.Errorf("unexpected error for paints[] update: %s", msg)
 	}
 	if msg := ValidateRPC("update_paint_style", nil, map[string]interface{}{"styleId": "S:abc", "description": "desc"}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
@@ -1426,18 +1430,49 @@ func TestValidateRPC_CreateSection(t *testing.T) {
 // ── Library tools (Track A) ───────────────────────────────────────────────────
 
 func TestValidateRPC_ImportByKey(t *testing.T) {
+	validPublishedKey := "0123456789abcdef0123456789abcdef01234567"
+
 	for _, tool := range []string{"import_component_by_key", "import_variable_by_key", "import_style_by_key"} {
-		// missing key
 		if msg := ValidateRPC(tool, nil, nil); msg == "" {
 			t.Errorf("%s: expected error for missing key", tool)
 		}
 		if msg := ValidateRPC(tool, nil, map[string]interface{}{"key": ""}); msg == "" {
 			t.Errorf("%s: expected error for empty key", tool)
 		}
-		// valid
-		if msg := ValidateRPC(tool, nil, map[string]interface{}{"key": "abc123"}); msg != "" {
-			t.Errorf("%s: unexpected error: %s", tool, msg)
+	}
+
+	for _, tool := range []string{"import_component_by_key", "import_style_by_key"} {
+		if msg := ValidateRPC(tool, nil, map[string]interface{}{"key": validPublishedKey}); msg != "" {
+			t.Errorf("%s: unexpected error for valid published key: %s", tool, msg)
 		}
+		if msg := ValidateRPC(tool, nil, map[string]interface{}{"key": "8b931898634bdc63"}); !containsCI(msg, "truncated") {
+			t.Errorf("%s: truncated key should get truncated hint, got: %s", tool, msg)
+		}
+		if msg := ValidateRPC(tool, nil, map[string]interface{}{"key": "410:49695"}); !containsCI(msg, "node id") {
+			t.Errorf("%s: node-id key should get node-id hint, got: %s", tool, msg)
+		}
+		if msg := ValidateRPC(tool, nil, map[string]interface{}{"key": "ABCDEF0123456789abcdef0123456789abcdef01"}); !containsCI(msg, "40-char hex") {
+			t.Errorf("%s: uppercase/non-lowercase key should mention 40-char hex, got: %s", tool, msg)
+		}
+	}
+	if msg := ValidateRPC("import_component_by_key", nil, map[string]interface{}{"key": validPublishedKey, "assetType": "COMPONENT"}); msg != "" {
+		t.Errorf("import_component_by_key: unexpected error for valid COMPONENT assetType: %s", msg)
+	}
+	if msg := ValidateRPC("import_component_by_key", nil, map[string]interface{}{"key": validPublishedKey, "assetType": "COMPONENT_SET"}); msg != "" {
+		t.Errorf("import_component_by_key: unexpected error for valid COMPONENT_SET assetType: %s", msg)
+	}
+	if msg := ValidateRPC("import_component_by_key", nil, map[string]interface{}{"key": validPublishedKey, "assetType": "STYLE"}); !containsCI(msg, "assetType") {
+		t.Errorf("import_component_by_key: invalid assetType should be rejected, got: %s", msg)
+	}
+
+	if msg := ValidateRPC("import_variable_by_key", nil, map[string]interface{}{"key": "VariableID:123:456"}); msg != "" {
+		t.Errorf("import_variable_by_key: unexpected error for VariableID key: %s", msg)
+	}
+	if msg := ValidateRPC("import_variable_by_key", nil, map[string]interface{}{"key": validPublishedKey + "/colors/brand"}); msg != "" {
+		t.Errorf("import_variable_by_key: unexpected error for collection/path key: %s", msg)
+	}
+	if msg := ValidateRPC("import_variable_by_key", nil, map[string]interface{}{"key": "410:49695"}); !containsCI(msg, "node id") {
+		t.Errorf("import_variable_by_key: node-id key should get node-id hint, got: %s", msg)
 	}
 }
 

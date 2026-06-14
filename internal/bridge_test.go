@@ -1095,9 +1095,10 @@ func TestBridgeSend_ImportInFlightRejectsRetry(t *testing.T) {
 	}
 }
 
-// A non-import call must NOT be rejected while an import is in flight — it queues
-// normally (it isn't the amplifier). Here it just times out on its own short ctx,
-// proving it reached dispatch rather than hitting the import guard.
+// A non-import call must NOT be rejected by the import guard while an import is in
+// flight (it isn't the retry amplifier). It is allowed past the guard and then queues
+// on the serial slot the cancelled import still holds, timing out on its own short ctx
+// — the point is the error is a ctx deadline, NOT ErrImportInFlight.
 func TestBridgeSend_ImportInFlightAllowsNonImport(t *testing.T) {
 	b, _ := setupBridgeWithClient(t)
 

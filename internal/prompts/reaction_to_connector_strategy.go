@@ -26,10 +26,12 @@ and produce a clear, structured map of interactions between screens/nodes.
 You will receive JSON data from get_reactions. Each node may contain reactions like:
 {
   "trigger": { "type": "ON_CLICK" },
-  "action": {
-    "type": "NAVIGATE",
-    "destinationId": "destination-node-id"
-  }
+  "actions": [
+    {
+      "type": "NAVIGATE",
+      "destinationId": "destination-node-id"
+    }
+  ]
 }
 
 ## Step-by-Step Process
@@ -40,13 +42,14 @@ You will receive JSON data from get_reactions. Each node may contain reactions l
 
 ### 2. Filter and Transform Reactions
 - Iterate through the get_reactions JSON output
-- Keep only reactions where action type implies navigation:
+- Iterate each reaction's actions[] array
+- Keep only destination-bearing actions where the action type implies navigation:
   * NAVIGATE, OPEN_OVERLAY, SWAP_OVERLAY
   * Ignore: CHANGE_TO, CLOSE_OVERLAY, and others without a destinationId
 - Extract per reaction:
   * sourceNodeId: the node the reaction belongs to
-  * destinationId: action.destinationId
-  * actionType: action.type
+  * destinationId: the destinationId field from the destination-bearing actions[] item
+  * actionType: the type field from the destination-bearing actions[] item
   * triggerType: trigger.type
 
 ### 3. Generate Flow Map
@@ -66,7 +69,7 @@ Flow Map:
 - [Screen B] --ON_CLICK/NAVIGATE--> [Screen C]
 
 ### 5. Verification
-- Use get_screenshot(nodeIds: [...]) on key screens to visually confirm the flow
+- Use save_screenshots(items: [...]) on key screens to visually confirm the flow
 - Cross-check node names from get_nodes_info with the flow map
 
 ## Notes

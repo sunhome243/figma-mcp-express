@@ -16,6 +16,13 @@ var nodeIDPattern = regexp.MustCompile(`^I?\d+:\d+(;\d+:\d+)*$`)
 // This prevents URL injection via fileKey in fetch_library_catalog.
 var fileKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+// publishedKeyPattern matches published Figma component/style keys.
+// These keys are 40-char lowercase hex SHA-1 strings. Node IDs like "410:49695"
+// and truncated 16-char IDs should be rejected before they reach the plugin.
+var publishedKeyPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+var bareNodeIDPattern = regexp.MustCompile(`^[0-9]+:[0-9]+$`)
+
 // NormalizeNodeID converts hyphen-format node IDs (LLM output artifact) to colon format.
 // "4029-12345" → "4029:12345". No-ops for already-valid or unrecognized strings.
 func NormalizeNodeID(s string) string {
@@ -31,6 +38,52 @@ func NormalizeNodeID(s string) string {
 // ValidNodeID reports whether s is a valid Figma node ID.
 func ValidNodeID(s string) bool {
 	return nodeIDPattern.MatchString(s)
+}
+
+func validatePublishedImportKey(kind, key string) string {
+	if key == "" {
+		return "key is required"
+	}
+	if publishedKeyPattern.MatchString(key) {
+		return ""
+	}
+	if bareNodeIDPattern.MatchString(key) {
+		switch kind {
+		case "component":
+			return "that's a node id, not a published component key — use the component's published key (40-char hex), or import_component_by_key on the default variant's key"
+		case "style":
+			return "that's a node id, not a published style key — use the style's published key (40-char hex)"
+		}
+		return fmt.Sprintf("that's a node id, not a published %s key", kind)
+	}
+	if len(key) < 40 {
+		return fmt.Sprintf("%s key looks truncated (got %d chars, expected 40) — pass the full published key", kind, len(key))
+	}
+	return fmt.Sprintf("malformed %s key; expected 40-char hex", kind)
+}
+
+func validateVariableImportKey(key string) string {
+	if key == "" {
+		return "key is required"
+	}
+	if bareNodeIDPattern.MatchString(key) {
+		return "that's a node id, not a published variable key — use the variable key from the library catalog"
+	}
+	return ""
+}
+
+func validateImportComponentAssetType(assetType interface{}) string {
+	if assetType == nil {
+		return ""
+	}
+	s, ok := assetType.(string)
+	if !ok {
+		return "assetType must be COMPONENT or COMPONENT_SET"
+	}
+	if s == "" || s == "COMPONENT" || s == "COMPONENT_SET" {
+		return ""
+	}
+	return "assetType must be COMPONENT or COMPONENT_SET"
 }
 
 // ValidateRPC validates an incoming RPC request against the tool's expected
@@ -555,9 +608,10 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		}
 		_, hasName := params["name"]
 		_, hasColor := params["color"]
+		_, hasPaints := params["paints"]
 		_, hasDesc := params["description"]
-		if !hasName && !hasColor && !hasDesc {
-			return "at least one of name, color, or description is required"
+		if !hasName && !hasColor && !hasPaints && !hasDesc {
+			return "at least one of name, color, paints, or description is required"
 		}
 
 	case "delete_style":
@@ -672,9 +726,25 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 
 	// ── Library tools ────────────────────────────────────────────────────────
 
-	case "import_component_by_key", "import_variable_by_key", "import_style_by_key":
-		if key, _ := params["key"].(string); key == "" {
-			return "key is required"
+	case "import_component_by_key":
+		key, _ := params["key"].(string)
+		if msg := validatePublishedImportKey("component", key); msg != "" {
+			return msg
+		}
+		if msg := validateImportComponentAssetType(params["assetType"]); msg != "" {
+			return msg
+		}
+
+	case "import_style_by_key":
+		key, _ := params["key"].(string)
+		if msg := validatePublishedImportKey("style", key); msg != "" {
+			return msg
+		}
+
+	case "import_variable_by_key":
+		key, _ := params["key"].(string)
+		if msg := validateVariableImportKey(key); msg != "" {
+			return msg
 		}
 
 	case "create_instance":
@@ -1006,7 +1076,7 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 	// allowlist catches a Plugin-API-name typo the plugin would otherwise silently
 	// drop (create_text is also checked in-case above with its richer hints). The
 	// registry is populated by RegisterTools; in pure unit tests it's empty, so this
-	// is a no-op there. Demoted batch-only ops are unregistered → not guarded.
+	// is a no-op there. Batch/FigmaPlan ops use the BatchOpCatalog validator.
 	if msg := rejectUnknownToolParams(tool, params); msg != "" {
 		return msg
 	}

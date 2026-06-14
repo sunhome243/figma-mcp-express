@@ -34,7 +34,7 @@ Scan every visible text node. Any of these strings is a FAIL:
 | Lorem ipsum | Body copy placeholder not replaced |
 | Empty / blank where content is expected | Slot hidden or not wired |
 
-Fix: `instance.setProperties({ "SlotName": "real content" })` for each hit. For chart legends showing "Item 1": `setProperties({ "Show Legend#...": false })`.
+Fix: use `set_instance_properties` for each slot hit. For chart legends showing `Item 1`, set the relevant visibility/property field to hide or replace the placeholder.
 
 ---
 

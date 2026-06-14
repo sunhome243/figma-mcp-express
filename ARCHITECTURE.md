@@ -50,7 +50,7 @@ The plugin runs in a **sandboxed JavaScript environment** inside Figma Desktop. 
 | Read/write design variables and styles                    | `eval()` or `new Function()` — the sandbox forbids dynamic code execution |
 | Multi-file work via channel routing                       | Create new files (requires REST)                                          |
 
-This is why the `use_figma` pattern (arbitrary script injection) from official Figma MCP cannot be ported here. All operations are exposed as **typed MCP tools** instead.
+This is why the `use_figma` pattern (arbitrary script injection) from official Figma MCP cannot be ported here. Operations are exposed as **typed MCP tools** and catalog-validated `batch`/FigmaPlan ops instead.
 
 ### Leader/follower election
 
@@ -146,15 +146,15 @@ The original [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go)
 
 **Why it matters:** Design-to-code tools need to know not just "this node has padding 16px" but "this node is bound to the `spacing/4` token" and "this is an instance of the `Button/Primary` component". The codegen detail level exposes all of this.
 
-### 9. Track F — REST catalog tools (3 new tools)
+### 9. Track F — Library catalog and token discovery
 
 **Original behavior:** No tools for enumerating library assets without opening the library file.
 
-**This fork:** 3 new REST-path tools for library discovery:
+**This fork:** library discovery uses the narrowest available path:
 
 - `fetch_library_catalog` — fetch published components + thumbnails from Figma's REST API (requires `FIGMA_TOKEN`)
 - `get_local_components` — enumerate unpublished components page-by-page via the plugin (no token required)
-- `get_library_variables` — enumerate subscribed library variable collections, bypassing Enterprise 403 gates
+- `get_library_variables` / `list_library_variable_collections` — enumerate subscribed library variable collections through the plugin/team-library path, bypassing Enterprise REST 403 gates
 
 ### 10. fileKey auto-exposure
 
@@ -307,14 +307,36 @@ Fix in progress: **debounce + diff-before-send** — collapse a pan storm to one
 
 ### Native scan performance
 
-`scan_nodes_by_types` and `scan_text_nodes` currently do manual recursive JS walks, crossing the JS↔C++ boundary at every `.children` access. The Figma Plugin API's `node.findAllWithCriteria({types})` runs the same traversal in C++ — same result, 10–100× faster, and shorter total thread-block so Figma stays responsive during the scan.
+`scan_nodes_by_types` and `scan_text_nodes` use the Figma Plugin API's native
+`node.findAllWithCriteria({types})` path for type-only traversal. The traversal
+runs inside Figma's native layer instead of repeatedly crossing the JS boundary
+for every `.children` access, which shortens plugin main-thread blocking on
+large trees.
 
-Switching type-only scans to native also removes the need for mid-scan yield on those paths (yield was the workaround for the long thread-block; the native scan is short enough it doesn't need it).
+### Progressive tool surface
 
-### Two-tier tool surface
+The Go layer decouples the **MCP tool registry** (`s.AddTool`) from the **plugin
+command handlers**. A plugin handler can stay available as a validated
+`batch`/FigmaPlan op even when it is not exposed as a top-level MCP tool.
 
-The Go layer decouples the **MCP tool registry** (`s.AddTool`) from the **plugin command handlers**. Removing a tool from `s.AddTool` drops it from the top-level MCP surface, but the plugin still handles it by name — so `batch` can still call it via `{type: "<tool-name>", params: {...}}`.
+The default startup profile is `FIGMA_MCP_TOOL_PROFILE=core`. It exposes a
+small stable surface for discovery, scoped reads, exports, library/catalog
+access, and `batch`. `FIGMA_MCP_TOOL_PROFILE=full` restores the legacy top-level
+compatibility surface for debugging and older clients. The profile is applied
+at startup after registration and before `tools/list` reaches the client; the
+tool list is not mutated mid-session, so MCP prompt-cache behavior stays stable.
 
-This enables a two-tier surface: complex multi-param tools stay top-level (typed schema visible to the LLM); simple single-param setters (`set_opacity`, `set_visible`, `lock_nodes`, `rotate_nodes`, …) can be demoted to batch-only. The LLM calls them through `batch` with the params documented in `batch-recipes.md` rather than as standalone tools, reducing surface noise without losing typed functionality.
+`BatchOpCatalog` is the source of truth for declarative batch/FigmaPlan op
+contracts. It covers every lowercase plugin handler op and is independent of
+which top-level tools are visible under the active profile. Agents discover the
+catalog progressively:
 
-**Gate before trimming:** confirm `batch({ops:[{type:"<demoted>",…}]})` dispatches correctly in a live session before removing any tool from the MCP registry.
+1. `search_batch_ops` returns compact matches by query/category/read/write.
+2. `get_batch_op_spec` returns the structured schema for one op.
+3. `batch(validateOnly:true)` checks a composed plan without sending it to the
+   plugin.
+4. `batch` executes the validated plan.
+
+Raw script execution is intentionally not part of this architecture. Fields such
+as `script`, `code`, `js`, `eval`, and `function` are rejected before plugin
+execution.

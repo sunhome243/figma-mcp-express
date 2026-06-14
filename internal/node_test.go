@@ -187,3 +187,38 @@ func TestNodeSend_NormalizesIDs(t *testing.T) {
 		t.Error("params.parentId was not normalised")
 	}
 }
+
+func TestNodeSend_ValidatesBatchBeforeFollowerRPC(t *testing.T) {
+	newTestServer(t) // syncs registered top-level schemas into BatchOpCatalog.
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(RPCResponse{Data: "unexpected"})
+	}))
+	t.Cleanup(srv.Close)
+
+	n := &Node{
+		role:     RoleFollower,
+		follower: NewFollower(srv.URL),
+	}
+
+	resp, err := n.Send(context.Background(), "batch", nil, map[string]any{
+		"ops": []any{map[string]any{
+			"type":   "create_text",
+			"params": map[string]any{"characters": "bad"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Send returned Go error: %v", err)
+	}
+	if resp.Error == "" {
+		t.Fatal("expected batch validation error")
+	}
+	if !containsCI(resp.Error, "characters") {
+		t.Fatalf("validation error should mention bad param, got %q", resp.Error)
+	}
+	if called {
+		t.Fatal("invalid batch should not reach follower RPC")
+	}
+}

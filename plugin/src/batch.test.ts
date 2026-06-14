@@ -257,6 +257,191 @@ describe("handleBatchRequest — scan → swap-every-match (all→all)", () => {
   });
 });
 
+describe("handleBatchRequest — resolved import validation", () => {
+  it("rejects a ref-resolved component key that is actually a node ID before import", async () => {
+    let importCalls = 0;
+    const page = {
+      id: "0:1",
+      name: "Page 1",
+      children: [{ id: "410:49695", name: "Button", type: "COMPONENT", width: 10, height: 10 }],
+    };
+    (globalThis as any).figma = {
+      get currentPage() { return page; },
+      getNodeByIdAsync: async () => null,
+      importComponentByKeyAsync: async () => {
+        importCalls++;
+        throw new Error("should not call importComponentByKeyAsync");
+      },
+      importComponentSetByKeyAsync: async () => {
+        importCalls++;
+        throw new Error("should not call importComponentSetByKeyAsync");
+      },
+      ui: noopUi,
+    };
+
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-import-ref-node-id",
+      params: {
+        ops: [
+          { type: "search_nodes", params: { query: "Button", types: ["COMPONENT"] } },
+          { type: "import_component_by_key", params: { key: "$0.nodes.0.id" } },
+        ],
+      },
+    });
+
+    expect(res.data.results[1].error).toContain("node id");
+    expect(importCalls).toBe(0);
+  });
+
+  it("rejects a named-binding component assetType after map substitution before import", async () => {
+    let importCalls = 0;
+    (globalThis as any).figma = {
+      importComponentByKeyAsync: async () => {
+        importCalls++;
+        throw new Error("should not call importComponentByKeyAsync");
+      },
+      importComponentSetByKeyAsync: async () => {
+        importCalls++;
+        throw new Error("should not call importComponentSetByKeyAsync");
+      },
+      ui: noopUi,
+    };
+
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-import-map-assettype",
+      params: {
+        continueOnError: false,
+        ops: [
+          {
+            type: "map",
+            over: [{ key: "0123456789abcdef0123456789abcdef01234567", assetType: "STYLE" }],
+            as: "asset",
+            do: {
+              type: "import_component_by_key",
+              params: { key: "$asset.key", assetType: "$asset.assetType" },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.data.results[0].error).toContain("assetType");
+    expect(importCalls).toBe(0);
+  });
+});
+
+describe("handleBatchRequest — resolved semantic validation", () => {
+  it("rejects set_fills after refs resolve when neither color nor paints is present", async () => {
+    let getNodeCalls = 0;
+    (globalThis as any).figma = {
+      getNodeByIdAsync: async () => {
+        getNodeCalls++;
+        return {
+          id: "10:1",
+          name: "Rect",
+          type: "RECTANGLE",
+          fills: [],
+        };
+      },
+      variables: { getVariableByIdAsync: async () => null },
+      commitUndo: () => {},
+      ui: noopUi,
+    };
+
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-resolved-fills-missing",
+      params: {
+        continueOnError: false,
+        ops: [
+          {
+            type: "map",
+            over: [{ id: "10:1" }],
+            as: "item",
+            do: { type: "set_fills", nodeIds: ["$item.id"], params: {} },
+          },
+        ],
+      },
+    });
+
+    expect(res.data.results[0].error).toContain("color or paints");
+    expect(getNodeCalls).toBe(0);
+  });
+
+  it("rejects set_effects after refs resolve when an effect type is invalid", async () => {
+    let getNodeCalls = 0;
+    (globalThis as any).figma = {
+      getNodeByIdAsync: async () => {
+        getNodeCalls++;
+        return { id: "10:1", name: "Rect", type: "RECTANGLE", effects: [] };
+      },
+      commitUndo: () => {},
+      ui: noopUi,
+    };
+
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-resolved-effects-invalid",
+      params: {
+        continueOnError: false,
+        ops: [
+          {
+            type: "map",
+            over: [{ id: "10:1" }],
+            as: "item",
+            do: {
+              type: "set_effects",
+              nodeIds: ["$item.id"],
+              params: { effects: [{ type: "MAGIC_SHADOW" }] },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.data.results[0].error).toContain("DROP_SHADOW");
+    expect(getNodeCalls).toBe(0);
+  });
+
+  it("rejects map inner ops after named refs resolve to bad concrete values", async () => {
+    let getNodeCalls = 0;
+    (globalThis as any).figma = {
+      getNodeByIdAsync: async () => {
+        getNodeCalls++;
+        return { id: "10:1", name: "Rect", type: "RECTANGLE", fills: [] };
+      },
+      variables: { getVariableByIdAsync: async () => null },
+      commitUndo: () => {},
+      ui: noopUi,
+    };
+
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-map-resolved-semantic",
+      params: {
+        continueOnError: false,
+        ops: [
+          {
+            type: "map",
+            over: [{ id: "10:1" }],
+            as: "item",
+            do: {
+              type: "set_fills",
+              nodeIds: ["$item.id"],
+              params: { color: "$item.missingColor" },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.data.results[0].error).toContain("binding $item.missingColor");
+    expect(getNodeCalls).toBe(0);
+  });
+});
+
 // ── substituteBindings unit tests ──────────────────────────────────────────────
 // substituteBindings replaces ONLY named-binding refs ($item, $index, etc.)
 // in a value (string | array | object). It runs BEFORE resolveRefs so $N refs

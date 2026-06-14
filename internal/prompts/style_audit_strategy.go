@@ -36,7 +36,7 @@ design system's named styles or variables. Report findings and optionally fix th
 
 3. **Match raw values to existing styles**
    - For each flagged node, check whether the raw hex color matches any existing paint style color.
-   - If a match is found → recommend apply_style_to_node() to link the node to that style.
+   - If a match is found → recommend a validated batch op apply_style_to_node to link the node to that style.
    - If no match is found → note the raw value as a design system gap (a new style may be needed).
 
 4. **Report findings**
@@ -45,9 +45,8 @@ design system's named styles or variables. Report findings and optionally fix th
    |---------|-----------|-------|-----------|----------------|
 
 5. **Fix (optional, ask user first)**
-   For each node with a matching style, call:
-     apply_style_to_node(nodeId, styleId, target)
-   Batch nodes by styleId to minimize round trips.
+   For each node with a matching style, compose a batch plan using op type "apply_style_to_node".
+   Run batch(validateOnly:true) first. Group nodes by styleId/target to minimize round trips.
 
 ## Rules
 - Never change a node's visual appearance — only link it to a style that already matches.

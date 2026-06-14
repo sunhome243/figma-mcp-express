@@ -54,7 +54,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 ## PR expectations
 
 - One concern per PR — don't mix a bug fix with a refactor
-- If you're adding a tool, update [TOOLS.md](TOOLS.md) with the parameter table
+- If you're adding an op, register it in `BatchOpCatalog` (the authoritative contract `search_batch_ops` / `get_batch_op_spec` expose) and update [TOOLS.md](TOOLS.md) with the parameter table. If the op is batch-only in the `core` profile (not a top-level tool), add it under the relevant `## Write —*` section so it inherits that section's batch-op banner — don't present it as a top-level tool. Only add to the core-21 list (in TOOLS.md + [ARCHITECTURE.md](ARCHITECTURE.md)) if it's genuinely a new top-level core tool.
 - If you're changing server behavior, update [ARCHITECTURE.md](ARCHITECTURE.md) if it affects the documented design
 - Keep `CHANGELOG.md` updated under `[Unreleased]`
 
