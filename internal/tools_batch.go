@@ -78,6 +78,8 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 			}), nil
 		}
 
+		prepareBatchImportParams(rawOps)
+
 		params := map[string]interface{}{"ops": rawOps}
 		if v, ok := req.GetArguments()["continueOnError"].(bool); ok {
 			params["continueOnError"] = v

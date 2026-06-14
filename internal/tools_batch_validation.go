@@ -146,10 +146,34 @@ func validateBatchOp(i int, op map[string]interface{}, allowedNamedRefs map[stri
 		if err := validateBatchParamsAgainstSchema(t, opParams); err != nil {
 			return fmt.Errorf("ops[%d]: %s", i, err)
 		}
+		if msg := validateBatchImportKey(t, opParams, allowedNamedRefs); msg != "" {
+			return fmt.Errorf("ops[%d]: %s", i, msg)
+		}
 	} else if err := validateBatchParamsAgainstSchema(t, nil); err != nil {
 		return fmt.Errorf("ops[%d]: %s", i, err)
 	}
 	return nil
+}
+
+func validateBatchImportKey(tool string, params map[string]interface{}, allowedNamedRefs map[string]bool) string {
+	switch tool {
+	case "import_component_by_key", "import_style_by_key", "import_variable_by_key":
+	default:
+		return ""
+	}
+	key, _ := params["key"].(string)
+	if isBatchRefLike(key) || isAllowedNamedBindingRef(key, allowedNamedRefs) {
+		return ""
+	}
+	switch tool {
+	case "import_component_by_key":
+		return validatePublishedImportKey("component", key)
+	case "import_style_by_key":
+		return validatePublishedImportKey("style", key)
+	case "import_variable_by_key":
+		return validateVariableImportKey(key)
+	}
+	return ""
 }
 
 func rejectUnknownBatchOpParams(tool string, params map[string]interface{}) string {
