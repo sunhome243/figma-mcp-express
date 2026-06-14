@@ -19,7 +19,10 @@ func registerLibraryTools(s *server.MCPServer, node *Node) {
 			mcp.Required(),
 			mcp.Description("Library component key (from the library catalog, not a node ID)"),
 		),
-		mcp.WithString("assetType", mcp.Description("Optional asset type hint: 'COMPONENT' (default) or 'COMPONENT_SET'")),
+		mcp.WithString("assetType",
+			mcp.Description("Optional asset type hint: 'COMPONENT' (default) or 'COMPONENT_SET'"),
+			mcp.Enum("COMPONENT", "COMPONENT_SET"),
+		),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
