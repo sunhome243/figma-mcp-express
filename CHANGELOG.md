@@ -21,6 +21,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **Batch validation now uses a catalog source of truth** — hidden and demoted ops are validated against `BatchOpCatalog`, so wrong params like `characters` and script-like fields are rejected before mutation instead of being silently ignored by the plugin.
 - **Batch `map` validation is stricter** — invalid named bindings, string-interpolation attempts such as `"Section $index"`, named-binding projections, reserved `map.as` values, and nested `map` ops are rejected before plugin execution.
 - **Library import asset type is schema-constrained** — `import_component_by_key.assetType` now exposes `COMPONENT|COMPONENT_SET` as an enum so `get_batch_op_spec` and top-level schemas steer agents away from slow wrong-route imports.
+- **Library catalog import hints stay bounded** — cached import routing hints now keep only `COMPONENT_SET` keys and cap growth at 10k entries, avoiding unnecessary in-process cache growth from component/style catalog rows.
 
 ### Fixed
 
