@@ -683,6 +683,113 @@ func TestRegisterBatchTools_ValidateOnlyDoesNotCallBridge(t *testing.T) {
 	}
 }
 
+func TestRegisterBatchTools_ValidateOnlyRejectsBadImportKeysBeforeBridge(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	cases := []struct {
+		name string
+		op   map[string]any
+		want string
+	}{
+		{
+			name: "component truncated key",
+			op:   map[string]any{"type": "import_component_by_key", "params": map[string]any{"key": "8b931898634bdc63"}},
+			want: "truncated",
+		},
+		{
+			name: "style node id",
+			op:   map[string]any{"type": "import_style_by_key", "params": map[string]any{"key": "410:49695"}},
+			want: "node id",
+		},
+		{
+			name: "variable node id",
+			op:   map[string]any{"type": "import_variable_by_key", "params": map[string]any{"key": "410:49695"}},
+			want: "node id",
+		},
+		{
+			name: "component bad hex",
+			op:   map[string]any{"type": "import_component_by_key", "params": map[string]any{"key": strings.Repeat("z", 40)}},
+			want: "malformed component key",
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			res := callToolResult(t, s, "batch", map[string]any{
+				"validateOnly": true,
+				"ops":          []any{tc.op},
+			})
+			if !res.IsError {
+				t.Fatalf("expected import key validation error, got %s", resultText(t, res))
+			}
+			if txt := resultText(t, res); !strings.Contains(txt, tc.want) {
+				t.Fatalf("expected error containing %q, got %q", tc.want, txt)
+			}
+			if captured.Tool != "" {
+				t.Fatalf("invalid validateOnly batch should not call bridge, captured tool %q", captured.Tool)
+			}
+		})
+	}
+}
+
+func TestRegisterBatchTools_ValidateOnlyAllowsRefImportKeys(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"validateOnly": true,
+		"ops": []any{
+			map[string]any{"type": "search_nodes", "params": map[string]any{"nodeId": "1:1", "query": "Button"}},
+			map[string]any{"type": "import_component_by_key", "params": map[string]any{"key": "$0.nodes.0.componentKey"}},
+		},
+	})
+	if res.IsError {
+		t.Fatalf("ref import key should validate before runtime resolution, got %s", resultText(t, res))
+	}
+	if captured.Tool != "" {
+		t.Fatalf("validateOnly should not call bridge, captured tool %q", captured.Tool)
+	}
+}
+
+func TestRegisterBatchTools_InjectsCatalogAssetTypeInsideBatch(t *testing.T) {
+	resetLibraryCatalogIndexForTest()
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+	key := strings.Repeat("d", 40)
+	rememberLibraryCatalogKeys(map[string]any{
+		key: map[string]any{"type": "COMPONENT_SET", "name": "Button"},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"ops": []any{map[string]any{
+			"type":   "import_component_by_key",
+			"params": map[string]any{"key": key},
+		}},
+	})
+	if res.IsError {
+		t.Fatalf("valid batch import unexpectedly failed: %s", resultText(t, res))
+	}
+	forwardedOps, ok := captured.Params["ops"].([]any)
+	if !ok || len(forwardedOps) != 1 {
+		t.Fatalf("forwarded params.ops = %#v", captured.Params["ops"])
+	}
+	op0, ok := forwardedOps[0].(map[string]any)
+	if !ok {
+		t.Fatalf("forwarded op[0] = %#v", forwardedOps[0])
+	}
+	params, ok := op0["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("forwarded op[0].params = %#v", op0["params"])
+	}
+	if params["assetType"] != "COMPONENT_SET" {
+		t.Fatalf("assetType = %v, want COMPONENT_SET", params["assetType"])
+	}
+}
+
 func TestRegisterBatchTools_ValidateOnlyHiddenCatalogOp(t *testing.T) {
 	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
 		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
