@@ -62,7 +62,7 @@ Before fan-out, the orchestrator creates every resource that more than one agent
 Coordinator (sequential):
   1. create_frame "Page Wrapper"      → wrapperId
   2. create_frame "Nav"               → navId
-  3. batch op import_variable_by_key for spacing  → spacingVarId
+  3. import_variable_by_key(spacing)  → spacingVarId
   4. Hand (wrapperId, navId, spacingVarId) to agents via prompt
 
 Agents (parallel):
@@ -111,7 +111,7 @@ If you find yourself reaching for a lock, it means two agents are competing on t
 list_channels → auto-1 (Library), auto-2 (Product App)
 
 Agent 1: get_local_components(channel="auto-1")  → runs in parallel with Agent 2
-Agent 2: batch op create_frame with channel "auto-2"     → truly parallel, own sem
+Agent 2: create_frame(channel="auto-2", ...)     → truly parallel, own sem
 ```
 
 Pass `channel: "auto-N"` explicitly on every call. Missing `channel:` defaults to whichever file is active — wrong in a multi-file session.
@@ -123,7 +123,7 @@ Pass `channel: "auto-N"` explicitly on every call. Missing `channel:` defaults t
 | Symptom | Cause | Recovery |
 |---|---|---|
 | Call returns `"connection closed: plugin disconnected"` | WebSocket drop during in-flight call | Plugin auto-reconnects. For **reads**: retry freely (idempotent). For **writes**: call `get_node` first to verify whether the effect was applied, THEN retry if not — never blind-retry a non-idempotent write. |
-| Import (`import_component_by_key`) is slow; calls queue behind it | Malformed/truncated/node-id keys fail fast, but valid-looking unpublished/wrong-library keys or missing COMPONENT_SET type hints can still wait for the plugin import timeout | Don't loop-retry. Validate the key (`get_local_components`/`fetch_library_catalog`) before retrying, pass `assetType:"COMPONENT_SET"` for sets, or do other work (clone_node, set_text) meanwhile. Calls behind it complete once it clears. |
+| Import (`import_component_by_key`) is slow; calls queue behind it | A bad/unpublished key has no progress ticks, so it head-of-line-delays the channel queue until its inactivity timeout (bounded — then the queue drains on its own; no reopen) | Don't loop-retry — each retry just queues another timeout window. Validate the key (`get_local_components`/`fetch_library_catalog`) before retrying, or do other work (clone_node, set_text) meanwhile. Calls behind it complete once it clears. |
 | Agent gets "node not found" mid-task | Another agent deleted the node, or ID was from a stale cache snapshot | Coordinator re-queries the live ID and re-dispatches. Scope partition prevents recurrence. |
 | Reads return stale data after an external Figma Desktop edit | 3 s TTL window on the read-cache | Wait up to 3 s, or issue any write on the channel (instant invalidation). For must-be-live reads, the staleness window is ≤ 3 s. |
 | Two agents create the same named frame | No coordinator-shared-once; both agents raced existence check | Design fix: coordinator creates the frame upfront, passes the ID to both agents. |

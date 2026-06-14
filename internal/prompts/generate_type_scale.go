@@ -56,7 +56,7 @@ Show the full table to the user for review before creating anything.
 
 ## Creation Steps
 
-1. For each style row, use a validated batch op create_text_style with:
+1. For each style row, call create_text_style() with:
    - name: e.g. "Heading/H1"
    - fontFamily: the chosen font
    - fontStyle: map weight to style name ("Regular"=400, "Medium"=500, "SemiBold"=600, "Bold"=700)

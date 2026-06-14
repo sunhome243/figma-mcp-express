@@ -4,10 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -18,22 +14,6 @@ import (
 // against an Unknown-role Node (no real Figma connection).
 func newTestServer(t *testing.T) (*server.MCPServer, *Node) {
 	t.Helper()
-	return newTestServerWithProfile(t, "full")
-}
-
-func newTestServerWithProfile(t *testing.T, profile string) (*server.MCPServer, *Node) {
-	t.Helper()
-	t.Setenv("FIGMA_MCP_TOOL_PROFILE", profile)
-	s := server.NewMCPServer("test", "0.0.1")
-	node := NewNode("127.0.0.1", 19940, "test")
-	RegisterTools(s, node)
-	RegisterPrompts(s)
-	return s, node
-}
-
-func newTestServerDefaultProfile(t *testing.T) (*server.MCPServer, *Node) {
-	t.Helper()
-	t.Setenv("FIGMA_MCP_TOOL_PROFILE", "")
 	s := server.NewMCPServer("test", "0.0.1")
 	node := NewNode("127.0.0.1", 19940, "test")
 	RegisterTools(s, node)
@@ -55,63 +35,6 @@ func callTool(t *testing.T, s *server.MCPServer, name string, args map[string]an
 	if resp == nil {
 		t.Errorf("HandleMessage returned nil for tool %q", name)
 	}
-}
-
-type recordedRPCServer struct {
-	server   *httptest.Server
-	mu       sync.Mutex
-	requests []RPCRequest
-}
-
-func newRecordedRPCServer(t *testing.T) *recordedRPCServer {
-	t.Helper()
-	rec := &recordedRPCServer{}
-	rec.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rpc" {
-			http.NotFound(w, r)
-			return
-		}
-		var req RPCRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("decode RPC request: %v", err)
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		rec.mu.Lock()
-		rec.requests = append(rec.requests, req)
-		rec.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(RPCResponse{Data: map[string]any{"ok": true}})
-	}))
-	t.Cleanup(rec.server.Close)
-	return rec
-}
-
-func (rec *recordedRPCServer) count() int {
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	return len(rec.requests)
-}
-
-func (rec *recordedRPCServer) lastRequest(t *testing.T) RPCRequest {
-	t.Helper()
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	if len(rec.requests) == 0 {
-		t.Fatal("expected at least one RPC request")
-	}
-	return rec.requests[len(rec.requests)-1]
-}
-
-func newTestServerWithRPCURL(t *testing.T, leaderURL string) (*server.MCPServer, *Node) {
-	t.Helper()
-	t.Setenv("FIGMA_MCP_TOOL_PROFILE", "full")
-	s := server.NewMCPServer("test", "0.0.1")
-	node := NewNode("127.0.0.1", 19940, "test")
-	node.follower = NewFollower(leaderURL)
-	RegisterTools(s, node)
-	RegisterPrompts(s)
-	return s, node
 }
 
 // ── Registration smoke tests ──────────────────────────────────────────────────
@@ -479,14 +402,14 @@ func TestHandlers_LibraryTools(t *testing.T) {
 	s, _ := newTestServer(t)
 
 	// import_component_by_key — with optional assetType
-	callTool(t, s, "import_component_by_key", map[string]any{"key": strings.Repeat("a", 40), "assetType": "COMPONENT_SET"})
-	callTool(t, s, "import_component_by_key", map[string]any{"key": strings.Repeat("b", 40)}) // minimal
+	callTool(t, s, "import_component_by_key", map[string]any{"key": "abc123", "assetType": "COMPONENT_SET"})
+	callTool(t, s, "import_component_by_key", map[string]any{"key": "abc123"}) // minimal
 
 	// import_variable_by_key
 	callTool(t, s, "import_variable_by_key", map[string]any{"key": "v-key-1"})
 
 	// import_style_by_key
-	callTool(t, s, "import_style_by_key", map[string]any{"key": strings.Repeat("c", 40)})
+	callTool(t, s, "import_style_by_key", map[string]any{"key": "s-key-1"})
 
 	// create_instance — full
 	callTool(t, s, "create_instance", map[string]any{
@@ -527,133 +450,4 @@ func TestHandlers_LibraryTools(t *testing.T) {
 
 	// list_library_variable_collections — no params
 	callTool(t, s, "list_library_variable_collections", nil)
-}
-
-func TestHandlers_ImportComponentByKeyRejectsBadKeysBeforeRPC(t *testing.T) {
-	resetLibraryCatalogIndexForTest()
-	rec := newRecordedRPCServer(t)
-	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
-
-	tests := []struct {
-		name    string
-		key     string
-		wantMsg string
-	}{
-		{name: "truncated", key: "8b931898634bdc63", wantMsg: "truncated"},
-		{name: "node id", key: "410:49695", wantMsg: "node id"},
-		{name: "non hex", key: strings.Repeat("z", 40), wantMsg: "malformed component key"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := callToolResult(t, s, "import_component_by_key", map[string]any{"key": tt.key})
-			text := resultText(t, result)
-			if !result.IsError {
-				t.Fatalf("expected tool error for %s", tt.name)
-			}
-			if !strings.Contains(text, tt.wantMsg) {
-				t.Fatalf("error text %q does not contain %q", text, tt.wantMsg)
-			}
-			if got := rec.count(); got != 0 {
-				t.Fatalf("invalid key reached RPC %d time(s)", got)
-			}
-		})
-	}
-}
-
-func TestHandlers_ImportComponentByKeyValidKeyReachesRPC(t *testing.T) {
-	resetLibraryCatalogIndexForTest()
-	rec := newRecordedRPCServer(t)
-	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
-	key := strings.Repeat("a", 40)
-
-	result := callToolResult(t, s, "import_component_by_key", map[string]any{"key": key})
-	if result.IsError {
-		t.Fatalf("valid key unexpectedly failed: %s", resultText(t, result))
-	}
-	if got := rec.count(); got != 1 {
-		t.Fatalf("valid key RPC count = %d, want 1", got)
-	}
-	req := rec.lastRequest(t)
-	if req.Tool != "import_component_by_key" {
-		t.Fatalf("tool = %q, want import_component_by_key", req.Tool)
-	}
-	if req.Params["key"] != key {
-		t.Fatalf("forwarded key = %v, want %s", req.Params["key"], key)
-	}
-	if _, ok := req.Params["assetType"]; ok {
-		t.Fatalf("assetType should not be injected without a cached catalog, got %v", req.Params["assetType"])
-	}
-}
-
-func TestHandlers_ImportComponentByKeyInjectsCatalogAssetType(t *testing.T) {
-	resetLibraryCatalogIndexForTest()
-	rec := newRecordedRPCServer(t)
-	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
-	key := strings.Repeat("d", 40)
-	rememberLibraryCatalogKeys(map[string]any{
-		key: map[string]any{"type": "COMPONENT_SET", "name": "Button"},
-	})
-
-	result := callToolResult(t, s, "import_component_by_key", map[string]any{"key": key})
-	if result.IsError {
-		t.Fatalf("valid component set key unexpectedly failed: %s", resultText(t, result))
-	}
-	req := rec.lastRequest(t)
-	if req.Params["assetType"] != "COMPONENT_SET" {
-		t.Fatalf("assetType = %v, want COMPONENT_SET", req.Params["assetType"])
-	}
-}
-
-func TestHandlers_ImportVariableByKeyRejectsNodeIDBeforeRPC(t *testing.T) {
-	resetLibraryCatalogIndexForTest()
-	rec := newRecordedRPCServer(t)
-	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
-
-	result := callToolResult(t, s, "import_variable_by_key", map[string]any{"key": "410:49695"})
-	text := resultText(t, result)
-	if !result.IsError {
-		t.Fatal("expected node-id variable key to fail")
-	}
-	if !strings.Contains(text, "node id") {
-		t.Fatalf("error text should mention node id, got %q", text)
-	}
-	if got := rec.count(); got != 0 {
-		t.Fatalf("invalid variable key reached RPC %d time(s)", got)
-	}
-}
-
-func TestHandlers_ImportStyleByKeyRejectsBadKeyBeforeRPC(t *testing.T) {
-	resetLibraryCatalogIndexForTest()
-	rec := newRecordedRPCServer(t)
-	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
-
-	result := callToolResult(t, s, "import_style_by_key", map[string]any{"key": "410:49695"})
-	if !result.IsError {
-		t.Fatal("expected node-id style key to fail")
-	}
-	if text := resultText(t, result); !strings.Contains(text, "node id") {
-		t.Fatalf("error text should mention node id, got %q", text)
-	}
-	if got := rec.count(); got != 0 {
-		t.Fatalf("invalid style key reached RPC %d time(s)", got)
-	}
-}
-
-func TestHandlers_ImportStyleAndVariableValidKeysReachRPC(t *testing.T) {
-	resetLibraryCatalogIndexForTest()
-	rec := newRecordedRPCServer(t)
-	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
-
-	styleKey := strings.Repeat("e", 40)
-	styleResult := callToolResult(t, s, "import_style_by_key", map[string]any{"key": styleKey})
-	if styleResult.IsError {
-		t.Fatalf("valid style key unexpectedly failed: %s", resultText(t, styleResult))
-	}
-	variableResult := callToolResult(t, s, "import_variable_by_key", map[string]any{"key": "VariableID:123:456"})
-	if variableResult.IsError {
-		t.Fatalf("valid variable key unexpectedly failed: %s", resultText(t, variableResult))
-	}
-	if got := rec.count(); got != 2 {
-		t.Fatalf("valid style + variable RPC count = %d, want 2", got)
-	}
 }

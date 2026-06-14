@@ -1,17 +1,8 @@
 # TOOLS.md — figma-mcp-express tool catalog
 
-The default `FIGMA_MCP_TOOL_PROFILE=core` exposes a compact 21-tool MCP surface.
-Every plugin-supported operation remains available through validated
-`batch`/FigmaPlan op types. Use `search_batch_ops` to find an op,
-`get_batch_op_spec` for its authoritative schema, and
-`batch(validateOnly:true)` before generated or unfamiliar mutations.
+All 70 live tools exposed by this fork (16 additional tools available as batch-only demoted ops — see ARCHITECTURE.md). Tools marked **[NEW]** are additions to the upstream base; **[ENHANCED]** means the upstream tool has new params or behavior.
 
-This file documents the broader compatibility/catalog vocabulary. Tools marked
-**[NEW]** are additions to the upstream base; **[ENHANCED]** means the upstream
-tool has new params or behavior. Set `FIGMA_MCP_TOOL_PROFILE=full` to expose
-the legacy top-level compatibility surface for debugging or older clients.
-
-Plugin-facing tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. Node IDs are always in colon format, e.g. `4029:12345`, never hyphens.
+Every tool accepts an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Node IDs are always in colon format, e.g. `4029:12345`, never hyphens.
 
 ---
 
@@ -420,9 +411,9 @@ Clone an existing node, optionally repositioning it or placing it in a new paren
 
 ## Write — Modify
 
-### rename_node [BATCH OP]
+### rename_node [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Rename a single node by ID. Returns the updated node with its new name. Use `batch_rename_nodes` to rename multiple nodes at once.
 
@@ -441,9 +432,9 @@ Delete one or more nodes. This cannot be undone via MCP — use with care. Retur
 | nodeIds | string[] | Yes      | Node IDs to delete                              |
 | channel | string   | No       | Target a specific connected file by channel id. |
 
-### lock_nodes [BATCH OP]
+### lock_nodes [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Lock one or more nodes to prevent accidental edits in Figma.
 
@@ -452,9 +443,9 @@ Lock one or more nodes to prevent accidental edits in Figma.
 | nodeIds | string[] | Yes      | Node IDs to lock                                |
 | channel | string   | No       | Target a specific connected file by channel id. |
 
-### unlock_nodes [BATCH OP]
+### unlock_nodes [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Unlock one or more nodes, allowing them to be edited again.
 
@@ -495,9 +486,9 @@ Move one or more nodes to a different parent frame, group, or section. By defaul
 | preserveAbsolutePosition | boolean | No       | Keep each node's absolute canvas position after reparenting (default true)                       |
 | channel                 | string   | No       | Target a specific connected file by channel id.                                                  |
 
-### ungroup_nodes [BATCH OP]
+### ungroup_nodes [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Ungroup one or more GROUP nodes, moving their children to the parent and removing the group.
 
@@ -516,9 +507,9 @@ Group two or more nodes into a GROUP. All nodes must share the same parent.
 | name    | string   | No       | Optional name for the new group                 |
 | channel | string   | No       | Target a specific connected file by channel id. |
 
-### reorder_nodes [BATCH OP]
+### reorder_nodes [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Change the z-order (layer stack position) of one or more nodes.
 
@@ -543,9 +534,9 @@ Rename multiple nodes using find/replace, regex substitution, or prefix/suffix a
 | suffix     | string   | No       | String to append to the node name                                     |
 | channel    | string   | No       | Target a specific connected file by channel id.                       |
 
-### boolean_operation [BATCH OP]
+### boolean_operation [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Combine two or more vector nodes using a boolean operation, producing a new merged vector shape. The source nodes are consumed. Flatten first if the inputs are not already vectors.
 
@@ -571,9 +562,9 @@ Swap the main component of an existing INSTANCE node, replacing it with a differ
 | componentId | string | Yes      | Target COMPONENT node ID (from `get_local_components`) |
 | channel     | string | No       | Target a specific connected file by channel id.        |
 
-### detach_instance [BATCH OP]
+### detach_instance [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Detach one or more component instances, converting them to plain frames. The link to the main component is broken; all visual properties are preserved.
 
@@ -595,11 +586,11 @@ Set variant, boolean, text, and instance-swap properties on a component INSTANCE
 
 ### import_component_by_key [NEW]
 
-Import a component (or component set) from a subscribed library by its key, making it available to instantiate. Component keys must be full 40-char lowercase hex published keys, not node IDs. For a COMPONENT_SET key pass `assetType='COMPONENT_SET'`; if the key was seen in a cached `fetch_library_catalog` result, the server injects the correct `assetType` automatically.
+Import a component (or component set) from a subscribed library by its key, making it available to instantiate. For a COMPONENT_SET key pass `assetType='COMPONENT_SET'`.
 
 | Name      | Type   | Required | Description                                                     |
 | --------- | ------ | -------- | --------------------------------------------------------------- |
-| key       | string | Yes      | Published library component key: 40-char lowercase hex, not a node ID |
+| key       | string | Yes      | Library component key (from the library catalog, not a node ID) |
 | assetType | string | No       | Asset type hint: `COMPONENT` (default) or `COMPONENT_SET`       |
 | channel   | string | No       | Target a specific connected file by channel id.                 |
 
@@ -656,9 +647,9 @@ Apply one or more effects (drop shadow, inner shadow, layer blur, background blu
 | effects | object[] | Yes      | Array of effect objects. Each has: `type`, `radius`, `color` (hex, shadows only), `opacity` (0–1), `offsetX`, `offsetY`, `spread`, `visible` (default true) |
 | channel | string   | No       | Target a specific connected file by channel id.                                                                                                             |
 
-### set_blend_mode [BATCH OP]
+### set_blend_mode [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Set the blend mode of one or more nodes.
 
@@ -678,9 +669,9 @@ Set the opacity of one or more nodes (0 = fully transparent, 1 = fully opaque).
 | opacity | number   | Yes      | Opacity value between 0 and 1                   |
 | channel | string   | No       | Target a specific connected file by channel id. |
 
-### set_corner_radius [BATCH OP]
+### set_corner_radius [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Set corner radius on one or more nodes. Provide a uniform `cornerRadius` or per-corner values (`topLeftRadius`, `topRightRadius`, `bottomLeftRadius`, `bottomRightRadius`). When both uniform and per-corner values are supplied, per-corner values take precedence.
 
@@ -694,9 +685,9 @@ Set corner radius on one or more nodes. Provide a uniform `cornerRadius` or per-
 | bottomRightRadius | number   | No       | Bottom-right corner radius                      |
 | channel           | string   | No       | Target a specific connected file by channel id. |
 
-### set_constraints [BATCH OP]
+### set_constraints [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Set layout constraints (pinning behaviour) on one or more nodes relative to their parent.
 
@@ -707,9 +698,9 @@ Set layout constraints (pinning behaviour) on one or more nodes relative to thei
 | vertical   | string   | No       | `MIN` (top), `MAX` (bottom), `CENTER`, `STRETCH`, or `SCALE` |
 | channel    | string   | No       | Target a specific connected file by channel id.              |
 
-### rotate_nodes [BATCH OP]
+### rotate_nodes [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Rotate one or more nodes to an absolute angle in degrees.
 
@@ -865,9 +856,9 @@ Update an existing paint style's name, color, or description. Only paint styles 
 | description | string   | No       | New style description                                                                                |
 | channel     | string   | No       | Target a specific connected file by channel id.                                                      |
 
-### delete_style [BATCH OP]
+### delete_style [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Delete a style (paint, text, effect, or grid) by its ID.
 
@@ -882,7 +873,7 @@ Import a paint, text, or effect style from a subscribed library by its key, maki
 
 | Name    | Type   | Required | Description                                     |
 | ------- | ------ | -------- | ----------------------------------------------- |
-| key     | string | Yes      | Published library style key: 40-char lowercase hex, not a node ID |
+| key     | string | Yes      | Library style key (from the library catalog)    |
 | channel | string | No       | Target a specific connected file by channel id. |
 
 ---
@@ -955,9 +946,9 @@ Bind a local variable to a node property so the property is driven by the variab
 | field      | string | Yes      | Property to bind: `fillColor`, `strokeColor`, `visible`, `characters`, `opacity`, `width`, `height`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight`, `topLeftRadius`, `topRightRadius`, `bottomLeftRadius`, `bottomRightRadius`, `strokeWeight`, `strokeTopWeight`, `strokeRightWeight`, `strokeBottomWeight`, `strokeLeftWeight`, `itemSpacing`, `counterAxisSpacing`, `gridRowGap`, `gridColumnGap`, `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft`. NOT bindable: `cornerRadius`, `rotation`, `x`, `y`. |
 | channel    | string | No       | Target a specific connected file by channel id.                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-### delete_variable [BATCH OP]
+### delete_variable [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Delete a single variable (provide `variableId`) or an entire collection (provide `collectionId`). Provide exactly one of the two.
 
@@ -990,7 +981,7 @@ Import a design variable from a subscribed library by its key, making it availab
 
 | Name    | Type   | Required | Description                                     |
 | ------- | ------ | -------- | ----------------------------------------------- |
-| key     | string | Yes      | Library variable key from the catalog; bare node IDs are rejected |
+| key     | string | Yes      | Library variable key (from the library catalog) |
 | channel | string | No       | Target a specific connected file by channel id. |
 
 ### get_library_variables [NEW]
@@ -1021,9 +1012,9 @@ Supported action types: `NODE` (navigation), `BACK`, `CLOSE`, `URL`
 | mode      | string   | No       | `replace` (default) or `append`                                                           |
 | channel   | string   | No       | Target a specific connected file by channel id.                                           |
 
-### remove_reactions [BATCH OP]
+### remove_reactions [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Remove prototype reactions from a node. Omit `indices` to remove all reactions. Provide zero-based indices to remove specific reactions (use `get_reactions` first to see current indices).
 
@@ -1070,9 +1061,9 @@ Add a new page to the Figma document.
 | index   | number | No       | Position index to insert the page (0 = first). Defaults to last position. |
 | channel | string | No       | Target a specific connected file by channel id.                           |
 
-### rename_page [BATCH OP]
+### rename_page [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Rename an existing page in the Figma document.
 
@@ -1083,9 +1074,9 @@ Rename an existing page in the Figma document.
 | newName  | string | Yes      | New name for the page                               |
 | channel  | string | No       | Target a specific connected file by channel id.     |
 
-### delete_page [BATCH OP]
+### delete_page [BATCH-ONLY]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Demoted — not on `tools/list`. Invoke only as a `batch` op `type`.** Params below pass through verbatim.
 
 Delete a page from the Figma document. Cannot delete the only remaining page.
 
@@ -1103,7 +1094,7 @@ Delete a page from the Figma document. Cannot delete the only remaining page.
 
 Fetch a Figma library's full published catalog via the REST API without needing the file open in Figma. Returns components, component_sets, styles, variables, and variableCollections. Variables require Figma Enterprise plan — a 403 is surfaced as `variablesError`, not a fatal error.
 
-Requires `FIGMA_TOKEN` env (read-only PAT, auto-loaded from `.env`). Writes the full catalog JSON to `outPath`; returns a small handle `{outPath, ndjsonPath, counts, sample}` — query the files with jq/grep, not inline. `ndjsonPath` is a line-per-record `.ndjson` sidecar written beside `outPath` for grep/jq. Fetched component/component-set key types are cached in-process so later `import_component_by_key` calls can route COMPONENT_SET keys without the slow component-first fallback.
+Requires `FIGMA_TOKEN` env (read-only PAT, auto-loaded from `.env`). Writes the full catalog JSON to `outPath`; returns a small handle `{outPath, ndjsonPath, counts, sample}` — query the files with jq/grep, not inline. `ndjsonPath` is a line-per-record `.ndjson` sidecar written beside `outPath` for grep/jq.
 
 | Name    | Type   | Required | Description                                                                                         |
 | ------- | ------ | -------- | --------------------------------------------------------------------------------------------------- |
@@ -1115,40 +1106,11 @@ Requires `FIGMA_TOKEN` env (read-only PAT, auto-loaded from `.env`). Writes the 
 
 ## Batch [NEW]
 
-### search_batch_ops
-
-Search the validated `BatchOpCatalog` without loading every op's full schema.
-Use this when you know the capability but not the exact op name.
-
-| Name     | Type    | Required | Description                                                            |
-| -------- | ------- | -------- | ---------------------------------------------------------------------- |
-| query    | string  | No       | Name/description substring to search                                   |
-| category | string  | No       | Category filter: `read`, `create`, `modify`, `styles`, `variables`, ... |
-| readOnly | boolean | No       | `true` for read-only ops, `false` for non-read-only ops                |
-| mutates  | boolean | No       | `true` for mutating ops, `false` for non-mutating ops                  |
-| limit    | number  | No       | Max matches. Default 20, max 100                                       |
-
-Returns `{matches, count, total}` with compact op metadata.
-
-### get_batch_op_spec
-
-Return the structured schema for one batch/FigmaPlan op. This is the
-authoritative contract for hidden/core-profile write ops and legacy batch-only
-ops.
-
-| Name            | Type    | Required | Description                                               |
-| --------------- | ------- | -------- | --------------------------------------------------------- |
-| op              | string  | Yes      | Batch op name, e.g. `create_frame`, `rename_node`, `map`  |
-| includeExamples | boolean | No       | Include example payloads when available. Default false    |
-
-Returns `{name, category, readOnly, mutates, description, paramKeys,
-inputSchema}`.
-
 ### batch
 
-Execute many ops (writes AND reads) in ONE plugin round-trip. `ops` is an ordered array of `{type, nodeIds?, params}`, where `type` is any `BatchOpCatalog` op name.
+Execute many ops (writes AND reads) in ONE plugin round-trip. `ops` is an ordered array of `{type, nodeIds?, params}`, where `type` is any tool name.
 
-Use when you have a known multi-step sequence, a bulk apply, a read chain, or want to write-then-verify inline. In the default `core` profile, most low-level writes are batch/FigmaPlan ops rather than top-level tools. Use core read tools for open-ended exploration, then compose and validate the write plan.
+Use when you have a known multi-step sequence, a bulk apply, a read chain, or want to write-then-verify inline. For single fine adjustments or open-ended exploration, call the specific tool directly.
 
 Reads inside a batch are always live and bypass the singleflight cache. Do not use batch as a bypass for heavy catalog reads — use `fetch_library_catalog` or `get_local_components` directly.
 
@@ -1156,7 +1118,7 @@ Reads inside a batch are always live and bypass the singleflight cache. Do not u
 
 **Stop policy.** If any op uses a `$N` ref, the batch stops at the first failure (dependent chain). With no refs, it continues past failures (independent bulk). Override with `continueOnError`.
 
-**`map` op (per-item-varying params).** Use `{type:"map", over, as, do}` to run an inner op once per item of a collection: `over` is a ref to an array (e.g. `$0.matchingNodes`) or a literal array, `as` names the loop binding, and `do` is the op template referencing `$item`/`$index`. Named bindings substitute only as whole-value refs (`"$item.name"`); `"Title $index"` is literal text. `map.do` cannot be another `map`. Capped at 500 items. Use this when each iteration needs _different_ params (vs `[*]` which applies the same value to all).
+**`map` op (per-item-varying params).** Use `{type:"map", over, as, do}` to run an inner op once per item of a collection: `over` is a ref to an array (e.g. `$0.matchingNodes`), `as` names the loop binding, and `do` is the op template referencing `$item`/`$index`. Capped at 500 items. Use this when each iteration needs _different_ params (vs `[*]` which applies the same value to all).
 
 **`[*]` projection.** A ref like `$0.matchingNodes[*].id` fans an array out as a flat list — e.g. feed a scan's results into one bulk setter, applying the same params to every matched node.
 
@@ -1189,7 +1151,6 @@ Reads inside a batch are always live and bypass the singleflight cache. Do not u
 | --------------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ops             | object[] | Yes      | Ordered ops. Each: `{type: string, nodeIds?: string[], params?: object}`. Use `"$N.field"` strings in nodeIds/params to reference op N's result data.                  |
 | continueOnError | boolean  | No       | Override the default stop policy: `true` = run all ops and report failures; `false` = stop at first failure. Default: stop when ops use `$N` refs, continue otherwise. |
-| validateOnly    | boolean  | No       | Validate the plan and return a report without sending anything to the plugin.                                                                                          |
 | channel         | string   | No       | Target a specific connected file by channel id.                                                                                                                        |
 
 Returns `{results: [{i, type, data}|{i, type, error}], okCount, failCount, failedAt}`. Large aggregate results spill to disk via the response gate.

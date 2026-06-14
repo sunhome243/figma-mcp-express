@@ -40,16 +40,26 @@ Violations occur when a child tries to create its own external margin (Figma has
 Raw integers for spacing are never correct. Every padding and gap property must be bound to a spacing variable from the design library.
 
 ```
-WRONG — raw px hardcoded:
-  paddingLeft:24, paddingRight:24, paddingTop:16, paddingBottom:16, itemSpacing:12
+// WRONG — raw px hardcoded
+frame.paddingLeft   = 24
+frame.paddingRight  = 24
+frame.paddingTop    = 16
+frame.paddingBottom = 16
+frame.itemSpacing   = 12
 
-CORRECT — every value bound to a token through validated batch ops:
-  op 0-2: import_variable_by_key for spacing/large, spacing/medium, spacing/small
-  op 3: create_frame or set_auto_layout with padding/gap fields bound to those variables
-  op 4: get_node to verify boundVariables includes each spacing field
+// CORRECT — every value bound to a token
+const sp6  = await figma.variables.importVariableByKeyAsync("your-library/spacing/large")
+const sp4  = await figma.variables.importVariableByKeyAsync("your-library/spacing/medium")
+const sp3  = await figma.variables.importVariableByKeyAsync("your-library/spacing/small")
+
+frame.setBoundVariable("paddingLeft",   sp6)
+frame.setBoundVariable("paddingRight",  sp6)
+frame.setBoundVariable("paddingTop",    sp4)
+frame.setBoundVariable("paddingBottom", sp4)
+frame.setBoundVariable("itemSpacing",   sp3)
 ```
 
-Import spacing variables **once per session/plan**, before creating frames that will use them. Waiting until you need them means you'll be tempted to hardcode a fallback.
+Import the spacing variables **once at the top of the script**, before creating any frame that will use them. Waiting until you need them means you'll be tempted to hardcode a fallback.
 
 ---
 
@@ -147,7 +157,7 @@ CORRECT — two distinct concerns, two distinct bindings:
 
 | Mistake | Symptom | Fix |
 |---|---|---|
-| Raw `paddingLeft:24` | Hardcoded spacing breaks token theming + dark mode | Bind the padding field to a spacing variable |
+| `frame.paddingLeft = 24` | Hardcoded spacing breaks token theming + dark mode | `setBoundVariable("paddingLeft", token)` |
 | `itemSpacing` used for card-internal breathing room | Content crowds the card edge | Use `paddingLeft/Right/Top/Bottom` on the card frame |
 | Container padding on the child instead of the parent | Spacing disappears or doubles on resize | Move padding to the direct parent |
 | `itemSpacing = 200` on a HUG-child row | Looks spread at one width, broken at all others | Children to FILL + small gap token |

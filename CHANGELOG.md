@@ -6,29 +6,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [1.0.4] — 2026-06-14
-
-### Added
-
-- **Progressive batch op discovery** — added `search_batch_ops` and `get_batch_op_spec` so agents can search the validated FigmaPlan/batch catalog first, inspect one op's exact params only when needed, then execute through `batch`.
-- **Validated FigmaPlan dry-run** — `batch(validateOnly:true)` now validates op types, params, refs, node IDs, map shape, and script-like fields without sending anything to the Figma plugin.
-
-### Changed
-
-- **Default MCP surface is now compact core** — `FIGMA_MCP_TOOL_PROFILE=core` is the default and exposes a small stable tool set; every plugin-supported operation remains available through validated `batch` op types. Set `FIGMA_MCP_TOOL_PROFILE=full` for the legacy top-level compatibility surface.
-- **MCP tool schema is compact by default** — `tools/list` now trims long tool and parameter descriptions while preserving key scoping/spill guidance, reducing the default schema payload by more than 30%. Set `FIGMA_MCP_TOOL_SCHEMA_MODE=verbose` to restore the full in-schema guidance.
-- **Batch op search now indexes params** — `search_batch_ops` matches param keys such as `fontSize`, `componentId`, and `cornerRadius`, so agents can find the right op from the field they need to set instead of already knowing the op name.
-- **Batch validation now uses a catalog source of truth** — hidden and demoted ops are validated against `BatchOpCatalog`, so wrong params like `characters` and script-like fields are rejected before mutation instead of being silently ignored by the plugin.
-- **Batch `map` validation is stricter** — invalid named bindings, string-interpolation attempts such as `"Section $index"`, named-binding projections, reserved `map.as` values, and nested `map` ops are rejected before plugin execution.
-- **Library import asset type is schema-constrained** — `import_component_by_key.assetType` now exposes `COMPONENT|COMPONENT_SET` as an enum so `get_batch_op_spec` and top-level schemas steer agents away from slow wrong-route imports.
-- **Library catalog import hints stay bounded** — cached import routing hints now keep only `COMPONENT_SET` keys and cap growth at 10k entries, avoiding unnecessary in-process cache growth from component/style catalog rows.
-
-### Fixed
-
-- **Import keys fail fast before reaching the plugin** — `import_component_by_key` / `import_style_by_key` now reject node IDs, truncated keys, and malformed non-40-char lowercase hex keys in the Go server, and `import_variable_by_key` rejects empty keys and bare node IDs without forcing component/style key rules. Cached library catalogs now keep a bounded component-set route-hint index so the plugin skips the slow component-first fallback when a set key is already known.
-- **Batch import validation now matches direct tools** — `batch(validateOnly:true)` rejects bad import keys and invalid component `assetType` values before any plugin call; executable batches also inject cached `assetType` hints for `import_component_by_key` ops, including inside `map.do`.
-- **Batch schema validation preserves runtime refs** — typed params such as numeric widths and enum values can use valid `$N.path` / `$item.path` refs and are validated structurally before runtime resolution instead of being rejected as the wrong primitive type.
-
 ## [1.0.3] — 2026-06-13
 
 ### Fixed
@@ -94,8 +71,8 @@ Initial release as figma-mcp-express, forked from [vkhanhqui/figma-mcp-go](https
 - **Type-only scans moved onto native Figma traversal** — `scan_nodes_by_types` / `scan_text_nodes` now use `findAllWithCriteria(...)` instead of manual recursive JS walks, which reduces thread-block time and improves scan responsiveness on large trees.
 - **Connection handling is tuned for faster recovery under parallel work** — same-channel reconnects replace only that channel, and a dropped socket drains in-flight work immediately with a connection-closed error instead of leaving requests hung behind a long timeout ceiling.
 - **Large spill output is more queryable and less wasteful** — repeated oversized responses now write canonical spill files with NDJSON sidecars and a provenance manifest, so agents can grep/jq targeted slices and repeated cache-hit re-gates do not keep appending duplicate provenance entries.
-- **Unknown params are REJECTED, not silently dropped** — every tool's params are validated against its registered MCP schema on BOTH the direct path (`ValidateRPC`) AND each op inside `batch`. A Plugin-API-name typo (`characters`→`text`, `fills`→`fillColor`, `lineHeight`→`lineHeightValue`, `width` on `create_text`→`resize_nodes`) now returns an actionable error instead of producing an empty/default invisible node. The allowlist is **derived from the live tool registration**, so it can never drift from the schema.
-- **Tool surface trimmed to 70 live** (16 demoted to batch-only op types). Demoted ops leave `tools/list` but their plugin handlers stay intact — call them as a `batch` op `type`.
+- **Unknown params are REJECTED, not silently dropped** — every tool's params are validated against its registered MCP schema on BOTH the direct path (`ValidateRPC`) AND each op inside `batch`. A Plugin-API-name typo (`characters`→`text`, `fills`→`fillColor`, `lineHeight`→`lineHeightValue`, `width` on `create_text`→`resize_nodes`) now returns an actionable error instead of producing an empty/default invisible node. The allowlist is **derived from the live tool registration**, so it can never drift from the schema; demoted batch-only ops (unregistered) are left unguarded by design.
+- **Tool surface trimmed to 70 live** (16 demoted to batch-only op types). Demoted ops leave `tools/list` but their plugin handlers stay intact — call them as a `batch` op `type` (params pass through verbatim).
 - **Timeouts are server-managed** — removed the client `timeoutMs` param. Ceilings are set by op type: `FIGMA_MCP_READ_TIMEOUT` (default 600s) for heavy reads + `batch`, 120s for light ops. A timeout means **re-scope narrower**, never "raise a timeout." The timer is inactivity-based — a read that ticks progress never trips it.
 - **Style and variable workflows are broader than upstream** — paint/effect styles accept richer `paints[]` / `effects[]` payloads, and `bind_variable_to_node` now supports a much larger set of bindable fields with stricter request-level validation for unsupported ones.
 - **Reparenting is less destructive by default** — `reparent_nodes` now preserves absolute canvas position unless callers explicitly opt out.

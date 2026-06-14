@@ -9,33 +9,30 @@ import (
 
 func addAnnotationConversionStrategy(s *server.MCPServer) {
 	s.AddPrompt(mcp.NewPrompt("annotation_conversion_strategy",
-		mcp.WithPromptDescription("Read-only strategy for analyzing manual annotations and mapping them to likely target nodes"),
+		mcp.WithPromptDescription("Strategy for converting manual annotations to Figma's native annotations"),
 	), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		return mcp.NewGetPromptResult(
-			"Read-only strategy for analyzing manual annotations",
+			"Strategy for converting manual annotations to Figma's native annotations",
 			[]mcp.PromptMessage{
 				mcp.NewPromptMessage(
 					mcp.RoleUser,
-					mcp.NewTextContent(`# Manual Annotation Analysis
+					mcp.NewTextContent(`# Automatic Annotation Conversion
 
 ## Process Overview
-Analyze manual annotations (numbered/alphabetical indicators with connected descriptions)
-and map each one to the likely target UI node. This prompt is read-only: the current
-server can read existing native annotations with get_annotations, but it does not provide
-an annotation-write op.
+Convert manual annotations (numbered/alphabetical indicators with connected descriptions) to Figma's native annotations:
 
 1. Get selected frame/component information
 2. Scan and collect all annotation text nodes
 3. Scan target UI elements (components, instances, frames)
 4. Match annotations to appropriate UI elements
-5. Report a conversion plan for a human or future annotation-write tool
+5. Apply native Figma annotations
 
 ## Step 1: Get Selection and Initial Setup
 
 // Get the selected frame/component
 get_selection()
-// Note the selected node ID, then use get_batch_op_spec("get_annotations")
-// and a validated batch op get_annotations.
+// Note the selected node ID, then:
+get_annotations(nodeId: "selected-node-id")
 
 ## Step 2: Scan Annotation Text Nodes
 
@@ -73,17 +70,14 @@ Match each annotation to its target UI element using these strategies in order o
    - Find the closest UI element by measuring distances to element centers
    - Use this method when other matching strategies fail
 
-## Step 5: Report Results
+## Step 5: Verify Results
 
-Produce a table:
-| Marker | Description | Likely Target Node ID | Target Name | Confidence | Evidence |
+After converting annotations, verify with:
+get_annotations(nodeId: "selected-node-id")
+get_screenshot(nodeIds: ["selected-node-id"], format: "PNG", scale: 0.5)
 
-Then verify the source state with:
-batch op get_annotations for the selected node
-save_screenshots(items: [{nodeId: "selected-node-id", outputPath: "/tmp/annotation-check.png"}], format: "PNG", scale: 0.5)
-
-This strategy focuses on read-only mapping. Do not claim the annotations were written
-unless a future annotation-write op exists and succeeds.`),
+This strategy focuses on practical implementation based on real-world usage patterns,
+emphasizing the importance of handling various UI elements as annotation targets.`),
 				),
 			},
 		), nil

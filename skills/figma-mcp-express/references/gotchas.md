@@ -8,16 +8,16 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 ## Slow import delays the queue (bounded, self-clears — not a jam)
 
 **Symptom:** a call sits "in progress" a long time while `save_screenshots` / `list_channels` still respond.
-**Cause:** malformed/truncated/node-id keys now fail fast in the Go server, but valid-looking unpublished, wrong-library, or permission-blocked keys can still reach the Plugin API and wait for its import timeout; calls queued behind it wait, then the queue drains on its own. NOT a permanent jam — the queue + timeout clear it.
-**Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; pass `assetType:"COMPONENT_SET"` for set keys or fetch the catalog first so the server injects the component-set route hint. Don't loop-retry — each try queues another timeout window. Calls behind it complete once it clears — no reopen needed unless the WebSocket actually dropped.
+**Cause:** `import_component_by_key` with an invalid/unpublished key has no progress ticks, so it holds the channel's serial queue slot until its inactivity timeout fires (~120s light / ~600s heavy); calls queued behind it wait that long, then the queue drains on its own. NOT a permanent jam — the queue + inactivity-timeout clear it (concurrent calls are otherwise safe and pipeline normally).
+**Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; don't loop-retry (each try queues another timeout window). Calls behind it complete once it clears — no reopen needed (reopen only if the WebSocket actually dropped — a different "connection closed" error).
 
 ---
 
 ## COMPONENT_SET vs COMPONENT key
 
 **Symptom:** `import_component_by_key` returns "not found" for a seemingly-correct key.
-**Cause:** The key may be a COMPONENT_SET without a type hint, or the library may be unpublished/not available to the target file.
-**Fix:** `get_local_components(pageId)` or `fetch_library_catalog` → confirm the entry type. For sets, pass `assetType:"COMPONENT_SET"` or use a child variant's `key`; cached REST catalog results let the server inject the component-set route hint automatically.
+**Cause:** Figma URLs expose the COMPONENT_SET key; import needs a COMPONENT (variant) key.
+**Fix:** `get_local_components(pageId)` → find the set → use a child variant's `key`. Store `assetType` with every cataloged key; never pass a SET key to import directly (or pass `assetType:"COMPONENT_SET"`).
 
 ---
 
@@ -25,7 +25,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** `layoutSizingHorizontal:"FILL"` set, node still renders at content size, no error.
 **Cause:** FILL only applies once the node is a child of an auto-layout parent; on a parentless node it's accepted and ignored.
-**Fix:** append to the auto-layout parent FIRST, then set sizing — use `batch` with `$N.id` refs so order is guaranteed. Existing already-parented node: batch op `resize_nodes` with `layoutSizingHorizontal:"FILL"`.
+**Fix:** append to the auto-layout parent FIRST, then set sizing — use `batch` with `$N.id` refs so order is guaranteed. Existing already-parented node: `resize_nodes(nodeIds, layoutSizingHorizontal:"FILL")`.
 
 ---
 
@@ -105,7 +105,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** you hack alignment/wrap (e.g. leading spaces to fake-center) thinking `set_text` only swaps characters.
 **Cause:** `set_text` carries the full text-style set; `text` is optional (pass a styling param alone to restyle in place).
-**Fix:** use its params — `textAlignHorizontal/Vertical`, `textAutoResize`, `letterSpacing*`, `lineHeight*`, `textCase`, `textDecoration`, `fontSize/Family/Style` (auto-loads). Wrap/grow: `textAutoResize:"HEIGHT"` + batch op `resize_nodes` with width. Center: `textAlignHorizontal:"CENTER"` — never fake with spaces.
+**Fix:** use its params — `textAlignHorizontal/Vertical`, `textAutoResize`, `letterSpacing*`, `lineHeight*`, `textCase`, `textDecoration`, `fontSize/Family/Style` (auto-loads). Wrap/grow: `textAutoResize:"HEIGHT"` + `resize_nodes(width)`. Center: `textAlignHorizontal:"CENTER"` — never fake with spaces.
 
 ---
 
@@ -113,7 +113,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** clearing overrides by setting an empty/transparent fill — which ADDS an override instead.
 **Cause:** blanking a property is itself an override layered on top, not a reset.
-**Fix:** batch op `set_instance_properties` with `resetOverrides:true` resets to defaults before applying `properties` (omit `properties` to reset only). Status/variant color lives in the variant — set `properties:{"Variant":"Success"}`, never hand-write a fill.
+**Fix:** `set_instance_properties(nodeId, {resetOverrides:true, properties:{…}})` resets to defaults before applying `properties` (omit `properties` to reset only). Status/variant color lives in the variant — set `properties:{"Variant":"Success"}`, never hand-write a fill.
 
 ---
 
@@ -121,7 +121,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** you need a remote collection's mode ids (e.g. to pin dark mode) but local-collection reads miss them.
 **Cause:** local reads don't surface remote library collections.
-**Fix:** use the batch op `get_remote_variable_collection` with `collectionId` from a node's `boundVariables[].variableCollectionId`; it returns the modes to pass to `set_variable_mode`.
+**Fix:** `get_remote_variable_collection(collectionId)` — `collectionId` from a node's `boundVariables[].variableCollectionId` — returns the modes to pass to `set_variable_mode`.
 
 ---
 
@@ -130,7 +130,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 **Symptom:** `import_component_by_key` on a community kit returns `Cannot import component … since it is unpublished`; `fetch_library_catalog` returns `components: 0` / REST `404`.
 **Cause:** "Published to **Community**" (file is duplicatable) ≠ "published as a **library**" (components importable by key). Community kits are only the former → **unpublished local components**, and the Plugin API has no cross-file copy (the multi-channel server moves *data*, not component *links*). Two states only: published/enabled library → linked instances; else → detached copies.
 **REST is NOT the arbiter — the live probe is.** REST `404`/`components:0` reflects token access + REST-publish state, not the import path. Proven: after the user published a `shadcn (Copy)` as a library, `fetch_library_catalog` *still* returned 404, yet its `get_local_components` keys imported into another file as real `remote:true` instances (publishing doesn't change keys). Material/iOS kits failed only because never published.
-**Fix:** catalog keys via `get_local_components` (any publish state) → ONE live `import_component_by_key` probe into the *target* channel decides it. `remote:true` → `create_instance`. `unpublished` → fall back: **Publish as library** (Assets panel, paid) for real links, or one-time Cmd+C/V into the target (detached local copies). Never loop retries on an unpublished key; each attempt can wait for the bounded import timeout.
+**Fix:** catalog keys via `get_local_components` (any publish state) → ONE live `import_component_by_key` probe into the *target* channel decides it. `remote:true` → `create_instance`. `unpublished` → fall back: **Publish as library** (Assets panel, paid) for real links, or one-time Cmd+C/V into the target (detached local copies). Never loop retries on an unpublished key (jams the plugin).
 
 ---
 
@@ -142,7 +142,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 2. **Differ per instance:** `swap_component` the nested path (e.g. `I3:244;13:49`) — works through the MCP (instance-swap override). Leave one on default, swap the rest.
 3. **Recolor LAST** (after swaps): `scan_nodes_by_types(<container>, ["VECTOR"])` → bulk `set_strokes` on `["$0.matchingNodes[*].id"]`. Survives swaps, no hand-built paths, covers multi-path icons. **Lucide/shadcn icons are STROKED** → `set_strokes`, not `set_fills`.
 
-**`"Removing this node is not allowed"` (native Figma, not a handler guard):** deletion is blocked when the layer **backs a component property** (text prop, exposed instance-swap, ...) — adding a nested instance to a master can auto-expose one, so even a just-added node may resist deletion; plain non-property layers delete fine. **Pick by intent, don't reflexively hide:** to truly delete it, remove the component-property binding first, or `detach_instance` and delete on the plain frame; to suppress it in specific instances, `set_visible:false` is the correct override. Hidden auto-layout children drop from flow, but hiding only hides; it is not a stand-in for deletion. `delete_nodes` reports this per-node with the same hint instead of aborting the batch.
+**`"Removing this node is not allowed"` (native Figma, not a handler guard):** `node.remove()` is blocked when the layer **backs a component property** (text prop, exposed instance-swap, …) — adding a nested instance to a master can auto-expose one, so even a just-added node may resist deletion; plain (non-property) layers delete fine. **Pick by intent, don't reflexively hide:** to truly delete it, remove the component-property binding first (then it deletes) or `detach_instance` and delete on the plain frame; to suppress it in specific instances, `set_visible:false` is the correct *override* (hidden auto-layout child drops from flow) — but it only HIDES (node persists), never a stand-in for deletion. (`delete_nodes` now reports this per-node with the same hint instead of aborting the batch.)
 
 **`batch` quirks:** `swap_component` takes `nodeIds[]` (not `nodeId`); reads like `scan_nodes_by_types` take `nodeId` **inside `params`**.
 
