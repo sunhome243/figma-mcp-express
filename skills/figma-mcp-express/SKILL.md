@@ -29,7 +29,6 @@ Use the compact core surface first. In default `core` profile, low-level write p
 - Build one logical section per batch. Avoid one huge batch that blocks the plugin queue.
 - Use `continueOnError:true` for scanned lists; inspect per-item errors.
 - For multi-file work, channel is mandatory. A channel maps to one open Figma file.
-- Library import keys are not node IDs. Component/style keys must be full 40-char lowercase hex; for component sets pass `assetType:"COMPONENT_SET"` or fetch the catalog first so the server can route it.
 
 ## Reference Router
 

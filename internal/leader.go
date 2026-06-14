@@ -140,9 +140,6 @@ func (l *Leader) handleRPC(w http.ResponseWriter, r *http.Request) {
 		l.sendJSON(w, http.StatusBadRequest, RPCResponse{Error: validationErr})
 		return
 	}
-	if req.Tool == "import_component_by_key" {
-		prepareImportComponentByKeyParams(req.Params)
-	}
 
 	resp, err := l.bridge.Send(r.Context(), req.Tool, req.NodeIDs, req.Params)
 	if err != nil {

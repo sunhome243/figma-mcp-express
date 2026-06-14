@@ -305,7 +305,6 @@ func executeFetchCatalog(ctx context.Context, fetch catalogFetcher, fileKey, sco
 	if err := os.WriteFile(resolvedPath, catalogJSON, 0o600); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("write catalog: %v", err)), nil
 	}
-	rememberLibraryCatalogKeys(byKey)
 
 	// Slim NDJSON sidecar: one entity per line {key,name,type,nodeId}. This is the
 	// HOT-PATH search surface — `rg`/`grep` over line-oriented records needs no

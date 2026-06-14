@@ -595,11 +595,11 @@ Set variant, boolean, text, and instance-swap properties on a component INSTANCE
 
 ### import_component_by_key [NEW]
 
-Import a component (or component set) from a subscribed library by its key, making it available to instantiate. Component keys must be full 40-char lowercase hex published keys, not node IDs. For a COMPONENT_SET key pass `assetType='COMPONENT_SET'`; if the key was seen in a cached `fetch_library_catalog` result, the server injects the correct `assetType` automatically.
+Import a component (or component set) from a subscribed library by its key, making it available to instantiate. For a COMPONENT_SET key pass `assetType='COMPONENT_SET'`.
 
 | Name      | Type   | Required | Description                                                     |
 | --------- | ------ | -------- | --------------------------------------------------------------- |
-| key       | string | Yes      | Published library component key: 40-char lowercase hex, not a node ID |
+| key       | string | Yes      | Library component key (from the library catalog, not a node ID) |
 | assetType | string | No       | Asset type hint: `COMPONENT` (default) or `COMPONENT_SET`       |
 | channel   | string | No       | Target a specific connected file by channel id.                 |
 
@@ -882,7 +882,7 @@ Import a paint, text, or effect style from a subscribed library by its key, maki
 
 | Name    | Type   | Required | Description                                     |
 | ------- | ------ | -------- | ----------------------------------------------- |
-| key     | string | Yes      | Published library style key: 40-char lowercase hex, not a node ID |
+| key     | string | Yes      | Library style key (from the library catalog)    |
 | channel | string | No       | Target a specific connected file by channel id. |
 
 ---
@@ -990,7 +990,7 @@ Import a design variable from a subscribed library by its key, making it availab
 
 | Name    | Type   | Required | Description                                     |
 | ------- | ------ | -------- | ----------------------------------------------- |
-| key     | string | Yes      | Library variable key from the catalog; bare node IDs are rejected |
+| key     | string | Yes      | Library variable key (from the library catalog) |
 | channel | string | No       | Target a specific connected file by channel id. |
 
 ### get_library_variables [NEW]
@@ -1103,7 +1103,7 @@ Delete a page from the Figma document. Cannot delete the only remaining page.
 
 Fetch a Figma library's full published catalog via the REST API without needing the file open in Figma. Returns components, component_sets, styles, variables, and variableCollections. Variables require Figma Enterprise plan — a 403 is surfaced as `variablesError`, not a fatal error.
 
-Requires `FIGMA_TOKEN` env (read-only PAT, auto-loaded from `.env`). Writes the full catalog JSON to `outPath`; returns a small handle `{outPath, ndjsonPath, counts, sample}` — query the files with jq/grep, not inline. `ndjsonPath` is a line-per-record `.ndjson` sidecar written beside `outPath` for grep/jq. Fetched component/component-set key types are cached in-process so later `import_component_by_key` calls can route COMPONENT_SET keys without the slow component-first fallback.
+Requires `FIGMA_TOKEN` env (read-only PAT, auto-loaded from `.env`). Writes the full catalog JSON to `outPath`; returns a small handle `{outPath, ndjsonPath, counts, sample}` — query the files with jq/grep, not inline. `ndjsonPath` is a line-per-record `.ndjson` sidecar written beside `outPath` for grep/jq.
 
 | Name    | Type   | Required | Description                                                                                         |
 | ------- | ------ | -------- | --------------------------------------------------------------------------------------------------- |

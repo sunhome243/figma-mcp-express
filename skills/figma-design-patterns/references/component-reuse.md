@@ -62,5 +62,5 @@ A fresh instance is not finished. Immediately configure real content, variants, 
 | Building a table from rectangles when a Table exists | Manual spacing/color/state bugs | Import the Table component |
 | First search term missed, then declared gap | Real component missed | Search synonyms and catalog pages |
 | Detached visual clone | Library updates no longer propagate | Import and place a real instance |
-| COMPONENT_SET key used without type handling | Import may probe the wrong route first | Pass `assetType:"COMPONENT_SET"` or use a concrete default variant component key |
+| COMPONENT_SET key used as variant key | Import fails | Use a concrete default variant component key |
 | Default content left visible | Looks unfinished | Configure properties and verify |
