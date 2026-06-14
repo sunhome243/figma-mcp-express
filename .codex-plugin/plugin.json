@@ -1,7 +1,7 @@
 {
   "name": "figma-mcp-express",
   "displayName": "Figma MCP Express",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Figma MCP with batch ops, multi-channel routing, library automation, and design best-practice skills. No API token, no rate limits.",
   "author": { "name": "sunhome243" },
   "license": "MIT",
