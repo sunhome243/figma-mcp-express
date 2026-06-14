@@ -135,6 +135,8 @@ func TestBatchRecipesDocumentValidationAndErgonomics(t *testing.T) {
 		"Only ONE `[*]` wildcard",
 		"not one giant batch",
 		"NOT transactional",
+		"batch(channel:",
+		"Never put `channel` inside `ops[*].params`",
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("batch-recipes.md missing production batch guidance %q", required)
@@ -142,6 +144,33 @@ func TestBatchRecipesDocumentValidationAndErgonomics(t *testing.T) {
 	}
 	if strings.Contains(body, `"text": "Section $index"`) {
 		t.Fatal("batch-recipes.md must not show string interpolation examples; named refs are whole-value only")
+	}
+}
+
+func TestToolsDocDoesNotExposeChannelInsideCatalogBackedBatchOps(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "TOOLS.md"))
+	currentHeading := ""
+	inBatchOp := false
+	for i, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "### ") {
+			currentHeading = line
+			inBatchOp = strings.Contains(line, "[BATCH OP]")
+			continue
+		}
+		if inBatchOp && strings.HasPrefix(line, "| channel ") {
+			t.Fatalf("TOOLS.md line %d: %s must not document per-op channel; use outer batch channel only", i+1, currentHeading)
+		}
+	}
+	if !strings.Contains(body, "Pass `channel` on the outer `batch` call") {
+		t.Fatal("TOOLS.md must document outer batch channel routing")
+	}
+}
+
+func TestNpmReadmeHasSingleLimitationsSection(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "npm", "README.md"))
+	count := strings.Count(body, "\n## Limitations\n") + strings.Count(body, "\n## Known limitations\n")
+	if count != 1 {
+		t.Fatalf("npm/README.md must have exactly one limitations section, got %d", count)
 	}
 }
 

@@ -25,6 +25,7 @@ var scriptLikeBatchKeys = map[string]bool{
 }
 
 func validateBatchOps(rawOps []interface{}) error {
+	normalizeBatchNodeIDs(rawOps)
 	for i, raw := range rawOps {
 		op, ok := raw.(map[string]interface{})
 		if !ok {
@@ -65,6 +66,9 @@ func normalizeBatchNodeIDs(rawOps []interface{}) {
 			continue
 		}
 		if op["type"] == "map" {
+			if over, ok := op["over"].([]interface{}); ok {
+				normalizeBatchRefIDValues(over)
+			}
 			if do, ok := op["do"].(map[string]interface{}); ok {
 				normalizeBatchNodeIDs([]interface{}{do})
 			}
@@ -77,6 +81,35 @@ func normalizeBatchNodeIDs(rawOps []interface{}) {
 				}
 			}
 		}
+		if params, ok := op["params"].(map[string]interface{}); ok {
+			normalizeBatchRefIDValues(params)
+		}
+	}
+}
+
+func normalizeBatchRefIDValues(v interface{}) {
+	switch x := v.(type) {
+	case map[string]interface{}:
+		for k, child := range x {
+			if s, ok := child.(string); ok && isBatchNodeIDParam(k) && !isBatchRefLike(s) {
+				x[k] = NormalizeNodeID(s)
+				continue
+			}
+			normalizeBatchRefIDValues(child)
+		}
+	case []interface{}:
+		for _, child := range x {
+			normalizeBatchRefIDValues(child)
+		}
+	}
+}
+
+func isBatchNodeIDParam(name string) bool {
+	switch name {
+	case "nodeId", "parentId", "pageId", "componentId":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -194,6 +227,9 @@ func validateBatchOp(i int, op map[string]interface{}, allowedNamedRefs map[stri
 		}
 	} else if err := validateBatchParamsAgainstSchema(t, nil, allowedNamedRefs); err != nil {
 		return fmt.Errorf("ops[%d]: %s", i, err)
+	}
+	if msg := validateBatchOpSemantics(t, op, allowedNamedRefs); msg != "" {
+		return fmt.Errorf("ops[%d]: %s", i, msg)
 	}
 	return nil
 }
@@ -388,6 +424,135 @@ func validateBatchParamsAgainstSchema(op string, params map[string]interface{}, 
 		}
 	}
 	return nil
+}
+
+func validateBatchOpSemantics(tool string, op map[string]interface{}, allowedNamedRefs map[string]bool) string {
+	nodeIDs := semanticNodeIDsForBatch(op["nodeIds"], allowedNamedRefs)
+	params, _ := op["params"].(map[string]interface{})
+	return ValidateRPC(tool, nodeIDs, semanticParamsForBatch(tool, params, allowedNamedRefs))
+}
+
+func semanticNodeIDsForBatch(raw interface{}, allowedNamedRefs map[string]bool) []string {
+	values, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		s, _ := v.(string)
+		if isBatchRefLike(s) || isAllowedNamedBindingRef(s, allowedNamedRefs) {
+			out = append(out, "1:1")
+			continue
+		}
+		out = append(out, NormalizeNodeID(s))
+	}
+	return out
+}
+
+func semanticParamsForBatch(tool string, params map[string]interface{}, allowedNamedRefs map[string]bool) map[string]interface{} {
+	if params == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(params))
+	props := map[string]any{}
+	if spec, ok := batchOpCatalog[tool]; ok && spec.InputSchema != nil {
+		props, _ = spec.InputSchema["properties"].(map[string]any)
+	}
+	for k, v := range params {
+		prop, _ := props[k].(map[string]any)
+		out[k] = semanticParamValueForBatch(tool, k, v, prop, allowedNamedRefs)
+	}
+	return out
+}
+
+func semanticParamValueForBatch(tool, key string, value interface{}, prop map[string]any, allowedNamedRefs map[string]bool) interface{} {
+	if s, ok := value.(string); ok && (isBatchRefLike(s) || isAllowedNamedBindingRef(s, allowedNamedRefs)) {
+		return semanticPlaceholderForBatch(tool, key, prop)
+	}
+	if key == "effects" {
+		return semanticEffectsForBatch(value, allowedNamedRefs)
+	}
+	switch x := value.(type) {
+	case []interface{}:
+		items, _ := prop["items"].(map[string]any)
+		out := make([]interface{}, 0, len(x))
+		for _, child := range x {
+			out = append(out, semanticParamValueForBatch(tool, key, child, items, allowedNamedRefs))
+		}
+		return out
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(x))
+		for childKey, child := range x {
+			out[childKey] = semanticParamValueForBatch(tool, childKey, child, nil, allowedNamedRefs)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func semanticEffectsForBatch(value interface{}, allowedNamedRefs map[string]bool) interface{} {
+	effects, ok := value.([]interface{})
+	if !ok {
+		return value
+	}
+	out := make([]interface{}, 0, len(effects))
+	for _, raw := range effects {
+		effect, ok := raw.(map[string]interface{})
+		if !ok {
+			out = append(out, raw)
+			continue
+		}
+		cloned := make(map[string]interface{}, len(effect))
+		for k, child := range effect {
+			if k == "type" {
+				if s, ok := child.(string); ok && (isBatchRefLike(s) || isAllowedNamedBindingRef(s, allowedNamedRefs)) {
+					cloned[k] = "DROP_SHADOW"
+					continue
+				}
+			}
+			cloned[k] = semanticParamValueForBatch("", k, child, nil, allowedNamedRefs)
+		}
+		out = append(out, cloned)
+	}
+	return out
+}
+
+func semanticPlaceholderForBatch(tool, key string, prop map[string]any) interface{} {
+	switch key {
+	case "nodeId", "parentId", "pageId", "componentId":
+		return "1:1"
+	case "key":
+		return strings.Repeat("a", 40)
+	case "assetType":
+		return "COMPONENT"
+	}
+	if enum, ok := prop["enum"].([]any); ok && len(enum) > 0 {
+		return enum[0]
+	}
+	switch tool + "." + key {
+	case "create_variable.type":
+		return "COLOR"
+	case "set_fills.mode", "set_strokes.mode", "set_reactions.mode":
+		return "replace"
+	case "apply_style_to_node.target":
+		return "fill"
+	case "set_effects.effects":
+		return []interface{}{}
+	}
+	typ, _ := prop["type"].(string)
+	switch typ {
+	case "number", "integer":
+		return float64(1)
+	case "boolean":
+		return true
+	case "array":
+		return []interface{}{}
+	case "object":
+		return map[string]interface{}{}
+	default:
+		return "ref"
+	}
 }
 
 func schemaRequired(schema map[string]any) []string {

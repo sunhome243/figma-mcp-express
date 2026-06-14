@@ -46,6 +46,7 @@ Screenshots are not mutation proof. They are the final visual review.
 | Plugin not connected | Open the target file in Figma Desktop and run the plugin; do not retry-loop |
 | Timeout/no response | Reduce scope: frame id, smaller depth, lower result volume |
 | Wrong file mutated | Call `list_channels` and pass the intended `channel` |
+| Batch rejects `channel` | Put `channel` on the outer `batch` call, not inside `ops[*].params` |
 | Node id not found | Convert hyphen ids to colon ids when needed |
 | Text op rejects params | Use server param names from `get_batch_op_spec`; `text`, not stale Plugin API aliases |
 | FILL sizing did not apply | Place the node under its parent before setting FILL sizing in the batch sequence |

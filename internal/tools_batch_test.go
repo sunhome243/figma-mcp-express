@@ -1001,6 +1001,149 @@ func TestRegisterBatchTools_ValidateOnlyEnforcesCatalogSchema(t *testing.T) {
 	}
 }
 
+func TestRegisterBatchTools_ValidateOnlyEnforcesDirectSemanticGuards(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	cases := []struct {
+		name string
+		op   map[string]any
+		want string
+	}{
+		{
+			name: "set_fills requires color or paints",
+			op:   map[string]any{"type": "set_fills", "nodeIds": []any{"1:1"}, "params": map[string]any{}},
+			want: "color or paints",
+		},
+		{
+			name: "set_strokes requires color or paints",
+			op:   map[string]any{"type": "set_strokes", "nodeIds": []any{"1:1"}, "params": map[string]any{}},
+			want: "color or paints",
+		},
+		{
+			name: "delete_variable requires variableId or collectionId",
+			op:   map[string]any{"type": "delete_variable", "params": map[string]any{}},
+			want: "variableId or collectionId",
+		},
+		{
+			name: "delete_page requires pageId or pageName",
+			op:   map[string]any{"type": "delete_page", "params": map[string]any{}},
+			want: "pageId or pageName",
+		},
+		{
+			name: "rename_page requires page selector",
+			op:   map[string]any{"type": "rename_page", "params": map[string]any{"newName": "Sprint"}},
+			want: "pageId or pageName",
+		},
+		{
+			name: "set_corner_radius requires at least one radius",
+			op:   map[string]any{"type": "set_corner_radius", "nodeIds": []any{"1:1"}, "params": map[string]any{}},
+			want: "cornerRadius",
+		},
+		{
+			name: "set_constraints requires at least one axis",
+			op:   map[string]any{"type": "set_constraints", "nodeIds": []any{"1:1"}, "params": map[string]any{}},
+			want: "horizontal or vertical",
+		},
+		{
+			name: "set_effects validates effect types",
+			op: map[string]any{"type": "set_effects", "nodeIds": []any{"1:1"}, "params": map[string]any{
+				"effects": []any{map[string]any{"type": "MAGIC_SHADOW"}},
+			}},
+			want: "DROP_SHADOW",
+		},
+		{
+			name: "update_paint_style requires an actual update",
+			op:   map[string]any{"type": "update_paint_style", "params": map[string]any{"styleId": "S:1"}},
+			want: "at least one",
+		},
+		{
+			name: "per-op channel is rejected",
+			op:   map[string]any{"type": "set_fills", "nodeIds": []any{"1:1"}, "params": map[string]any{"color": "#fff", "channel": "file-a"}},
+			want: "channel",
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			res := callToolResult(t, s, "batch", map[string]any{
+				"validateOnly": true,
+				"ops":          []any{tc.op},
+			})
+			if !res.IsError {
+				t.Fatalf("expected semantic validation error, got %s", resultText(t, res))
+			}
+			if txt := resultText(t, res); !strings.Contains(txt, tc.want) {
+				t.Fatalf("expected error containing %q, got %q", tc.want, txt)
+			}
+			if captured.Tool != "" {
+				t.Fatalf("failed validateOnly should not call bridge, captured tool %q", captured.Tool)
+			}
+		})
+	}
+}
+
+func TestRegisterBatchTools_ValidateOnlyAcceptsPaintStylePaintsUpdate(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"validateOnly": true,
+		"ops": []any{
+			map[string]any{
+				"type": "update_paint_style",
+				"params": map[string]any{
+					"styleId": "S:1",
+					"paints":  []any{map[string]any{"type": "SOLID"}},
+				},
+			},
+		},
+	})
+	if res.IsError {
+		t.Fatalf("paints[] is a valid update_paint_style payload and must not be rejected: %s", resultText(t, res))
+	}
+	if captured.Tool != "" {
+		t.Fatalf("validateOnly should not call bridge, captured tool %q", captured.Tool)
+	}
+}
+
+func TestRegisterBatchTools_NormalizesKnownIDParamsBeforeValidationAndForwarding(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"ops": []any{map[string]any{
+			"type":    "create_instance",
+			"nodeIds": []any{},
+			"params": map[string]any{
+				"componentId": "10-20",
+				"parentId":    "30-40",
+			},
+		}},
+	})
+	if res.IsError {
+		t.Fatalf("hyphen IDs in known params should normalize before validation, got %s", resultText(t, res))
+	}
+	forwardedOps, ok := captured.Params["ops"].([]any)
+	if !ok || len(forwardedOps) != 1 {
+		t.Fatalf("forwarded params.ops = %#v", captured.Params["ops"])
+	}
+	op0, ok := forwardedOps[0].(map[string]any)
+	if !ok {
+		t.Fatalf("forwarded op[0] = %#v", forwardedOps[0])
+	}
+	params, ok := op0["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("forwarded op[0].params = %#v", op0["params"])
+	}
+	if params["componentId"] != "10:20" || params["parentId"] != "30:40" {
+		t.Fatalf("IDs were not normalized in forwarded params: %#v", params)
+	}
+}
+
 func TestRegisterBatchTools_AllowsScriptLikeFreeformComponentProperties(t *testing.T) {
 	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
 		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
@@ -1324,17 +1467,27 @@ func minimalDemotedBatchOp(op string) map[string]any {
 	case "delete_style":
 		delete(payload, "nodeIds")
 		payload["params"] = map[string]any{"styleId": "S:abc"}
+	case "delete_variable":
+		delete(payload, "nodeIds")
+		payload["params"] = map[string]any{"variableId": "VariableID:1:2"}
+	case "delete_page":
+		delete(payload, "nodeIds")
+		payload["params"] = map[string]any{"pageId": "0:2"}
 	case "rename_node":
 		payload["params"] = map[string]any{"name": "Renamed"}
 	case "rename_page":
 		delete(payload, "nodeIds")
-		payload["params"] = map[string]any{"newName": "Renamed Page"}
+		payload["params"] = map[string]any{"pageId": "0:2", "newName": "Renamed Page"}
 	case "reorder_nodes":
 		payload["params"] = map[string]any{"order": "bringToFront"}
 	case "rotate_nodes":
 		payload["params"] = map[string]any{"rotation": float64(90)}
 	case "set_blend_mode":
 		payload["params"] = map[string]any{"blendMode": "NORMAL"}
+	case "set_constraints":
+		payload["params"] = map[string]any{"horizontal": "MIN"}
+	case "set_corner_radius":
+		payload["params"] = map[string]any{"cornerRadius": float64(8)}
 	case "remove_reactions":
 		payload["params"] = map[string]any{"indices": []any{float64(0)}}
 	}

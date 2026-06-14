@@ -11,7 +11,7 @@ This file documents the broader compatibility/catalog vocabulary. Tools marked
 tool has new params or behavior. Set `FIGMA_MCP_TOOL_PROFILE=full` to expose
 the legacy top-level compatibility surface for debugging or older clients.
 
-Plugin-facing tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. Node IDs are always in colon format, e.g. `4029:12345`, never hyphens.
+Plugin-facing top-level tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. For `batch`, pass `channel` on the outer `batch` call only; per-op `params.channel` is rejected because op contracts come from `BatchOpCatalog`. Node IDs are always in colon format, e.g. `4029:12345`, never hyphens.
 
 ---
 
@@ -422,7 +422,7 @@ Clone an existing node, optionally repositioning it or placing it in a new paren
 
 ### rename_node [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Rename a single node by ID. Returns the updated node with its new name. Use `batch_rename_nodes` to rename multiple nodes at once.
 
@@ -430,7 +430,6 @@ Rename a single node by ID. Returns the updated node with its new name. Use `bat
 | ------- | ------ | -------- | ------------------------------------------------------------------------------- |
 | nodeId  | string | Yes      | Node ID in colon format                                                         |
 | name    | string | Yes      | New name. Figma supports slash-separated path notation e.g. `Icons/Arrow/Left`. |
-| channel | string | No       | Target a specific connected file by channel id.                                 |
 
 ### delete_nodes
 
@@ -443,25 +442,23 @@ Delete one or more nodes. This cannot be undone via MCP — use with care. Retur
 
 ### lock_nodes [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Lock one or more nodes to prevent accidental edits in Figma.
 
 | Name    | Type     | Required | Description                                     |
 | ------- | -------- | -------- | ----------------------------------------------- |
 | nodeIds | string[] | Yes      | Node IDs to lock                                |
-| channel | string   | No       | Target a specific connected file by channel id. |
 
 ### unlock_nodes [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Unlock one or more nodes, allowing them to be edited again.
 
 | Name    | Type     | Required | Description                                     |
 | ------- | -------- | -------- | ----------------------------------------------- |
 | nodeIds | string[] | Yes      | Node IDs to unlock                              |
-| channel | string   | No       | Target a specific connected file by channel id. |
 
 ### set_visible
 
@@ -497,14 +494,13 @@ Move one or more nodes to a different parent frame, group, or section. By defaul
 
 ### ungroup_nodes [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Ungroup one or more GROUP nodes, moving their children to the parent and removing the group.
 
 | Name    | Type     | Required | Description                                     |
 | ------- | -------- | -------- | ----------------------------------------------- |
 | nodeIds | string[] | Yes      | GROUP node IDs                                  |
-| channel | string   | No       | Target a specific connected file by channel id. |
 
 ### group_nodes
 
@@ -518,7 +514,7 @@ Group two or more nodes into a GROUP. All nodes must share the same parent.
 
 ### reorder_nodes [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Change the z-order (layer stack position) of one or more nodes.
 
@@ -526,7 +522,6 @@ Change the z-order (layer stack position) of one or more nodes.
 | ------- | -------- | -------- | --------------------------------------------------------------- |
 | nodeIds | string[] | Yes      | Node IDs                                                        |
 | order   | string   | Yes      | `bringToFront`, `sendToBack`, `bringForward`, or `sendBackward` |
-| channel | string   | No       | Target a specific connected file by channel id.                 |
 
 ### batch_rename_nodes
 
@@ -545,7 +540,7 @@ Rename multiple nodes using find/replace, regex substitution, or prefix/suffix a
 
 ### boolean_operation [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Combine two or more vector nodes using a boolean operation, producing a new merged vector shape. The source nodes are consumed. Flatten first if the inputs are not already vectors.
 
@@ -555,7 +550,6 @@ Combine two or more vector nodes using a boolean operation, producing a new merg
 | operation | string   | Yes      | `UNION`, `SUBTRACT`, `INTERSECT`, `EXCLUDE`, or `FLATTEN`                                   |
 | name      | string   | No       | Name for the resulting node                                                                  |
 | parentId  | string   | No       | Parent node ID for the result. Defaults to the parent of the first input node.               |
-| channel   | string   | No       | Target a specific connected file by channel id.                                              |
 
 ---
 
@@ -573,14 +567,13 @@ Swap the main component of an existing INSTANCE node, replacing it with a differ
 
 ### detach_instance [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Detach one or more component instances, converting them to plain frames. The link to the main component is broken; all visual properties are preserved.
 
 | Name    | Type     | Required | Description                                     |
 | ------- | -------- | -------- | ----------------------------------------------- |
 | nodeIds | string[] | Yes      | INSTANCE node IDs                               |
-| channel | string   | No       | Target a specific connected file by channel id. |
 
 ### set_instance_properties [NEW]
 
@@ -658,7 +651,7 @@ Apply one or more effects (drop shadow, inner shadow, layer blur, background blu
 
 ### set_blend_mode [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Set the blend mode of one or more nodes.
 
@@ -666,7 +659,6 @@ Set the blend mode of one or more nodes.
 | --------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | nodeIds   | string[] | Yes      | Node IDs                                                                                                                                                                                                          |
 | blendMode | string   | Yes      | `NORMAL`, `MULTIPLY`, `SCREEN`, `OVERLAY`, `DARKEN`, `LIGHTEN`, `COLOR_DODGE`, `COLOR_BURN`, `HARD_LIGHT`, `SOFT_LIGHT`, `DIFFERENCE`, `EXCLUSION`, `HUE`, `SATURATION`, `COLOR`, `LUMINOSITY`, or `PASS_THROUGH` |
-| channel   | string   | No       | Target a specific connected file by channel id.                                                                                                                                                                   |
 
 ### set_opacity
 
@@ -680,7 +672,7 @@ Set the opacity of one or more nodes (0 = fully transparent, 1 = fully opaque).
 
 ### set_corner_radius [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Set corner radius on one or more nodes. Provide a uniform `cornerRadius` or per-corner values (`topLeftRadius`, `topRightRadius`, `bottomLeftRadius`, `bottomRightRadius`). When both uniform and per-corner values are supplied, per-corner values take precedence.
 
@@ -692,11 +684,10 @@ Set corner radius on one or more nodes. Provide a uniform `cornerRadius` or per-
 | topRightRadius    | number   | No       | Top-right corner radius                         |
 | bottomLeftRadius  | number   | No       | Bottom-left corner radius                       |
 | bottomRightRadius | number   | No       | Bottom-right corner radius                      |
-| channel           | string   | No       | Target a specific connected file by channel id. |
 
 ### set_constraints [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Set layout constraints (pinning behaviour) on one or more nodes relative to their parent.
 
@@ -705,11 +696,10 @@ Set layout constraints (pinning behaviour) on one or more nodes relative to thei
 | nodeIds    | string[] | Yes      | Node IDs                                                     |
 | horizontal | string   | No       | `MIN` (left), `MAX` (right), `CENTER`, `STRETCH`, or `SCALE` |
 | vertical   | string   | No       | `MIN` (top), `MAX` (bottom), `CENTER`, `STRETCH`, or `SCALE` |
-| channel    | string   | No       | Target a specific connected file by channel id.              |
 
 ### rotate_nodes [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Rotate one or more nodes to an absolute angle in degrees.
 
@@ -717,7 +707,6 @@ Rotate one or more nodes to an absolute angle in degrees.
 | -------- | -------- | -------- | ----------------------------------------------------------------- |
 | nodeIds  | string[] | Yes      | Node IDs                                                          |
 | rotation | number   | Yes      | Rotation angle in degrees (positive = counter-clockwise in Figma) |
-| channel  | string   | No       | Target a specific connected file by channel id.                   |
 
 ### resize_nodes [ENHANCED]
 
@@ -867,14 +856,13 @@ Update an existing paint style's name, color, or description. Only paint styles 
 
 ### delete_style [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Delete a style (paint, text, effect, or grid) by its ID.
 
 | Name    | Type   | Required | Description                                     |
 | ------- | ------ | -------- | ----------------------------------------------- |
 | styleId | string | Yes      | Style ID to delete                              |
-| channel | string | No       | Target a specific connected file by channel id. |
 
 ### import_style_by_key [NEW]
 
@@ -957,7 +945,7 @@ Bind a local variable to a node property so the property is driven by the variab
 
 ### delete_variable [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Delete a single variable (provide `variableId`) or an entire collection (provide `collectionId`). Provide exactly one of the two.
 
@@ -965,7 +953,6 @@ Delete a single variable (provide `variableId`) or an entire collection (provide
 | ------------ | ------ | -------- | ----------------------------------------------------------------- |
 | variableId   | string | No       | Variable ID to delete                                             |
 | collectionId | string | No       | Collection ID to delete (removes all variables in the collection) |
-| channel      | string | No       | Target a specific connected file by channel id.                   |
 
 ### get_remote_variable_collection [NEW]
 
@@ -1023,7 +1010,7 @@ Supported action types: `NODE` (navigation), `BACK`, `CLOSE`, `URL`
 
 ### remove_reactions [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Remove prototype reactions from a node. Omit `indices` to remove all reactions. Provide zero-based indices to remove specific reactions (use `get_reactions` first to see current indices).
 
@@ -1031,7 +1018,6 @@ Remove prototype reactions from a node. Omit `indices` to remove all reactions. 
 | ------- | -------- | -------- | --------------------------------------------------------------------------- |
 | nodeId  | string   | Yes      | Node ID                                                                     |
 | indices | number[] | No       | Zero-based indices of reactions to remove. Omit or pass `[]` to remove all. |
-| channel | string   | No       | Target a specific connected file by channel id.                             |
 
 ### find_replace_text
 
@@ -1072,7 +1058,7 @@ Add a new page to the Figma document.
 
 ### rename_page [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Rename an existing page in the Figma document.
 
@@ -1081,11 +1067,10 @@ Rename an existing page in the Figma document.
 | pageId   | string | No       | Page node ID in colon format                        |
 | pageName | string | No       | Current page name to find (alternative to `pageId`) |
 | newName  | string | Yes      | New name for the page                               |
-| channel  | string | No       | Target a specific connected file by channel id.     |
 
 ### delete_page [BATCH OP]
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema; params below are examples.
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
 
 Delete a page from the Figma document. Cannot delete the only remaining page.
 
@@ -1093,7 +1078,6 @@ Delete a page from the Figma document. Cannot delete the only remaining page.
 | -------- | ------ | -------- | --------------------------------------------------- |
 | pageId   | string | No       | Page node ID in colon format                        |
 | pageName | string | No       | Exact page name to delete (alternative to `pageId`) |
-| channel  | string | No       | Target a specific connected file by channel id.     |
 
 ---
 
@@ -1153,6 +1137,8 @@ Use when you have a known multi-step sequence, a bulk apply, a read chain, or wa
 Reads inside a batch are always live and bypass the singleflight cache. Do not use batch as a bypass for heavy catalog reads — use `fetch_library_catalog` or `get_local_components` directly.
 
 **`$N.field` ref resolution.** A string value of the form `$N.field.subfield` in `nodeIds` or `params` resolves to op N's result data at that path before the op runs. Refs may only point to earlier ops (N < current index). Array indices use dot notation: `$0.nodes.0.id`.
+
+**Channel routing.** Put `channel` on the outer `batch` call only. Do not include `channel` in `ops[*].params`; per-op params are validated against `BatchOpCatalog` and `channel` is not part of any op schema.
 
 **Stop policy.** If any op uses a `$N` ref, the batch stops at the first failure (dependent chain). With no refs, it continues past failures (independent bulk). Override with `continueOnError`.
 

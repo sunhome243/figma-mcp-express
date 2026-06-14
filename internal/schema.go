@@ -608,9 +608,10 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		}
 		_, hasName := params["name"]
 		_, hasColor := params["color"]
+		_, hasPaints := params["paints"]
 		_, hasDesc := params["description"]
-		if !hasName && !hasColor && !hasDesc {
-			return "at least one of name, color, or description is required"
+		if !hasName && !hasColor && !hasPaints && !hasDesc {
+			return "at least one of name, color, paints, or description is required"
 		}
 
 	case "delete_style":

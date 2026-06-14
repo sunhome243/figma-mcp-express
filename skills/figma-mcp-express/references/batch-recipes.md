@@ -204,6 +204,8 @@ Keep one batch to one logical section (a few dozen ops). A batch holds the plugi
 
 Do not copy op-specific schemas into skills, prompts, or hooks. `BatchOpCatalog` is the SSOT.
 
+Route files at the outer call: `batch(channel:"auto-2", ops:[...])`. Never put `channel` inside `ops[*].params`; those params are validated against the op schema.
+
 **Progressive discovery flow:**
 1. `search_batch_ops(query/category/readOnly/mutates)` — find the capability.
 2. `get_batch_op_spec(op, includeExamples:true)` — inspect exact params/enums.

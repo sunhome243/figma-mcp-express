@@ -10,7 +10,7 @@ Use the compact core surface first. In default `core` profile, low-level write p
 ## First Checks
 
 1. Figma Desktop must be open with **Plugins -> Development -> Figma MCP Express** running.
-2. Start with `get_metadata`; if multiple files are open, call `list_channels` and pass `channel` on every file-specific tool call.
+2. Start with `get_metadata`; if multiple files are open, call `list_channels` and pass `channel` on every file-specific top-level tool call. For `batch`, put `channel` on the outer call, not inside `ops[*].params`.
 3. If the plugin is not connected, ask the user to open the file and run the plugin. Do not retry in a loop.
 
 ## Tool Surface

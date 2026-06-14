@@ -146,6 +146,8 @@ Two paths depending on what you need.
 
 Includes the MCP server + three skills (`/figma-mcp-express`, `/figma-design-patterns`, `/figma-design-md`) + a PreToolUse hook. No clone or build step required.
 
+> Reviewing an unreleased branch? Use Option B and build from source. Marketplace/release installs use the latest published artifact, not draft branch code.
+
 **Claude Code:**
 
 ```bash

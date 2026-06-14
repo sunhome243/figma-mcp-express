@@ -336,6 +336,26 @@ func TestBatchCatalogSpecExamplesAndUnknownOp(t *testing.T) {
 	if strings.Contains(resultText(t, withoutExamples), "examples") {
 		t.Fatalf("examples should be omitted by default, got %s", resultText(t, withoutExamples))
 	}
+	specStructured, ok := withoutExamples.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("get_batch_op_spec(map) structuredContent = %T", withoutExamples.StructuredContent)
+	}
+	inputSchema, ok := specStructured["inputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("map spec missing inputSchema: %#v", specStructured)
+	}
+	props, ok := inputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("map spec missing properties: %#v", inputSchema)
+	}
+	over, ok := props["over"].(map[string]any)
+	if !ok {
+		t.Fatalf("map spec missing over schema: %#v", props)
+	}
+	oneOf, ok := over["oneOf"].([]any)
+	if !ok || len(oneOf) != 2 {
+		t.Fatalf("map.over must expose string-or-array schema, got %#v", over)
+	}
 
 	withExamples := callToolResult(t, s, "get_batch_op_spec", map[string]any{
 		"op":              "map",
@@ -355,6 +375,50 @@ func TestBatchCatalogSpecExamplesAndUnknownOp(t *testing.T) {
 	if txt := resultText(t, unknown); !strings.Contains(txt, "unknown batch op") {
 		t.Fatalf("expected unknown-op message, got %q", txt)
 	}
+}
+
+func TestBatchCatalogSpecsDoNotExposePerOpChannel(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	for _, op := range []string{"set_fills", "create_text", "rename_node", "set_corner_radius"} {
+		op := op
+		t.Run(op, func(t *testing.T) {
+			spec := callToolResult(t, s, "get_batch_op_spec", map[string]any{"op": op})
+			if spec.IsError {
+				t.Fatalf("get_batch_op_spec(%s) returned error: %s", op, resultText(t, spec))
+			}
+			txt := resultText(t, spec)
+			if strings.Contains(txt, `"channel"`) {
+				t.Fatalf("batch op spec must not expose per-op channel; route channel on outer batch only: %s", txt)
+			}
+		})
+	}
+}
+
+func TestBatchCatalogSearchIncludesEnumVocabulary(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	search := callToolResult(t, s, "search_batch_ops", map[string]any{
+		"query": "flatten",
+		"limit": float64(10),
+	})
+	if search.IsError {
+		t.Fatalf("search_batch_ops returned error: %s", resultText(t, search))
+	}
+	var out struct {
+		Matches []struct {
+			Name string `json:"name"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, search)), &out); err != nil {
+		t.Fatalf("unmarshal search result: %v", err)
+	}
+	for _, match := range out.Matches {
+		if match.Name == "boolean_operation" {
+			return
+		}
+	}
+	t.Fatalf("query over enum vocabulary should find boolean_operation, got %#v", out.Matches)
 }
 
 func TestBatchCatalogMetaToolsExposeOutputSchema(t *testing.T) {

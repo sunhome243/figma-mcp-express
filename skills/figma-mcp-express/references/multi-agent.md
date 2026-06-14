@@ -111,7 +111,7 @@ If you find yourself reaching for a lock, it means two agents are competing on t
 list_channels → auto-1 (Library), auto-2 (Product App)
 
 Agent 1: get_local_components(channel="auto-1")  → runs in parallel with Agent 2
-Agent 2: batch op create_frame with channel "auto-2"     → truly parallel, own sem
+Agent 2: batch(channel:"auto-2", ops:[create_frame...])  → truly parallel, own sem
 ```
 
 Pass `channel: "auto-N"` explicitly on every call. Missing `channel:` defaults to whichever file is active — wrong in a multi-file session.

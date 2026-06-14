@@ -119,54 +119,43 @@ var demotedBatchOnlyInputSchemas = map[string]map[string]any{
 		"operation": enumProp("UNION", "SUBTRACT", "INTERSECT", "EXCLUDE", "FLATTEN"),
 		"parentId":  stringProp(),
 		"name":      stringProp(),
-		"channel":   stringProp(),
 	}),
 	"delete_page": schemaObject(nil, map[string]any{
 		"pageId":   stringProp(),
 		"pageName": stringProp(),
-		"channel":  stringProp(),
 	}),
 	"delete_style": schemaObject([]string{"styleId"}, map[string]any{
 		"styleId": stringProp(),
-		"channel": stringProp(),
 	}),
 	"delete_variable": schemaObject(nil, map[string]any{
 		"variableId":   stringProp(),
 		"collectionId": stringProp(),
-		"channel":      stringProp(),
 	}),
-	"detach_instance": schemaObject(nil, map[string]any{"channel": stringProp()}),
-	"lock_nodes":      schemaObject(nil, map[string]any{"channel": stringProp()}),
+	"detach_instance": schemaObject(nil, map[string]any{}),
+	"lock_nodes":      schemaObject(nil, map[string]any{}),
 	"remove_reactions": schemaObject(nil, map[string]any{
 		"indices": arrayProp("number"),
-		"channel": stringProp(),
 	}),
 	"rename_node": schemaObject([]string{"name"}, map[string]any{
-		"name":    stringProp(),
-		"channel": stringProp(),
+		"name": stringProp(),
 	}),
 	"rename_page": schemaObject([]string{"newName"}, map[string]any{
 		"pageId":   stringProp(),
 		"pageName": stringProp(),
 		"newName":  stringProp(),
-		"channel":  stringProp(),
 	}),
 	"reorder_nodes": schemaObject([]string{"order"}, map[string]any{
-		"order":   enumProp("bringToFront", "sendToBack", "bringForward", "sendBackward"),
-		"channel": stringProp(),
+		"order": enumProp("bringToFront", "sendToBack", "bringForward", "sendBackward"),
 	}),
 	"rotate_nodes": schemaObject([]string{"rotation"}, map[string]any{
 		"rotation": numberProp(),
-		"channel":  stringProp(),
 	}),
 	"set_blend_mode": schemaObject([]string{"blendMode"}, map[string]any{
 		"blendMode": enumProp("NORMAL", "MULTIPLY", "SCREEN", "OVERLAY", "DARKEN", "LIGHTEN", "COLOR_DODGE", "COLOR_BURN", "HARD_LIGHT", "SOFT_LIGHT", "DIFFERENCE", "EXCLUSION", "HUE", "SATURATION", "COLOR", "LUMINOSITY", "PASS_THROUGH"),
-		"channel":   stringProp(),
 	}),
 	"set_constraints": schemaObject(nil, map[string]any{
 		"horizontal": enumProp("MIN", "MAX", "CENTER", "STRETCH", "SCALE"),
 		"vertical":   enumProp("MIN", "MAX", "CENTER", "STRETCH", "SCALE"),
-		"channel":    stringProp(),
 	}),
 	"set_corner_radius": schemaObject(nil, map[string]any{
 		"cornerRadius":      numberProp(),
@@ -174,10 +163,28 @@ var demotedBatchOnlyInputSchemas = map[string]map[string]any{
 		"topRightRadius":    numberProp(),
 		"bottomLeftRadius":  numberProp(),
 		"bottomRightRadius": numberProp(),
-		"channel":           stringProp(),
 	}),
-	"ungroup_nodes": schemaObject(nil, map[string]any{"channel": stringProp()}),
-	"unlock_nodes":  schemaObject(nil, map[string]any{"channel": stringProp()}),
+	"ungroup_nodes": schemaObject(nil, map[string]any{}),
+	"unlock_nodes":  schemaObject(nil, map[string]any{}),
+}
+
+var demotedBatchOpDescriptions = map[string]string{
+	"boolean_operation": "Combine or flatten vector shapes. Supports UNION, SUBTRACT, INTERSECT, EXCLUDE, and FLATTEN.",
+	"delete_page":       "Delete a page by pageId or exact pageName.",
+	"delete_variable":   "Delete a variable by variableId, or a collection by collectionId.",
+	"rename_page":       "Rename a page by pageId or exact pageName.",
+	"set_constraints":   "Set horizontal and/or vertical constraints on nodes.",
+	"set_corner_radius": "Set uniform or per-corner radius values on nodes.",
+	"set_blend_mode":    "Set Figma blend mode on nodes.",
+	"rename_node":       "Rename one node.",
+	"reorder_nodes":     "Change node z-order: bringToFront, sendToBack, bringForward, or sendBackward.",
+	"rotate_nodes":      "Set node rotation in degrees.",
+	"lock_nodes":        "Lock nodes.",
+	"unlock_nodes":      "Unlock nodes.",
+	"ungroup_nodes":     "Ungroup groups.",
+	"detach_instance":   "Detach component instances.",
+	"remove_reactions":  "Remove prototype reactions by index, or clear all when indices is omitted.",
+	"delete_style":      "Delete a local style by styleId.",
 }
 
 var batchOpCatalog = newBatchOpCatalog()
@@ -190,12 +197,20 @@ func newBatchOpCatalog() map[string]BatchOpSpec {
 			spec.ParamKeys = schemaParamKeys(schema)
 			spec.InputSchema = schema
 		}
+		if desc, ok := demotedBatchOpDescriptions[name]; ok {
+			spec.Description = desc
+		}
 		out[name] = spec
 	}
 	mapSchema := schemaObject([]string{"over", "do"}, map[string]any{
-		"over": stringProp(),
-		"as":   stringProp(),
-		"do":   map[string]any{"type": "object"},
+		"over": map[string]any{
+			"oneOf": []any{
+				map[string]any{"type": "string"},
+				map[string]any{"type": "array"},
+			},
+		},
+		"as": stringProp(),
+		"do": map[string]any{"type": "object"},
 	})
 	out["map"] = BatchOpSpec{
 		Name:        "map",
@@ -271,14 +286,19 @@ func syncBatchCatalogFromRegisteredTools(s *server.MCPServer) {
 		}
 		keys := make([]string, 0, len(st.Tool.InputSchema.Properties))
 		for k := range st.Tool.InputSchema.Properties {
+			if k == "channel" {
+				continue
+			}
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		props, _ := cloneCatalogValue(st.Tool.InputSchema.Properties).(map[string]any)
+		delete(props, "channel")
 		spec.ParamKeys = keys
 		spec.InputSchema = map[string]any{
 			"type":       st.Tool.InputSchema.Type,
-			"properties": cloneCatalogValue(st.Tool.InputSchema.Properties),
-			"required":   append([]string(nil), st.Tool.InputSchema.Required...),
+			"properties": props,
+			"required":   batchSchemaRequiredWithoutOuterParams(st.Tool.InputSchema.Required),
 		}
 		if st.Tool.Description != "" {
 			spec.Description = st.Tool.Description
@@ -312,7 +332,7 @@ func registerBatchCatalogTools(s *server.MCPServer) {
 
 		matches := []batchOpSearchMatch{}
 		for _, spec := range allBatchOpSpecs() {
-			haystack := strings.ToLower(spec.Name + " " + spec.Description + " " + strings.Join(spec.ParamKeys, " "))
+			haystack := strings.ToLower(spec.Name + " " + spec.Description + " " + strings.Join(spec.ParamKeys, " ") + " " + catalogSchemaSearchText(spec.InputSchema))
 			if query != "" && !strings.Contains(haystack, strings.ToLower(query)) {
 				continue
 			}
@@ -387,9 +407,22 @@ func schemaParamKeys(schema map[string]any) []string {
 	props, _ := schema["properties"].(map[string]any)
 	out := make([]string, 0, len(props))
 	for k := range props {
+		if k == "channel" {
+			continue
+		}
 		out = append(out, k)
 	}
 	sort.Strings(out)
+	return out
+}
+
+func batchSchemaRequiredWithoutOuterParams(required []string) []string {
+	out := make([]string, 0, len(required))
+	for _, name := range required {
+		if name != "channel" {
+			out = append(out, name)
+		}
+	}
 	return out
 }
 
@@ -440,5 +473,26 @@ func cloneCatalogValue(v any) any {
 		return out
 	default:
 		return x
+	}
+}
+
+func catalogSchemaSearchText(v any) string {
+	switch x := v.(type) {
+	case map[string]any:
+		parts := make([]string, 0, len(x))
+		for _, child := range x {
+			parts = append(parts, catalogSchemaSearchText(child))
+		}
+		return strings.Join(parts, " ")
+	case []any:
+		parts := make([]string, 0, len(x))
+		for _, child := range x {
+			parts = append(parts, catalogSchemaSearchText(child))
+		}
+		return strings.Join(parts, " ")
+	case string:
+		return x
+	default:
+		return ""
 	}
 }

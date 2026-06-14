@@ -657,6 +657,9 @@ func TestValidateRPC_UpdatePaintStyle(t *testing.T) {
 	if msg := ValidateRPC("update_paint_style", nil, map[string]interface{}{"styleId": "S:abc", "color": "#fff"}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
 	}
+	if msg := ValidateRPC("update_paint_style", nil, map[string]interface{}{"styleId": "S:abc", "paints": []interface{}{map[string]interface{}{"type": "SOLID"}}}); msg != "" {
+		t.Errorf("unexpected error for paints[] update: %s", msg)
+	}
 	if msg := ValidateRPC("update_paint_style", nil, map[string]interface{}{"styleId": "S:abc", "description": "desc"}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
 	}

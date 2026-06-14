@@ -134,18 +134,6 @@ Claude / Codex                         bridge + queue + gate
 large payloads ─▶ .figma-mcp-cache/       library catalog ─▶ Figma REST only when needed
 ```
 
----
-
-## Limitations
-
-- RAM usage can be high on very large files, especially when reads spill large payloads to disk and multiple agents are active at once.
-- Some runs may still feel slow because the Figma plugin itself is single-threaded. This fork reduces the bottleneck, but it does not remove the underlying Figma execution model.
-- Most live workflows require the target file to be open in Figma Desktop with the plugin running. This includes reading nodes, editing frames, applying styles or variables, importing components into the file, and multi-file channel-based work.
-- The plugin cannot operate on unopened files.
-- Catalog-only workflows are the main exception, but they still need a `FIGMA_TOKEN` because published library discovery uses the REST path when the plugin cannot run in that file.
-
----
-
 ## Installation
 
 Two paths depending on what you need.
@@ -153,6 +141,8 @@ Two paths depending on what you need.
 ### Option A — Plugin install (recommended)
 
 Includes the MCP server + three skills (`/figma-mcp-express`, `/figma-design-patterns`, `/figma-design-md`) + a PreToolUse hook. No clone or build step required.
+
+> Reviewing an unreleased branch? Use Option B and build from source. Marketplace/release installs use the latest published artifact, not draft branch code.
 
 **Claude Code:**
 

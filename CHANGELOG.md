@@ -6,6 +6,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-06-14
+
+### Breaking Changes
+
+- **Default tool profile is now `core`** — legacy clients that call low-level write tools directly must either set `FIGMA_MCP_TOOL_PROFILE=full` or migrate to `search_batch_ops` -> `get_batch_op_spec` -> `batch(validateOnly:true)` -> `batch`.
+- **Batch routes `channel` only on the outer call** — `ops[*].params.channel` is rejected. Use `batch(channel:"auto-N", ops:[...])` for multi-file routing.
+
 ### Added
 
 - **Progressive batch op discovery** — added `search_batch_ops` and `get_batch_op_spec` so agents can search the validated FigmaPlan/batch catalog first, inspect one op's exact params only when needed, then execute through `batch`.
@@ -18,11 +25,15 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **Batch op search now indexes params** — `search_batch_ops` matches param keys such as `fontSize`, `componentId`, and `cornerRadius`, so agents can find the right op from the field they need to set instead of already knowing the op name.
 - **Batch validation now uses a catalog source of truth** — hidden and demoted ops are validated against `BatchOpCatalog`, so wrong params like `characters` and script-like fields are rejected before mutation instead of being silently ignored by the plugin.
 - **Batch `map` validation is stricter** — invalid named bindings, string-interpolation attempts such as `"Section $index"`, named-binding projections, reserved `map.as` values, and nested `map` ops are rejected before plugin execution.
+- **Batch op specs now match runtime shapes more closely** — `map.over` is exposed as string-or-array, per-op `channel` is omitted from catalog schemas, and search includes enum vocabulary such as `FLATTEN` / `UNION`.
 - **Library import asset type is schema-constrained** — `import_component_by_key.assetType` now exposes `COMPONENT|COMPONENT_SET` as an enum so `get_batch_op_spec` and top-level schemas steer agents away from slow wrong-route imports.
 - **Library catalog import hints stay bounded** — cached import routing hints now keep only `COMPONENT_SET` keys and cap growth at 10k entries, avoiding unnecessary in-process cache growth from component/style catalog rows.
 
 ### Fixed
 
+- **Batch dry-run now preserves direct-tool semantic guards** — `batch(validateOnly:true)` rejects missing `color|paints`, missing page/variable selectors, missing radius/constraint fields, invalid effect types, and no-op paint-style updates before any plugin call.
+- **Resolved batch refs are revalidated before plugin dispatch** — after `$N.path` / `$item.path` substitution, concrete ops such as `set_fills`, `set_strokes`, `set_effects`, `set_corner_radius`, and page/variable deletes run fail-fast semantic checks instead of falling through to plugin defaults.
+- **Batch ID params normalize like direct tools** — common ID params such as `nodeId`, `parentId`, `pageId`, and `componentId` accept hyphen-form IDs in generated plans and normalize before validation/forwarding.
 - **Resolved batch import refs are validated inside the plugin** — after `$N.path` / `$item.path` substitution, `batch` now rejects node IDs, truncated component/style keys, malformed component/style keys, invalid component `assetType`, and bare-node variable keys before any `figma.import*ByKeyAsync` call.
 - **Batch validation now also protects transport-level calls** — `Node.Send("batch", ...)` and leader `/rpc` batch requests now run the same `BatchOpCatalog` validation/preparation as the MCP `batch` handler, so direct follower/leader calls cannot bypass schema checks for hidden/core-only ops.
 - **Import keys fail fast before reaching the plugin** — `import_component_by_key` / `import_style_by_key` now reject node IDs, truncated keys, and malformed non-40-char lowercase hex keys in the Go server, and `import_variable_by_key` rejects empty keys and bare node IDs without forcing component/style key rules. Cached library catalogs now keep a bounded component-set route-hint index so the plugin skips the slow component-first fallback when a set key is already known.
