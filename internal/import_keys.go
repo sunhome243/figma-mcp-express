@@ -1,9 +1,6 @@
 package internal
 
-import (
-	"sort"
-	"sync"
-)
+import "sync"
 
 type libraryCatalogKeyIndex struct {
 	mu    sync.RWMutex
@@ -12,63 +9,24 @@ type libraryCatalogKeyIndex struct {
 
 var libraryCatalogKeys = &libraryCatalogKeyIndex{byKey: map[string]string{}}
 
-const libraryCatalogKeyIndexMax = 10000
-
 func rememberLibraryCatalogKeys(byKey map[string]any) {
 	if len(byKey) == 0 {
 		return
 	}
 
-	hints := make(map[string]string)
+	libraryCatalogKeys.mu.Lock()
+	defer libraryCatalogKeys.mu.Unlock()
 	for key, raw := range byKey {
 		entry, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 		assetType, _ := entry["type"].(string)
-		if assetType == "COMPONENT_SET" {
-			hints[key] = assetType
+		switch assetType {
+		case "COMPONENT", "COMPONENT_SET", "STYLE":
+			libraryCatalogKeys.byKey[key] = assetType
 		}
 	}
-	if len(hints) == 0 {
-		return
-	}
-
-	libraryCatalogKeys.mu.Lock()
-	defer libraryCatalogKeys.mu.Unlock()
-
-	if len(hints) >= libraryCatalogKeyIndexMax {
-		libraryCatalogKeys.byKey = limitLibraryCatalogKeyIndex(hints, libraryCatalogKeyIndexMax)
-		return
-	}
-	additions := 0
-	for key := range hints {
-		if _, ok := libraryCatalogKeys.byKey[key]; !ok {
-			additions++
-		}
-	}
-	if len(libraryCatalogKeys.byKey)+additions > libraryCatalogKeyIndexMax {
-		libraryCatalogKeys.byKey = map[string]string{}
-	}
-	for key, assetType := range hints {
-		libraryCatalogKeys.byKey[key] = assetType
-	}
-}
-
-func limitLibraryCatalogKeyIndex(in map[string]string, max int) map[string]string {
-	keys := make([]string, 0, len(in))
-	for key := range in {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	if len(keys) > max {
-		keys = keys[:max]
-	}
-	out := make(map[string]string, len(keys))
-	for _, key := range keys {
-		out[key] = in[key]
-	}
-	return out
 }
 
 func lookupLibraryCatalogAssetType(key string) (string, bool) {

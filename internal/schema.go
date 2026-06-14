@@ -72,20 +72,6 @@ func validateVariableImportKey(key string) string {
 	return ""
 }
 
-func validateImportComponentAssetType(assetType interface{}) string {
-	if assetType == nil {
-		return ""
-	}
-	s, ok := assetType.(string)
-	if !ok {
-		return "assetType must be COMPONENT or COMPONENT_SET"
-	}
-	if s == "" || s == "COMPONENT" || s == "COMPONENT_SET" {
-		return ""
-	}
-	return "assetType must be COMPONENT or COMPONENT_SET"
-}
-
 // ValidateRPC validates an incoming RPC request against the tool's expected
 // input shape. Returns an error string on failure, empty string if valid.
 // rejectUnknownParams returns a loud error if params contains any key not in the
@@ -728,9 +714,6 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 	case "import_component_by_key":
 		key, _ := params["key"].(string)
 		if msg := validatePublishedImportKey("component", key); msg != "" {
-			return msg
-		}
-		if msg := validateImportComponentAssetType(params["assetType"]); msg != "" {
 			return msg
 		}
 

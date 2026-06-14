@@ -127,21 +127,21 @@ func TestFetchCatalog_WritesFullCatalogToFile(t *testing.T) {
 	}
 }
 
-func TestFetchCatalog_RemembersComponentSetHintsForImportRouting(t *testing.T) {
+func TestFetchCatalog_RemembersAssetTypesForImportRouting(t *testing.T) {
 	resetLibraryCatalogIndexForTest()
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "catalog.json")
 
 	runCatalog(t, "FKEY123", outPath, dir)
 
-	if assetType, ok := lookupLibraryCatalogAssetType("comp1key"); ok || assetType != "" {
-		t.Fatalf("component key should not be cached for import routing, got %q, %v", assetType, ok)
+	if assetType, ok := lookupLibraryCatalogAssetType("comp1key"); !ok || assetType != "COMPONENT" {
+		t.Fatalf("component assetType = %q, %v; want COMPONENT, true", assetType, ok)
 	}
 	if assetType, ok := lookupLibraryCatalogAssetType("cs1key"); !ok || assetType != "COMPONENT_SET" {
 		t.Fatalf("component set assetType = %q, %v; want COMPONENT_SET, true", assetType, ok)
 	}
-	if assetType, ok := lookupLibraryCatalogAssetType("st1key"); ok || assetType != "" {
-		t.Fatalf("style key should not be cached for import routing, got %q, %v", assetType, ok)
+	if assetType, ok := lookupLibraryCatalogAssetType("st1key"); !ok || assetType != "STYLE" {
+		t.Fatalf("style assetType = %q, %v; want STYLE, true", assetType, ok)
 	}
 }
 

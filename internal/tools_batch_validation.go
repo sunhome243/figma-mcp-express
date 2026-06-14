@@ -143,13 +143,13 @@ func validateBatchOp(i int, op map[string]interface{}, allowedNamedRefs map[stri
 		if msg := rejectUnknownBatchOpParams(t, opParams); msg != "" {
 			return fmt.Errorf("ops[%d]: %s", i, msg)
 		}
-		if err := validateBatchParamsAgainstSchema(t, opParams, allowedNamedRefs); err != nil {
+		if err := validateBatchParamsAgainstSchema(t, opParams); err != nil {
 			return fmt.Errorf("ops[%d]: %s", i, err)
 		}
 		if msg := validateBatchImportKey(t, opParams, allowedNamedRefs); msg != "" {
 			return fmt.Errorf("ops[%d]: %s", i, msg)
 		}
-	} else if err := validateBatchParamsAgainstSchema(t, nil, allowedNamedRefs); err != nil {
+	} else if err := validateBatchParamsAgainstSchema(t, nil); err != nil {
 		return fmt.Errorf("ops[%d]: %s", i, err)
 	}
 	return nil
@@ -167,14 +167,7 @@ func validateBatchImportKey(tool string, params map[string]interface{}, allowedN
 	}
 	switch tool {
 	case "import_component_by_key":
-		if msg := validatePublishedImportKey("component", key); msg != "" {
-			return msg
-		}
-		assetType, _ := params["assetType"].(string)
-		if isBatchRefLike(assetType) || isAllowedNamedBindingRef(assetType, allowedNamedRefs) {
-			return ""
-		}
-		return validateImportComponentAssetType(params["assetType"])
+		return validatePublishedImportKey("component", key)
 	case "import_style_by_key":
 		return validatePublishedImportKey("style", key)
 	case "import_variable_by_key":
@@ -321,7 +314,7 @@ func formatAllowedBindings(allowed map[string]bool) string {
 	return strings.Join(names, ", ")
 }
 
-func validateBatchParamsAgainstSchema(op string, params map[string]interface{}, allowedNamedRefs map[string]bool) error {
+func validateBatchParamsAgainstSchema(op string, params map[string]interface{}) error {
 	spec, ok := batchOpCatalog[op]
 	if !ok || spec.InputSchema == nil {
 		return nil
@@ -340,7 +333,7 @@ func validateBatchParamsAgainstSchema(op string, params map[string]interface{}, 
 		if len(prop) == 0 {
 			continue
 		}
-		if err := validateBatchSchemaValue(op, name, value, prop, allowedNamedRefs); err != nil {
+		if err := validateBatchSchemaValue(op, name, value, prop); err != nil {
 			return err
 		}
 	}
@@ -364,12 +357,7 @@ func schemaRequired(schema map[string]any) []string {
 	}
 }
 
-func validateBatchSchemaValue(op, name string, value interface{}, prop map[string]any, allowedNamedRefs map[string]bool) error {
-	if s, ok := value.(string); ok {
-		if isBatchRefLike(s) || isAllowedNamedBindingRef(s, allowedNamedRefs) {
-			return nil
-		}
-	}
+func validateBatchSchemaValue(op, name string, value interface{}, prop map[string]any) error {
 	if enum, ok := prop["enum"].([]any); ok && len(enum) > 0 {
 		s, ok := value.(string)
 		if !ok {
@@ -406,7 +394,7 @@ func validateBatchSchemaValue(op, name string, value interface{}, prop map[strin
 		}
 		if items, _ := prop["items"].(map[string]any); len(items) > 0 {
 			for i, item := range arr {
-				if err := validateBatchSchemaValue(op, fmt.Sprintf("%s[%d]", name, i), item, items, allowedNamedRefs); err != nil {
+				if err := validateBatchSchemaValue(op, fmt.Sprintf("%s[%d]", name, i), item, items); err != nil {
 					return err
 				}
 			}

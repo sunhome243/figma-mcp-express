@@ -157,39 +157,6 @@ func TestBatchCatalogMetaToolsReturnStructuredContent(t *testing.T) {
 	}
 }
 
-func TestBatchCatalogSpecExposesImportAssetTypeEnum(t *testing.T) {
-	s, _ := newTestServer(t)
-
-	spec := callToolResult(t, s, "get_batch_op_spec", map[string]any{"op": "import_component_by_key"})
-	if spec.IsError {
-		t.Fatalf("get_batch_op_spec returned error: %s", resultText(t, spec))
-	}
-	specStructured, ok := spec.StructuredContent.(map[string]any)
-	if !ok {
-		t.Fatalf("get_batch_op_spec must return structuredContent map, got %T", spec.StructuredContent)
-	}
-	inputSchema, ok := specStructured["inputSchema"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing inputSchema: %#v", specStructured)
-	}
-	props, ok := inputSchema["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing properties: %#v", inputSchema)
-	}
-	assetType, ok := props["assetType"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing assetType schema: %#v", props)
-	}
-	enum, ok := assetType["enum"]
-	if !ok {
-		t.Fatalf("assetType schema should expose enum: %#v", assetType)
-	}
-	enumJSON, _ := json.Marshal(enum)
-	if !strings.Contains(string(enumJSON), "COMPONENT") || !strings.Contains(string(enumJSON), "COMPONENT_SET") {
-		t.Fatalf("assetType enum = %s, want COMPONENT and COMPONENT_SET", enumJSON)
-	}
-}
-
 func TestBatchCatalogSpecKeepsVerboseDetailsWhenToolSchemaIsCompact(t *testing.T) {
 	t.Setenv("FIGMA_MCP_TOOL_SCHEMA_MODE", "compact")
 	s, _ := newTestServer(t)
