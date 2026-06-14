@@ -102,6 +102,33 @@ func TestLeaderHandleRPC_ValidationError(t *testing.T) {
 	}
 }
 
+func TestLeaderHandleRPC_BatchValidationError(t *testing.T) {
+	newTestServer(t) // syncs registered top-level schemas into BatchOpCatalog.
+	l := NewLeader("127.0.0.1", 0, "")
+
+	body, _ := json.Marshal(RPCRequest{
+		Tool: "batch",
+		Params: map[string]any{
+			"ops": []any{map[string]any{
+				"type":   "import_component_by_key",
+				"params": map[string]any{"key": "410:49695"},
+			}},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	l.handleRPC(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+	var resp RPCResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if !containsCI(resp.Error, "node id") {
+		t.Fatalf("expected batch validation error mentioning node id, got %q", resp.Error)
+	}
+}
+
 func TestLeaderHandleRPC_BridgeNotConnected(t *testing.T) {
 	l := NewLeader("127.0.0.1", 0, "")
 

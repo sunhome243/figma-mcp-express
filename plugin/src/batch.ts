@@ -40,6 +40,8 @@ const NAMED_BINDING = /^\$([A-Za-z_]\w*)(?:\.([\w.]+))?$/;
 // names both the actual count and the cap so callers understand what happened.
 const MAP_ITER_CAP = 500;
 const REF = new RegExp(`^${REF_BODY}$`);
+const PUBLISHED_KEY = /^[0-9a-f]{40}$/;
+const BARE_NODE_ID = /^[0-9]+:[0-9]+$/;
 
 // A projection ref carries exactly one `[*]` wildcard segment:
 //   $N.<pre>[*]          → the elements of the array at <pre> (mapped as-is)
@@ -189,6 +191,52 @@ export function substituteBindings(value: any, bindings: Record<string, any>): a
   return value;
 }
 
+function validatePublishedImportKey(kind: "component" | "style", key: any): string | null {
+  if (typeof key !== "string" || key === "") return "key is required";
+  if (PUBLISHED_KEY.test(key)) return null;
+  if (BARE_NODE_ID.test(key)) {
+    return `that's a node id, not a published ${kind} key`;
+  }
+  if (key.length < 40) return `${kind} key looks truncated (got ${key.length} chars, expected 40)`;
+  return `malformed ${kind} key; expected 40-char hex`;
+}
+
+function validateVariableImportKey(key: any): string | null {
+  if (typeof key !== "string" || key === "") return "key is required";
+  if (BARE_NODE_ID.test(key)) {
+    return "that's a node id, not a published variable key";
+  }
+  return null;
+}
+
+function validateComponentAssetType(assetType: any): string | null {
+  if (assetType == null || assetType === "") return null;
+  if (assetType === "COMPONENT" || assetType === "COMPONENT_SET") return null;
+  return "assetType must be COMPONENT or COMPONENT_SET";
+}
+
+function validateResolvedImportOp(type: string, params: any): void {
+  switch (type) {
+    case "import_component_by_key": {
+      const keyError = validatePublishedImportKey("component", params?.key);
+      if (keyError) throw new Error(keyError);
+      const assetTypeError = validateComponentAssetType(params?.assetType);
+      if (assetTypeError) throw new Error(assetTypeError);
+      return;
+    }
+    case "import_style_by_key": {
+      const keyError = validatePublishedImportKey("style", params?.key);
+      if (keyError) throw new Error(keyError);
+      return;
+    }
+    case "import_variable_by_key": {
+      const keyError = validateVariableImportKey(params?.key);
+      if (keyError) throw new Error(keyError);
+      return;
+    }
+  }
+}
+
 // executeOp is a small extracted helper that resolves refs on a single concrete op
 // (after any binding substitution has already happened) and dispatches it to the
 // correct handler. Returns { i, type, data } on success; throws on failure.
@@ -204,6 +252,7 @@ async function executeOp(
   }
   const nodeIds = resolveRefs(op.nodeIds ?? [], results);
   const params = resolveRefs(op.params ?? {}, results);
+  validateResolvedImportOp(op.type, params);
   // Reset the per-op perf flag for EVERY op so a prior op's `true` never leaks into a
   // later op that omitted it (a batch dispatches inner ops itself, so it re-applies here).
   figma.skipInvisibleInstanceChildren =

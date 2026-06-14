@@ -135,13 +135,21 @@ func (l *Leader) handleRPC(w http.ResponseWriter, r *http.Request) {
 
 	leaderLogger.Printf("rpc %s nodeIDs=%v from %s", req.Tool, req.NodeIDs, r.RemoteAddr)
 
-	if validationErr := ValidateRPC(req.Tool, req.NodeIDs, req.Params); validationErr != "" {
-		leaderLogger.Printf("rpc %s validation error: %s", req.Tool, validationErr)
-		l.sendJSON(w, http.StatusBadRequest, RPCResponse{Error: validationErr})
-		return
-	}
-	if req.Tool == "import_component_by_key" {
-		prepareImportComponentByKeyParams(req.Params)
+	if req.Tool == "batch" {
+		if err := validateAndPrepareBatchParams(req.Params); err != nil {
+			leaderLogger.Printf("rpc %s validation error: %s", req.Tool, err)
+			l.sendJSON(w, http.StatusBadRequest, RPCResponse{Error: err.Error()})
+			return
+		}
+	} else {
+		if validationErr := ValidateRPC(req.Tool, req.NodeIDs, req.Params); validationErr != "" {
+			leaderLogger.Printf("rpc %s validation error: %s", req.Tool, validationErr)
+			l.sendJSON(w, http.StatusBadRequest, RPCResponse{Error: validationErr})
+			return
+		}
+		if req.Tool == "import_component_by_key" {
+			prepareImportComponentByKeyParams(req.Params)
+		}
 	}
 
 	resp, err := l.bridge.Send(r.Context(), req.Tool, req.NodeIDs, req.Params)

@@ -704,9 +704,19 @@ func TestRegisterBatchTools_ValidateOnlyRejectsBadImportKeysBeforeBridge(t *test
 			want: "node id",
 		},
 		{
+			name: "style bad hex",
+			op:   map[string]any{"type": "import_style_by_key", "params": map[string]any{"key": strings.Repeat("z", 40)}},
+			want: "malformed style key",
+		},
+		{
 			name: "variable node id",
 			op:   map[string]any{"type": "import_variable_by_key", "params": map[string]any{"key": "410:49695"}},
 			want: "node id",
+		},
+		{
+			name: "variable empty key",
+			op:   map[string]any{"type": "import_variable_by_key", "params": map[string]any{"key": ""}},
+			want: "key is required",
 		},
 		{
 			name: "component bad hex",

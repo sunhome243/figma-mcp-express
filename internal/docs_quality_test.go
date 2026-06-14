@@ -284,6 +284,38 @@ func TestNpmPackageDescriptionMatchesCoreProfilePositioning(t *testing.T) {
 	}
 }
 
+func TestPublishedManifestVersionsStayInSync(t *testing.T) {
+	paths := []string{
+		filepath.Join("..", "npm", "package.json"),
+		filepath.Join("..", ".codex-plugin", "plugin.json"),
+		filepath.Join("..", ".Codex-plugin", "plugin.json"),
+	}
+	versions := map[string]string{}
+	for _, path := range paths {
+		body := readTestFile(t, path)
+		var manifest struct {
+			Version string `json:"version"`
+		}
+		if err := json.Unmarshal([]byte(body), &manifest); err != nil {
+			t.Fatalf("unmarshal %s: %v", path, err)
+		}
+		if manifest.Version == "" {
+			t.Fatalf("%s missing version", path)
+		}
+		versions[path] = manifest.Version
+	}
+	var want string
+	for _, path := range paths {
+		if want == "" {
+			want = versions[path]
+			continue
+		}
+		if versions[path] != want {
+			t.Fatalf("manifest version mismatch: %s=%s, want %s (all manifests must match)", path, versions[path], want)
+		}
+	}
+}
+
 func TestGlamaToolListMatchesCoreSurface(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "glama.json"))
 	var doc struct {

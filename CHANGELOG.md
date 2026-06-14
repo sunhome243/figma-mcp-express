@@ -23,6 +23,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Resolved batch import refs are validated inside the plugin** — after `$N.path` / `$item.path` substitution, `batch` now rejects node IDs, truncated component/style keys, malformed component/style keys, invalid component `assetType`, and bare-node variable keys before any `figma.import*ByKeyAsync` call.
+- **Batch validation now also protects transport-level calls** — `Node.Send("batch", ...)` and leader `/rpc` batch requests now run the same `BatchOpCatalog` validation/preparation as the MCP `batch` handler, so direct follower/leader calls cannot bypass schema checks for hidden/core-only ops.
 - **Import keys fail fast before reaching the plugin** — `import_component_by_key` / `import_style_by_key` now reject node IDs, truncated keys, and malformed non-40-char lowercase hex keys in the Go server, and `import_variable_by_key` rejects empty keys and bare node IDs without forcing component/style key rules. Cached library catalogs now keep a bounded component-set route-hint index so the plugin skips the slow component-first fallback when a set key is already known.
 - **Batch import validation now matches direct tools** — `batch(validateOnly:true)` rejects bad import keys and invalid component `assetType` values before any plugin call; executable batches also inject cached `assetType` hints for `import_component_by_key` ops, including inside `map.do`.
 - **Batch schema validation preserves runtime refs** — typed params such as numeric widths and enum values can use valid `$N.path` / `$item.path` refs and are validated structurally before runtime resolution instead of being rejected as the wrong primitive type.

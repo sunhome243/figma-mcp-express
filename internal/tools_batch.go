@@ -47,28 +47,15 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 		),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		rawOps, ok := req.GetArguments()["ops"].([]interface{})
-		if !ok || len(rawOps) == 0 {
-			return mcp.NewToolResultError("batch requires a non-empty `ops` array"), nil
+		rawOps, err := batchOpsFromParams(req.GetArguments())
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		if err := validateBatchOps(rawOps); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-
-		for _, raw := range rawOps {
-			op, ok := raw.(map[string]interface{})
-			if !ok { // validateBatchOps already checked this; keep the loop defensive.
-				continue
-			}
-			if nids, ok := op["nodeIds"].([]interface{}); ok {
-				for j, v := range nids {
-					if s, ok := v.(string); ok {
-						nids[j] = NormalizeNodeID(s)
-					}
-				}
-			}
-		}
+		normalizeBatchNodeIDs(rawOps)
 
 		if validateOnly, _ := req.GetArguments()["validateOnly"].(bool); validateOnly {
 			return mcp.NewToolResultStructuredOnly(map[string]interface{}{

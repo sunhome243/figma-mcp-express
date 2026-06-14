@@ -37,6 +37,49 @@ func validateBatchOps(rawOps []interface{}) error {
 	return nil
 }
 
+func batchOpsFromParams(params map[string]interface{}) ([]interface{}, error) {
+	rawOps, ok := params["ops"].([]interface{})
+	if !ok || len(rawOps) == 0 {
+		return nil, fmt.Errorf("batch requires a non-empty `ops` array")
+	}
+	return rawOps, nil
+}
+
+func validateAndPrepareBatchParams(params map[string]interface{}) error {
+	rawOps, err := batchOpsFromParams(params)
+	if err != nil {
+		return err
+	}
+	if err := validateBatchOps(rawOps); err != nil {
+		return err
+	}
+	normalizeBatchNodeIDs(rawOps)
+	prepareBatchImportParams(rawOps)
+	return nil
+}
+
+func normalizeBatchNodeIDs(rawOps []interface{}) {
+	for _, raw := range rawOps {
+		op, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if op["type"] == "map" {
+			if do, ok := op["do"].(map[string]interface{}); ok {
+				normalizeBatchNodeIDs([]interface{}{do})
+			}
+			continue
+		}
+		if nids, ok := op["nodeIds"].([]interface{}); ok {
+			for j, v := range nids {
+				if s, ok := v.(string); ok {
+					nids[j] = NormalizeNodeID(s)
+				}
+			}
+		}
+	}
+}
+
 func validateBatchOp(i int, op map[string]interface{}, allowedNamedRefs map[string]bool) error {
 	t, _ := op["type"].(string)
 	if t == "" {

@@ -257,6 +257,81 @@ describe("handleBatchRequest — scan → swap-every-match (all→all)", () => {
   });
 });
 
+describe("handleBatchRequest — resolved import validation", () => {
+  it("rejects a ref-resolved component key that is actually a node ID before import", async () => {
+    let importCalls = 0;
+    const page = {
+      id: "0:1",
+      name: "Page 1",
+      children: [{ id: "410:49695", name: "Button", type: "COMPONENT", width: 10, height: 10 }],
+    };
+    (globalThis as any).figma = {
+      get currentPage() { return page; },
+      getNodeByIdAsync: async () => null,
+      importComponentByKeyAsync: async () => {
+        importCalls++;
+        throw new Error("should not call importComponentByKeyAsync");
+      },
+      importComponentSetByKeyAsync: async () => {
+        importCalls++;
+        throw new Error("should not call importComponentSetByKeyAsync");
+      },
+      ui: noopUi,
+    };
+
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-import-ref-node-id",
+      params: {
+        ops: [
+          { type: "search_nodes", params: { query: "Button", types: ["COMPONENT"] } },
+          { type: "import_component_by_key", params: { key: "$0.nodes.0.id" } },
+        ],
+      },
+    });
+
+    expect(res.data.results[1].error).toContain("node id");
+    expect(importCalls).toBe(0);
+  });
+
+  it("rejects a named-binding component assetType after map substitution before import", async () => {
+    let importCalls = 0;
+    (globalThis as any).figma = {
+      importComponentByKeyAsync: async () => {
+        importCalls++;
+        throw new Error("should not call importComponentByKeyAsync");
+      },
+      importComponentSetByKeyAsync: async () => {
+        importCalls++;
+        throw new Error("should not call importComponentSetByKeyAsync");
+      },
+      ui: noopUi,
+    };
+
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-import-map-assettype",
+      params: {
+        continueOnError: false,
+        ops: [
+          {
+            type: "map",
+            over: [{ key: "0123456789abcdef0123456789abcdef01234567", assetType: "STYLE" }],
+            as: "asset",
+            do: {
+              type: "import_component_by_key",
+              params: { key: "$asset.key", assetType: "$asset.assetType" },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.data.results[0].error).toContain("assetType");
+    expect(importCalls).toBe(0);
+  });
+});
+
 // ── substituteBindings unit tests ──────────────────────────────────────────────
 // substituteBindings replaces ONLY named-binding refs ($item, $index, etc.)
 // in a value (string | array | object). It runs BEFORE resolveRefs so $N refs

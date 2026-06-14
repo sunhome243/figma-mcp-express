@@ -70,11 +70,17 @@ func (n *Node) Send(ctx context.Context, tool string, nodeIDs []string, params m
 		}
 	}
 
-	if validationErr := ValidateRPC(tool, nodeIDs, params); validationErr != "" {
-		return BridgeResponse{Error: validationErr}, nil
-	}
-	if tool == "import_component_by_key" {
-		prepareImportComponentByKeyParams(params)
+	if tool == "batch" {
+		if err := validateAndPrepareBatchParams(params); err != nil {
+			return BridgeResponse{Error: err.Error()}, nil
+		}
+	} else {
+		if validationErr := ValidateRPC(tool, nodeIDs, params); validationErr != "" {
+			return BridgeResponse{Error: validationErr}, nil
+		}
+		if tool == "import_component_by_key" {
+			prepareImportComponentByKeyParams(params)
+		}
 	}
 
 	nodeLogger.Printf("tool=%s role=%s nodeIDs=%v", tool, n.RoleName(), nodeIDs)
