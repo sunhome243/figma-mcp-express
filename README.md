@@ -103,7 +103,7 @@ Open the product file and the source library at the same time. Compare their com
 | Track     | Capability                     | Why it matters                                                                                                           |
 | --------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | Speed     | Fewer back-and-forth steps     | The agent can do several related Figma actions in one go, so building or editing a screen feels much faster.             |
-| Speed     | Compact default tool surface   | The default core profile keeps `tools/list` small; agents discover detailed batch/FigmaPlan ops only when needed.        |
+| Speed     | Compact default tool surface   | Compared with `vkhanhqui/figma-mcp-go@fe6cd768`, default `tools/list` drops from 73 tools / 12,214 `o200k_base` tokens to 21 tools / 3,283 tokens (73.1% smaller). |
 | Speed     | Large reads stay manageable    | Big files do not dump huge walls of data into the model at once, so the agent can stay focused on the part that matters. |
 | Free      | No official MCP quota limits   | You are not blocked by the official Figma MCP server's monthly or daily call caps for normal plugin-side work.           |
 | Access    | Direct Figma editing           | The agent works on the open Figma file itself, not a disconnected copy or a limited export.                              |

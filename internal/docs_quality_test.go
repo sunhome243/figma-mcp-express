@@ -271,6 +271,76 @@ func TestPublicReadmesDocumentToolProfileAndSchemaMode(t *testing.T) {
 	}
 }
 
+func TestChangeLogRecordsMeasuredToolListTokenSavings(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "CHANGELOG.md"))
+	for _, required := range []string{
+		"vkhanhqui/figma-mcp-go@fe6cd768",
+		"73 tools",
+		"51,125 bytes",
+		"12,214 tokens",
+		"8,931 tokens",
+		"73.1%",
+		"36,552 bytes",
+		"71.5%",
+		"v1.0.3",
+		"84.2%",
+		"70 tools",
+		"90,038 bytes",
+		"20,822 tokens",
+		"21 tools",
+		"3,283",
+		"o200k_base",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("CHANGELOG.md must document measured tools/list savings; missing %q", required)
+		}
+	}
+}
+
+func TestPublicReadmesDescribeUpstreamToolSurfaceBaselineWithoutReleaseMetrics(t *testing.T) {
+	for _, path := range []string{
+		filepath.Join("..", "README.md"),
+		filepath.Join("..", "npm", "README.md"),
+	} {
+		body := readTestFile(t, path)
+		for _, required := range []string{
+			"vkhanhqui/figma-mcp-go@fe6cd768",
+			"73 tools",
+			"12,214",
+			"21 tools",
+			"3,283",
+			"73.1%",
+			"o200k_base",
+		} {
+			if !strings.Contains(body, required) {
+				t.Fatalf("%s must describe the measured upstream tool-surface baseline; missing %q", path, required)
+			}
+		}
+		for _, forbidden := range []string{
+			"20,822 tokens",
+			"84.2%",
+			"v1.0.3's 70 tools",
+		} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s should not expose release-specific token metrics in README prose; found %q", path, forbidden)
+			}
+		}
+	}
+}
+
+func TestDevSetupDocumentsBatchSafetyCaps(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "DEV-SETUP.md"))
+	for _, required := range []string{
+		"FIGMA_MCP_BATCH_MAX_OPS",
+		"FIGMA_MCP_BATCH_MAX_BYTES",
+		"fail-fast rejection",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("DEV-SETUP.md must document batch safety cap %q", required)
+		}
+	}
+}
+
 func TestToolsDocDocumentsCoreSurfaceContract(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "TOOLS.md"))
 	for _, required := range []string{

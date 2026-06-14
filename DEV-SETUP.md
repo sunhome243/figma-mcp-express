@@ -127,6 +127,8 @@ FIGMA_TOKEN=figd_xxxxxxxxxxxxxxxx
 # Optional tuning
 FIGMA_MCP_TOOL_PROFILE=core       # default. Set full for the legacy top-level tool surface.
 FIGMA_MCP_TOOL_SCHEMA_MODE=compact # compact tools/list descriptions. Set verbose for full schema docs.
+FIGMA_MCP_BATCH_MAX_OPS=200       # Max top-level batch.ops entries before fail-fast rejection.
+FIGMA_MCP_BATCH_MAX_BYTES=2097152 # Max encoded batch.ops payload bytes before fail-fast rejection.
 FIGMA_MCP_SPILL_BYTES=25000   # Response gate threshold (bytes). Default: 25000
 FIGMA_MCP_TIMEOUT=120         # Inactivity ceiling (seconds) for lightweight ops. Default: 120
 FIGMA_MCP_READ_TIMEOUT=600    # Inactivity ceiling (seconds) for heavy reads + batch. Default: 600
