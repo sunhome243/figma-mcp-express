@@ -1,113 +1,66 @@
 # Component Reuse
 
-Before writing a single `createFrame`, check whether the library already has a component for that element. Using a library instance is not optional — it is the rule. Raw frames are only for structural shells (wrappers, section containers) that have no library equivalent.
+Before creating raw structure, check whether the library already has a component for that element. Library instances are the default; raw frames are only for structural shells with no component equivalent.
 
 ---
 
-## Priority order
+## Priority Order
 
 ```
-1. INSTANCE of a library component   ← always prefer this
-2. Local COMPONENT (file-level)       ← when the library has no match and the element repeats
-3. Structural raw FRAME               ← only for layout containers with no component equivalent
+1. Library INSTANCE
+2. Local COMPONENT
+3. Structural raw FRAME
 ```
 
-Never skip level 1 because importing feels slow or because the component "doesn't quite match." If the library has a Table component, use it. If you build a table from rectangles instead, you own every spacing, color, and hover-state bug forever.
+Never skip the library because importing feels slow or because the first search term misses. If the library has a Table, Sidebar, NavigationRail, Dialog, Button, Input, Icon, or Badge component, use it.
 
----
+## Whole Organism Over Atom Assembly
 
-## Whole-organism over atom-assembly
+Prefer the deepest available component. A DataTable organism beats hand-assembled Row and Cell atoms. A Sidebar organism beats a frame with icon/text rows.
 
-If the library has a DataTable component, use it — do not assemble a table from Row + Cell + Header atoms. If the library has a Sidebar or NavigationRail component, import it — do not construct a sidebar from a Frame + Icon + Text nodes.
+Whole organisms carry:
+- Library-approved spacing and state structure.
+- Bound variables for theming.
+- Supported instance properties instead of improvised overrides.
 
-Whole-organism wins because:
-- It carries the correct structure, spacing, and state variants the library team designed
-- Dark mode and theming apply automatically via the component's bound variables
-- Instance overrides are documented; hand-built equivalents are not
+Only assemble from atoms after exhaustive search confirms there is no organism for the use case.
 
-The only exception: the library has atoms but genuinely no organism for this use case (confirmed by exhaustive search, not assumption). In that case, compose from the deepest available atoms, not from scratch.
+## Search Before Building
 
----
+1. Use `get_local_components` or `fetch_library_catalog`, then search the saved catalog.
+2. Try synonyms: dropdown/select/combobox, sidebar/nav-rail/drawer, badge/chip/status.
+3. Search by role, not only visual appearance.
+4. For icons, scope to the icon page and visually scan names when necessary.
 
-## Search the library before building
+A search miss is not a gap. A gap is confirmed only after synonyms and visual scan.
 
-Do not assume a component doesn't exist because your first search term didn't match.
+## Variant vs Separate Component
 
-Search strategy:
-1. `get_local_components` — dump the full component list to disk, then `grep` for candidates
-2. Try synonyms: a "dropdown" may be named "select", "combobox", or "picker"; a "sidebar" may be "nav-rail", "left-nav", or "drawer"
-3. Search by function, not appearance: the icon you need may be named `customer-service` not `headset`
-4. Visually scan icon sets — icon names are often functional, not descriptive
+Use a variant property when the same component changes state: hover, pressed, disabled, error, selected, active.
 
-A search miss is not a GAP. A GAP is confirmed only after exhaustive search including synonyms and visual scan.
+Use a separate component when structure or semantic role changes: collapsed vs expanded navigation, primary button vs icon-only button, dialog vs sheet.
 
----
+## Never Clone By Appearance
 
-## When to use a variant vs. a separate component
+Do not use a detached visual clone to fake a library component. Use batch ops:
 
-Use **variant property** when:
-- The element is the same component in a different state (hover, pressed, disabled, error, selected, active)
-- The layout structure does not fundamentally change between states
+1. `import_component_by_key` with a concrete variant component key.
+2. `create_instance` with the imported component id.
+3. `set_instance_properties` to select the intended variant/state/content.
+4. `resize_nodes` if the instance requires a specific size.
 
-Use a **separate component** (or separate library component import) when:
-- The layout structure fundamentally changes (e.g., collapsed vs. expanded sidebar are different organisms)
-- The two elements serve entirely different semantic roles (e.g., primary button vs. icon-only button)
+Cloning an existing in-file instance to repeat it elsewhere can preserve the instance link, but it is not a substitute for importing a missing library component.
 
-State changes that never warrant a duplicate frame: hover, focus, active, disabled, error — these are always variant properties.
+## After Placing an Instance
 
----
+A fresh instance is not finished. Immediately configure real content, variants, visibility, and dimensions, then verify the node and screenshot the wrapper. Default content such as `Heading`, `Item 1`, or blank slots is a failure.
 
-## Never clone by appearance
-
-Do not duplicate (`clone_node`) a component instance that looks like what you need. Cloning copies the visual result but severs the library link — the clone becomes a detached frame. Changes to the library component no longer propagate.
-
-Always:
-1. `importComponentByKeyAsync(key)` to get the live component reference
-2. `component.createInstance()` to place a linked instance
-
-Exception: cloning an existing **in-file instance** to replicate it elsewhere in the same file is acceptable (the instance link is preserved on a clone). This is different from cloning to "fake" a component you haven't imported.
-
----
-
-## Import mechanics
-
-```
-// COMPONENT (not a set — a single variant)
-const comp = await figma.components.importComponentByKeyAsync(componentKey)
-const inst = comp.createInstance()
-parent.appendChild(inst)
-
-// COMPONENT_SET (has multiple variants; import the default variant's key)
-const defaultVariantComp = await figma.components.importComponentByKeyAsync(defaultVariantKey)
-const inst = defaultVariantComp.createInstance()
-parent.appendChild(inst)
-// Then set desired variant via setProperties:
-inst.setProperties({ "State": "Hover", "Size": "Medium" })
-```
-
-`importComponentByKeyAsync` rejects a COMPONENT_SET key — it only accepts a single COMPONENT key. Import the default variant's key, then use `setProperties` to switch variants.
-
----
-
-## After placing an instance: it is not done
-
-A freshly placed instance shows default content: "Heading", "Item 1", blank slots, wrong dimensions. This is never acceptable in a finished design.
-
-Immediately after `createInstance()`:
-1. Call `setProperties()` with real content (real labels, real data, correct variant)
-2. Resize to match the design spec: `inst.resize(width, height)`
-3. Ask: if someone screenshots this canvas right now, can they immediately recognise what this component is? If not, it is not done.
-
-Full configure-after-instantiate guidance is in `references/component-usage.md`.
-
----
-
-## Common mistakes
+## Common Mistakes
 
 | Mistake | Consequence | Fix |
 |---|---|---|
-| Building a table from rectangles when a Table component exists | Manual spacing/color/state bugs; no theming | Import the Table component; use it |
-| First search term didn't match → assumed GAP | Real component missed; built from scratch unnecessarily | Search synonyms + visual scan before concluding GAP |
-| `clone_node` on a visual match | Library link severed; clone is a detached frame | `importComponentByKeyAsync` + `createInstance()` |
-| Importing COMPONENT_SET key instead of variant key | `importComponentByKeyAsync` throws "not found" | Use the default variant's own key |
-| Leaving default instance content ("Item 1") | Viewer cannot recognise the component; looks unfinished | `setProperties` + `resize` before marking done |
+| Building a table from rectangles when a Table exists | Manual spacing/color/state bugs | Import the Table component |
+| First search term missed, then declared gap | Real component missed | Search synonyms and catalog pages |
+| Detached visual clone | Library updates no longer propagate | Import and place a real instance |
+| COMPONENT_SET key used as variant key | Import fails | Use a concrete default variant component key |
+| Default content left visible | Looks unfinished | Configure properties and verify |

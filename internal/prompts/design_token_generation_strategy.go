@@ -25,12 +25,12 @@ then create a structured variable collection and named styles, and finally link 
 
 ### Phase 1 — Discovery
 
-1. Call get_styles() to check what styles already exist (avoid duplicating them).
-2. Call get_variable_defs() to check existing variables.
-3. Call get_design_context(detail="compact") to scan the full node tree.
-4. Collect unique values:
-   - **Colors**: all unique hex fills and stroke colors across nodes.
-   - **Font sizes**: all unique fontSize values on TEXT nodes.
+	1. Call get_styles() to check what styles already exist (avoid duplicating them).
+	2. Call get_variable_defs() to check existing variables.
+	3. Scope discovery to a target page/frame first. Use search_nodes / scan_nodes_by_types / scan_text_nodes for broad value collection, then get_node or get_design_context(detail="compact", depth:<needed>) for targeted inspection.
+	4. Collect unique values:
+	   - **Colors**: all unique hex fills and stroke colors across nodes.
+	   - **Font sizes**: all unique fontSize values on TEXT nodes.
    - **Spacing**: all unique itemSpacing, paddingTop/Right/Bottom/Left values on FRAME nodes.
    - **Radii**: all unique cornerRadius values.
 
@@ -56,26 +56,27 @@ Present the full token plan to the user for approval before creating anything.
 
 ### Phase 3 — Creation
 
-For each approved token:
-- COLOR variables: create_variable_collection() → create_variable(type="COLOR") → set_variable_value()
-- FLOAT variables: create_variable_collection() → create_variable(type="FLOAT") → set_variable_value()
-- Text styles: create_text_style() with name, fontFamily, fontSize, lineHeight, letterSpacing
-- Paint styles: create_paint_style() with name, color
+	Use the live BatchOpCatalog for exact params: search_batch_ops → get_batch_op_spec → batch(validateOnly:true) → batch.
+	Do not duplicate op schemas from memory.
+	- Create each variable collection once, then create approved variables inside that collection and set values per mode.
+	- COLOR/FLOAT variables: batch op create_variable_collection once per collection → create_variable → set_variable_value.
+	- Text styles: inspect create_text_style with get_batch_op_spec; use the returned typography params, not shorthand names such as lineHeight or letterSpacing.
+	- Paint styles: inspect create_paint_style with get_batch_op_spec; prefer variables for themeable colors.
 
 ### Phase 4 — Linking (optional, ask user)
 
 After creating tokens, offer to link existing nodes:
-- For nodes with raw fill colors that match a new variable → bind_variable_to_node(field="fillColor")
-- For TEXT nodes with matching font styles → apply_style_to_node(styleId)
+- For nodes with raw fill colors that match a new variable → batch op bind_variable_to_node with field "fillColor"
+- For TEXT nodes with matching font styles → batch op apply_style_to_node with the matching styleId
 
 ## Multi-mode / Theming (Light & Dark)
 
 ### Paid plan (Professional / Organization / Enterprise)
 Use Figma's native multi-mode variables:
-1. create_variable_collection() — creates the collection with one default mode (e.g. "Light").
-2. add_variable_mode() — add the second mode (e.g. "Dark").
-3. create_variable() — create each variable once; it exists in all modes automatically.
-4. set_variable_value() — call once per mode to set the Light value, then again with the Dark value.
+1. batch op create_variable_collection — creates the collection with one default mode (e.g. "Light").
+2. batch op add_variable_mode — add the second mode (e.g. "Dark").
+3. batch op create_variable — create each variable once; it exists in all modes automatically.
+4. batch op set_variable_value — call once per mode to set the Light value, then again with the Dark value.
 
 ### Free plan workaround (when add_variable_mode returns "Limited to 1 modes only")
 Figma's free plan is capped at 1 mode per collection. Detect this error and fall back to
@@ -88,10 +89,10 @@ Naming convention — use a slash-prefix per mode:
 - light/color-primary, dark/color-primary
 
 Steps:
-1. create_variable_collection() — one collection, accept the single default mode as-is.
-2. create_variable(name="light/<token>") — Light variant.
-3. create_variable(name="dark/<token>") — Dark variant.
-4. set_variable_value() for each variable.
+1. batch op create_variable_collection — one collection, accept the single default mode as-is.
+2. batch op create_variable with name "light/<token>" — Light variant.
+3. batch op create_variable with name "dark/<token>" — Dark variant.
+4. batch op set_variable_value for each variable.
 
 Bind the active-theme variable to nodes (e.g. bind the "light/color-bg" variable for light theme).
 When the user wants to switch to dark, rebind nodes to the corresponding "dark/*" variable.
