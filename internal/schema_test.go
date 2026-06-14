@@ -186,8 +186,7 @@ func TestRejectUnknownToolParams_Generic(t *testing.T) {
 	if msg := rejectUnknownToolParams("create_text", map[string]interface{}{"text": "hi", "characters": "x"}); msg == "" || !strings.Contains(msg, "text") {
 		t.Errorf("create_text `characters` should be rejected with a hint to `text`, got %q", msg)
 	}
-	// Direct-tool validation ignores unregistered names; batch/FigmaPlan validation
-	// has its own catalog-backed param guard.
+	// An unregistered tool name (e.g. a demoted batch-only op) is a safe no-op.
 	if msg := rejectUnknownToolParams("definitely_not_a_tool", map[string]interface{}{"whatever": 1}); msg != "" {
 		t.Errorf("unregistered tool must be a no-op, got %q", msg)
 	}

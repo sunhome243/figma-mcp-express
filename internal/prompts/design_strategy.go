@@ -43,18 +43,18 @@ func addDesignStrategy(s *server.MCPServer) {
    - Include a label text above or inside the input
    - Group related inputs (e.g., username/password) together
 
-	5. Element Creation:
-	   - Use validated batch ops with type "create_frame" for containers and input fields
-	   - Use validated batch ops with type "create_text" for labels, button text, and links
-	   - Set appropriate colors and styles:
-	     * Use batch op set_fills for backgrounds; inspect get_batch_op_spec and prefer variableId for token-bound fills
-	     * Use batch op set_strokes for borders
-	     * Set proper fontStyle for different text elements
+5. Element Creation:
+   - Use create_frame() for containers and input fields
+   - Use create_text() for labels, buttons text, and links
+   - Set appropriate colors and styles:
+     * Use fillColor for backgrounds
+     * Use set_strokes() for borders
+     * Set proper fontStyle for different text elements
 
 6. Modifying existing elements:
-   - Use batch op set_text to modify text content of a TEXT node
-   - Use batch op set_fills to change background/fill colors
-   - Use batch ops move_nodes / resize_nodes for position and size adjustments
+   - Use set_text() to modify text content of a TEXT node
+   - Use set_fills() to change background/fill colors
+   - Use move_nodes() / resize_nodes() for position and size adjustments
 
 7. Visual Hierarchy:
    - Position elements in logical reading order (top to bottom)

@@ -49,37 +49,41 @@ Calculate layout:
 - Total container width = (cloneWidth + 24) × columns
 
 ### 3. Create container frame (if requested)
-Use a validated batch op create_frame for the variant container. Prefer variable-bound
-spacing params when available; run batch(validateOnly:true) before mutation.
+create_frame(name="Variants/ComponentName", width=totalWidth, height=totalHeight,
+             layoutMode="HORIZONTAL", itemSpacing=24, paddingTop=32, paddingLeft=32,
+             paddingRight=32, paddingBottom=32)
 
 ### 4. For each variant
 
 **Sizes:**
-- Clone source: batch op clone_node with parentId=containerId
+- Clone source: clone_node(sourceId, parentId=containerId)
 - Compute scale factor (SM=0.75, MD=1.0, LG=1.5)
-- batch op resize_nodes to new dimensions
-- For TEXT children: batch op set_text can adjust content and text style params including fontSize, fontFamily, and fontStyle
-- batch op rename_node to "ComponentName/SM" etc.
+- resize_nodes to new dimensions
+- For TEXT children: set_text to same content (font size cannot be changed via MCP — note this limitation)
+- rename_node to "ComponentName/SM" etc.
 
 **Color themes:**
-- Clone source: batch op clone_node with parentId=containerId
-- For each fill-bearing child: batch op set_fills with variableId when possible
+- Clone source: clone_node(sourceId, parentId=containerId)
+- For each fill-bearing child: set_fills(nodeId, color=themeHex)
 - Color mapping suggestion:
-  - Primary   → use the primary design variable
-  - Secondary → use the secondary design variable
-  - Danger / Success / Warning → use existing semantic variables, or create variables first with user approval
-- batch op rename_node to "ComponentName/Primary" etc.
+  - Primary   → use brand primary color
+  - Secondary → use brand secondary color
+  - Danger    → #EF4444
+  - Success   → #22C55E
+  - Warning   → #F59E0B
+- rename_node to "ComponentName/Primary" etc.
 
 **States:**
-- Clone source: batch op clone_node with parentId=containerId
-- Disabled: bind to an existing disabled/background variable; reduce opacity only if that is the approved design-system behavior
+- Clone source: clone_node(sourceId, parentId=containerId)
+- Disabled: set_fills on background to gray (#94A3B8), reduce fill opacity of text nodes
 - Hover: slightly lighten the primary fill
-- batch op rename_node to "ComponentName/Hover" etc.
+- rename_node to "ComponentName/Hover" etc.
 
 **Dark mode:**
-- Clone source: batch op clone_node with parentId=containerId
-- Prefer set_variable_mode on the top-level wrapper. If explicit swaps are needed, bind existing dark-mode variables.
-- batch op rename_node to "ComponentName/Dark"
+- Clone source: clone_node(sourceId, parentId=containerId)
+- Swap background fill to dark (#1E293B or similar)
+- Swap text fills to light (#F8FAFC)
+- rename_node to "ComponentName/Dark"
 
 ### 5. Summarize
 Report all created node IDs and names. Ask the user if they want further adjustments.

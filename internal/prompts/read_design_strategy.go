@@ -38,10 +38,10 @@ func addReadDesignStrategy(s *server.MCPServer) {
 7. For text-heavy components, use scan_text_nodes to collect all copy at once
 8. Use scan_nodes_by_types to find all FRAME/COMPONENT/INSTANCE nodes in a subtree
 9. Call get_styles and get_variable_defs once per session to understand the design system
-10. For hidden/legacy reads such as get_fonts, get_viewport, or get_reactions, use a validated batch op after get_batch_op_spec
-11. Call save_screenshots last and only when visual confirmation is needed — it writes files instead of inlining base64
-12. Use batch(validateOnly:true) before generated or unfamiliar read/write chains
-13. Use get_batch_op_spec before composing hidden op params
+10. Call get_fonts to understand typography usage across the page at a glance
+11. Use get_viewport to see what the user is currently looking at in the canvas
+12. Use get_reactions to inspect prototype interactions on a node
+13. Call get_screenshot last and only when visual confirmation is needed — it is expensive
 14. Node IDs use colon format: 4029:12345 — never use hyphens
 15. get_local_components returns componentSets and variantProperties for variant-aware inspection`),
 				),

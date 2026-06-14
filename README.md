@@ -22,7 +22,7 @@ If you are building design migration, audit, or handoff agents, give it a try.
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Fast**        | Build with fewer LLM ↔ plugin round-trips by batching dependent operations into one call.                                                                  |
 | **Quota-free**  | Plugin-side work is not capped by Figma's official MCP server limits, such as 6 calls/month for View/Collab seats or 200-600 calls/day for Dev/Full seats. |
-| **Agent-ready** | Multiple agents can share a compact default tool surface safely through channel routing, reconnects, read dedup, and a hardened request queue.             |
+| **Agent-ready** | Multiple agents can share a session safely through channel routing, reconnects, read dedup, and a hardened request queue.                                  |
 
 ### Why this fork exists
 
@@ -103,7 +103,6 @@ Open the product file and the source library at the same time. Compare their com
 | Track     | Capability                     | Why it matters                                                                                                           |
 | --------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | Speed     | Fewer back-and-forth steps     | The agent can do several related Figma actions in one go, so building or editing a screen feels much faster.             |
-| Speed     | Compact default tool surface   | The default core profile keeps `tools/list` small; agents discover detailed batch/FigmaPlan ops only when needed.        |
 | Speed     | Large reads stay manageable    | Big files do not dump huge walls of data into the model at once, so the agent can stay focused on the part that matters. |
 | Free      | No official MCP quota limits   | You are not blocked by the official Figma MCP server's monthly or daily call caps for normal plugin-side work.           |
 | Access    | Direct Figma editing           | The agent works on the open Figma file itself, not a disconnected copy or a limited export.                              |
@@ -235,11 +234,9 @@ After running `make build` (see [DEV-SETUP.md](DEV-SETUP.md)):
 | Variable                 | Default | Description                                                                                                                                                                                                                                       |
 | ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FIGMA_TOKEN`            | —       | Figma Personal Access Token. Required only for `fetch_library_catalog`. Auto-loaded from `.env`.                                                                                                                                                  |
-| `FIGMA_MCP_TOOL_PROFILE` | `core`  | Tool surface profile. `core` is the compact default; `full` restores the legacy top-level compatibility/debugging surface.                                                                                                                        |
-| `FIGMA_MCP_TOOL_SCHEMA_MODE` | `compact` | Tool schema verbosity. Default `compact` trims `tools/list` descriptions to reduce MCP context tokens; set `verbose` to expose the full in-schema guidance.                                                                                       |
 | `FIGMA_MCP_SPILL_BYTES`  | `25000` | Response size threshold. Larger responses spill to `.figma-mcp-cache/`.                                                                                                                                                                           |
 | `FIGMA_MCP_TIMEOUT`      | `120`   | Inactivity ceiling in seconds for lightweight ops (writes, metadata reads, styles). Resets on each progress heartbeat.                                                                                                                            |
-| `FIGMA_MCP_READ_TIMEOUT` | `600`   | Inactivity ceiling in seconds for heavy reads (`get_node`, `get_nodes_info`, `get_design_context`, full-document reads, scan/search tools) and `batch`. Resets on each progress heartbeat. A firing timer means retry narrower, not raise the ceiling. |
+| `FIGMA_MCP_READ_TIMEOUT` | `600`   | Inactivity ceiling in seconds for heavy reads (`get_node`, `get_nodes_info`, `get_design_context`, `get_document`, scan/search tools) and `batch`. Resets on each progress heartbeat. A firing timer means retry narrower, not raise the ceiling. |
 
 ### FIGMA_TOKEN
 
@@ -277,7 +274,7 @@ The binary loads `.env` from its working directory at startup. Shell env always 
 
 ## Credits
 
-Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MIT). The original established the core insight: skip the REST API, talk directly to Figma Desktop over WebSocket. figma-mcp-express adds multi-channel routing, batch ops, response spill-to-disk, library automation, codegen context, library catalog discovery, cooperative yield, and depth-limited traversal.
+Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MIT). The original established the core insight: skip the REST API, talk directly to Figma Desktop over WebSocket. figma-mcp-express adds multi-channel routing, batch ops, response spill-to-disk, library automation, codegen context, REST catalog, cooperative yield, and depth-limited traversal.
 
 ---
 

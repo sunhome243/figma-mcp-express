@@ -25,7 +25,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** `layoutSizingHorizontal:"FILL"` set, node still renders at content size, no error.
 **Cause:** FILL only applies once the node is a child of an auto-layout parent; on a parentless node it's accepted and ignored.
-**Fix:** append to the auto-layout parent FIRST, then set sizing — use `batch` with `$N.id` refs so order is guaranteed. Existing already-parented node: batch op `resize_nodes` with `layoutSizingHorizontal:"FILL"`.
+**Fix:** append to the auto-layout parent FIRST, then set sizing — use `batch` with `$N.id` refs so order is guaranteed. Existing already-parented node: `resize_nodes(nodeIds, layoutSizingHorizontal:"FILL")`.
 
 ---
 
@@ -105,7 +105,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** you hack alignment/wrap (e.g. leading spaces to fake-center) thinking `set_text` only swaps characters.
 **Cause:** `set_text` carries the full text-style set; `text` is optional (pass a styling param alone to restyle in place).
-**Fix:** use its params — `textAlignHorizontal/Vertical`, `textAutoResize`, `letterSpacing*`, `lineHeight*`, `textCase`, `textDecoration`, `fontSize/Family/Style` (auto-loads). Wrap/grow: `textAutoResize:"HEIGHT"` + batch op `resize_nodes` with width. Center: `textAlignHorizontal:"CENTER"` — never fake with spaces.
+**Fix:** use its params — `textAlignHorizontal/Vertical`, `textAutoResize`, `letterSpacing*`, `lineHeight*`, `textCase`, `textDecoration`, `fontSize/Family/Style` (auto-loads). Wrap/grow: `textAutoResize:"HEIGHT"` + `resize_nodes(width)`. Center: `textAlignHorizontal:"CENTER"` — never fake with spaces.
 
 ---
 
@@ -113,7 +113,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** clearing overrides by setting an empty/transparent fill — which ADDS an override instead.
 **Cause:** blanking a property is itself an override layered on top, not a reset.
-**Fix:** batch op `set_instance_properties` with `resetOverrides:true` resets to defaults before applying `properties` (omit `properties` to reset only). Status/variant color lives in the variant — set `properties:{"Variant":"Success"}`, never hand-write a fill.
+**Fix:** `set_instance_properties(nodeId, {resetOverrides:true, properties:{…}})` resets to defaults before applying `properties` (omit `properties` to reset only). Status/variant color lives in the variant — set `properties:{"Variant":"Success"}`, never hand-write a fill.
 
 ---
 
@@ -121,7 +121,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** you need a remote collection's mode ids (e.g. to pin dark mode) but local-collection reads miss them.
 **Cause:** local reads don't surface remote library collections.
-**Fix:** use the batch op `get_remote_variable_collection` with `collectionId` from a node's `boundVariables[].variableCollectionId`; it returns the modes to pass to `set_variable_mode`.
+**Fix:** `get_remote_variable_collection(collectionId)` — `collectionId` from a node's `boundVariables[].variableCollectionId` — returns the modes to pass to `set_variable_mode`.
 
 ---
 
@@ -142,7 +142,7 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 2. **Differ per instance:** `swap_component` the nested path (e.g. `I3:244;13:49`) — works through the MCP (instance-swap override). Leave one on default, swap the rest.
 3. **Recolor LAST** (after swaps): `scan_nodes_by_types(<container>, ["VECTOR"])` → bulk `set_strokes` on `["$0.matchingNodes[*].id"]`. Survives swaps, no hand-built paths, covers multi-path icons. **Lucide/shadcn icons are STROKED** → `set_strokes`, not `set_fills`.
 
-**`"Removing this node is not allowed"` (native Figma, not a handler guard):** deletion is blocked when the layer **backs a component property** (text prop, exposed instance-swap, ...) — adding a nested instance to a master can auto-expose one, so even a just-added node may resist deletion; plain non-property layers delete fine. **Pick by intent, don't reflexively hide:** to truly delete it, remove the component-property binding first, or `detach_instance` and delete on the plain frame; to suppress it in specific instances, `set_visible:false` is the correct override. Hidden auto-layout children drop from flow, but hiding only hides; it is not a stand-in for deletion. `delete_nodes` reports this per-node with the same hint instead of aborting the batch.
+**`"Removing this node is not allowed"` (native Figma, not a handler guard):** `node.remove()` is blocked when the layer **backs a component property** (text prop, exposed instance-swap, …) — adding a nested instance to a master can auto-expose one, so even a just-added node may resist deletion; plain (non-property) layers delete fine. **Pick by intent, don't reflexively hide:** to truly delete it, remove the component-property binding first (then it deletes) or `detach_instance` and delete on the plain frame; to suppress it in specific instances, `set_visible:false` is the correct *override* (hidden auto-layout child drops from flow) — but it only HIDES (node persists), never a stand-in for deletion. (`delete_nodes` now reports this per-node with the same hint instead of aborting the batch.)
 
 **`batch` quirks:** `swap_component` takes `nodeIds[]` (not `nodeId`); reads like `scan_nodes_by_types` take `nodeId` **inside `params`**.
 

@@ -37,7 +37,7 @@ modifying any visual properties.
 
 1. **Understand the scope**
    Ask the user: rename the entire page, a specific frame, or just selected nodes?
-   - Entire page: use get_metadata() + get_pages(), choose the page/frame root, then scan_nodes_by_types().
+   - Entire page: use get_document() to get the root node ID, then scan_nodes_by_types().
    - Specific frame: use get_node(nodeId) to inspect it first.
    - Selection: use get_selection().
 
@@ -60,10 +60,9 @@ modifying any visual properties.
    | Node ID | Current Name | Proposed Name |
 
 5. **Apply renames (after user confirmation)**
-   Use validated batch ops, not direct top-level rename calls:
-   - Same rule for many nodes: batch op batch_rename_nodes.
-   - Different name per node: batch map over a prepared list and do rename_node.
-   Run batch(validateOnly:true) first, then execute after the full plan is approved.
+   Call rename_node(nodeId, name) for each node.
+   Process in batches — do not wait for user confirmation between individual renames once
+   the full plan is approved.
 
 ## Rules
 - Never rename nodes that already follow the convention.

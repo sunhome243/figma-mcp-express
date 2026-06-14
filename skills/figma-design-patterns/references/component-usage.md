@@ -1,72 +1,165 @@
 # Component Usage
 
-How to correctly configure a placed component instance. Placing an instance is step one; configuring it with real content, variants, and dimensions is what makes it done.
+How to correctly configure a placed component instance. Placing an instance is step one — configuring it with real content and the right variant is what makes it done.
 
 ---
 
-## Configure-after-instantiate sequence
+## Configure-after-instantiate: the full sequence
 
-Use validated batch ops, not raw Plugin API scripts:
+```
+// Step 1 — import and place
+const comp = await figma.components.importComponentByKeyAsync(variantKey)
+const inst = comp.createInstance()
+parent.appendChild(inst)
 
-1. `import_component_by_key` with the variant component key.
-2. `create_instance` with `componentId` from the import result and the intended `parentId`.
-3. `set_instance_properties` with real variant, text, boolean, and swap-slot values.
-4. `resize_nodes` when the instance must match a known width/height or FILL/HUG sizing.
-5. Read back with `get_node` or `get_nodes_info`, then screenshot the wrapper.
+// Step 2 — set variant properties
+inst.setProperties({
+  "Size":     "Medium",
+  "State":    "Default",
+  "HasIcon":  true,
+})
 
-Never skip steps 3-5. A default instance with placeholder content is always wrong.
+// Step 3 — set text and slot content
+inst.setProperties({
+  "Label":       "Save changes",
+  "Icon":        iconComponentRef,   // INSTANCE_SWAP slot
+})
 
-## What Instance Properties Can Set
+// Step 4 — resize to spec dimensions
+inst.resize(targetWidth, targetHeight)
 
-| Slot type | Value |
+// Step 5 — verify: would a viewer recognise what this is?
+//   If the screenshot still shows "Button" / "Heading" / "Item 1" → not done
+```
+
+Never skip steps 2–5. A default instance with placeholder content is always wrong.
+
+---
+
+## `setProperties` — what it can set
+
+`setProperties` handles three slot types:
+
+| Slot type | What to pass | Example |
+|---|---|---|
+| `TEXT` | A string | `{ "Label": "Submit" }` |
+| `INSTANCE_SWAP` | A component reference (from `importComponentByKeyAsync`) | `{ "Icon": iconComp }` |
+| Variant property | A string matching a valid variant value | `{ "State": "Error", "Size": "Large" }` |
+| Boolean layer visibility | `true` / `false` | `{ "Show Label#1234": false }` |
+
+Property names are case-sensitive and must exactly match the component's defined property names. Use `get_node` on the component to read the exact property names before calling `setProperties`.
+
+---
+
+## Never `appendChild` on a component instance
+
+```
+// WRONG — Figma will either throw or silently corrupt the instance
+const badge = badgeComp.createInstance()
+const label = figma.createText()
+badge.appendChild(label)        // ← cannot add children to an instance
+
+// CORRECT — use setProperties for text and swap slots
+const badge = badgeComp.createInstance()
+badge.setProperties({ "Label": "Active", "Variant": "Success" })
+```
+
+Component instances are sealed. Their internal structure is owned by the component. The only way to change content is through the component's defined properties. Appending raw nodes breaks the instance.
+
+---
+
+## Variants vs. separate frames for state
+
+Use **variant property** for state changes:
+
+```
+// CORRECT — state as variant
+inst.setProperties({ "State": "Hover" })
+inst.setProperties({ "State": "Disabled" })
+inst.setProperties({ "State": "Error" })
+
+// WRONG — duplicate frames to represent state
+const hoverFrame = figma.createFrame()   // ← manual clone; loses all component benefits
+```
+
+Every interactive state (hover, focus, active, pressed, disabled, error, selected) is a variant. Only use separate frames when the layout structure fundamentally changes between states (e.g., a collapsed sidebar is structurally different from an expanded one).
+
+---
+
+## `resetOverrides()` — restoring defaults
+
+When you want to reset an instance back to its component defaults:
+
+```
+// CORRECT
+instance.resetOverrides()
+
+// WRONG — sets fills to empty array; wipes fills entirely; breaks the instance visually
+instance.fills = []
+```
+
+`fills = []` removes the fill property — it does not restore the component default. Use `resetOverrides()` to restore all overrides at once, or re-call `setProperties` with the original default values to reset selectively.
+
+---
+
+## Slots: what "default instance = not done" means
+
+Every component has slots — text, icon, image, or nested instance positions. When placed fresh, slots show the component's placeholder content:
+
+| Common placeholder text | Meaning |
 |---|---|
-| TEXT | Real string content |
-| INSTANCE_SWAP | Imported component id/reference expected by the server op |
-| Variant property | A string matching the component's allowed variant value |
-| Boolean layer visibility | `true` or `false` |
+| "Heading", "Title", "Label" | TEXT slot — needs real content |
+| "Item 1", "Item 1-5" | Repeating slot or legend — set real data or hide |
+| "Swap it", "Content" | INSTANCE_SWAP slot — import and assign the real component |
+| Blank / empty box | Either an image slot or a hidden element that should be shown/hidden explicitly |
 
-Property names are case-sensitive. Read `componentPropertyDefinitions` with `get_node` on the component before guessing names.
+After `setProperties` with real content, take a mental screenshot: can a viewer immediately recognise what this organism represents (DataTable, NavigationBar, ProductCard)? If the answer is "not really," the content is still placeholder — iterate.
 
-## Never Add Children to an Instance
+---
 
-Component instances are sealed. Their internal structure is owned by the component. Change visible content through `set_instance_properties` only.
+## Reading component property names before `setProperties`
 
-Wrong model: create text and insert it into an instance.
+```
+// Use get_node on the component (not the instance) to read defined properties
+// Look for "componentPropertyDefinitions" in the response
+// Each key is the exact property name to pass to setProperties
 
-Right model: set the instance's TEXT or INSTANCE_SWAP property to the intended content/component.
+// Example response excerpt:
+{
+  "componentPropertyDefinitions": {
+    "Label": { "type": "TEXT", "defaultValue": "Button" },
+    "State": { "type": "VARIANT", "variantOptions": ["Default","Hover","Disabled","Error"] },
+    "HasIcon": { "type": "BOOLEAN", "defaultValue": false }
+  }
+}
+// → setProperties({ "Label": "...", "State": "Hover", "HasIcon": true })
+```
 
-## Variants vs Separate Frames
+Property names are exact-match. "label", "LABEL", and "Label" are different. Always read the component definition before guessing.
 
-Use variant properties for hover, focus, active, pressed, disabled, error, and selected states. Separate frames are only appropriate when the layout structure fundamentally changes, such as collapsed vs expanded navigation.
+---
 
-## Reset Behavior
+## Dark mode and theming: no manual fill overrides
 
-Use the server's reset behavior through `set_instance_properties` with `resetOverrides:true` when you need component defaults restored before applying new properties. Do not clear fills or other visual properties manually to simulate a reset.
+```
+// WRONG — manually overriding fills on an instance child
+child.fills = [{ type: "SOLID", color: { r: 0.1, g: 0.1, b: 0.1 } }]
 
-## Default Instance Means Not Done
+// CORRECT — set the mode on the wrapper once; tokens cascade automatically
+wrapper.setExplicitVariableModeForCollection(colorCollectionId, darkModeId)
+```
 
-Fresh instances commonly show placeholders:
+Manual fill overrides on instance children break variable-driven theming. When the mode switches, the manually overridden fills stay behind (they are no longer bound to the token). Set the mode at the wrapper level; every component instance inside it updates correctly.
 
-| Placeholder | Meaning |
-|---|---|
-| `Heading`, `Title`, `Label` | TEXT slot needs real content |
-| `Item 1`, `Item 1-5` | Repeating slot or legend needs data or hiding |
-| `Swap it`, `Content` | INSTANCE_SWAP slot needs a real component |
-| Blank area | Image/slot visibility needs explicit configuration |
+---
 
-After configuration, a viewer should immediately recognize the component's intended role and content.
-
-## Dark Mode and Theming
-
-Set the variable mode on the top-level wrapper so tokens cascade through instances. Manual fill overrides on instance internals break theme switching and should be treated as a failure.
-
-## Common Mistakes
+## Common mistakes
 
 | Mistake | Consequence | Fix |
 |---|---|---|
-| Default instance left with placeholders | Viewer cannot recognize the component | `set_instance_properties` with real content + size verification |
-| Raw child inserted into an instance | Instance can break or lose expected behavior | Use instance properties for slots |
-| Visual reset by clearing fills | Instance looks broken | Use reset behavior in `set_instance_properties` |
-| Manual child color override | Dark mode fails | Set wrapper mode and rely on bound variables |
-| Wrong property name case | No-op or placeholder remains | Read `componentPropertyDefinitions` first |
-| COMPONENT_SET key used as variant key | Import fails | Import the default variant's component key |
+| Default instance left with "Heading"/"Item 1" | Viewer cannot recognise the component | `setProperties` with real content + `resize` |
+| `appendChild` on an instance | Throws or silently corrupts | Use `setProperties` for all slot content |
+| `fills = []` to "reset" | Wipes fills; instance looks broken | `instance.resetOverrides()` |
+| Manual color override on instance child | Theming breaks when mode switches | Set mode on wrapper; never override fills manually |
+| Wrong property name case in `setProperties` | Silent no-op; default placeholder stays | Read `componentPropertyDefinitions` first |
+| `COMPONENT_SET` key passed to `importComponentByKeyAsync` | "not found" error | Use the default variant's own COMPONENT key |

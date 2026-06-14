@@ -1006,7 +1006,7 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 	// allowlist catches a Plugin-API-name typo the plugin would otherwise silently
 	// drop (create_text is also checked in-case above with its richer hints). The
 	// registry is populated by RegisterTools; in pure unit tests it's empty, so this
-	// is a no-op there. Batch/FigmaPlan ops use the BatchOpCatalog validator.
+	// is a no-op there. Demoted batch-only ops are unregistered → not guarded.
 	if msg := rejectUnknownToolParams(tool, params); msg != "" {
 		return msg
 	}

@@ -70,15 +70,18 @@ Set each card to `layoutSizingHorizontal = "FIXED"` and `resize(373, cardHeight)
 
 ---
 
-## FILL sizing must happen after placement
+## `layoutSizingHorizontal/Vertical = "FILL"` must come AFTER `appendChild`
 
 ```
-WRONG — FILL sizing on a parentless node is ignored:
-  batch op create_frame with layoutSizingHorizontal:"FILL" and no parentId
+// WRONG — sizing set on a parentless node; Figma ignores it silently
+const card = figma.createFrame()
+card.layoutSizingHorizontal = "FILL"     // ← no-op, card has no parent yet
+row.appendChild(card)
 
-CORRECT — establish parent first, then set FILL sizing:
-  op 0: create_frame with parentId:<row-id>
-  op 1: resize_nodes on $0.id with layoutSizingHorizontal:"FILL"
+// CORRECT
+const card = figma.createFrame()
+row.appendChild(card)                     // parent established first
+card.layoutSizingHorizontal = "FILL"     // ← now takes effect
 ```
 
 ---
@@ -89,7 +92,7 @@ CORRECT — establish parent first, then set FILL sizing:
 |---|---|---|
 | Children HUG + `itemSpacing = 150` | Items bunch left at narrow widths | Set children to `FILL`, gap to ≤32 |
 | WRAP + FILL children | All cards collapse to single column | Compute FIXED card width with the formula |
-| FILL set before placement | Sizing silently ignored | Create/place the node under its parent first, then set FILL sizing |
+| FILL set before `appendChild` | Sizing silently ignored | Always `appendChild` first |
 | Sidebar set to FILL | Sidebar grows with page, pushes content | Sidebar always `FIXED` width |
 | No auto layout on a wrapper frame | Frame is rigid, doesn't adapt | Add auto layout; set direction + gap |
 | `primaryAxisAlignItems = "SPACE_BETWEEN"` with 3+ items | Outer two pinned, middle items float | Use FILL children + small gap instead |
