@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -24,6 +25,11 @@ var scriptLikeBatchKeys = map[string]bool{
 	"function": true,
 }
 
+const (
+	defaultBatchMaxOps          = 200
+	defaultBatchMaxPayloadBytes = 2 * 1024 * 1024
+)
+
 func validateBatchOps(rawOps []interface{}) error {
 	normalizeBatchNodeIDs(rawOps)
 	for i, raw := range rawOps {
@@ -39,11 +45,38 @@ func validateBatchOps(rawOps []interface{}) error {
 }
 
 func batchOpsFromParams(params map[string]interface{}) ([]interface{}, error) {
+	for k := range params {
+		switch k {
+		case "ops", "continueOnError", "validateOnly", "channel":
+		default:
+			return nil, fmt.Errorf("batch: unknown top-level param %q", k)
+		}
+	}
 	rawOps, ok := params["ops"].([]interface{})
 	if !ok || len(rawOps) == 0 {
 		return nil, fmt.Errorf("batch requires a non-empty `ops` array")
 	}
+	if err := validateBatchEnvelopeLimits(rawOps); err != nil {
+		return nil, err
+	}
 	return rawOps, nil
+}
+
+func validateBatchEnvelopeLimits(rawOps []interface{}) error {
+	maxOps := envInt("FIGMA_MCP_BATCH_MAX_OPS", defaultBatchMaxOps)
+	if len(rawOps) > maxOps {
+		return fmt.Errorf("batch has %d ops, exceeding the cap of %d; split into smaller logical sections or raise FIGMA_MCP_BATCH_MAX_OPS", len(rawOps), maxOps)
+	}
+
+	raw, err := json.Marshal(rawOps)
+	if err != nil {
+		return fmt.Errorf("batch ops must be JSON-serializable: %w", err)
+	}
+	maxBytes := envInt("FIGMA_MCP_BATCH_MAX_BYTES", defaultBatchMaxPayloadBytes)
+	if len(raw) > maxBytes {
+		return fmt.Errorf("batch encoded ops payload is %d bytes, exceeding the cap of %d; split the batch or raise FIGMA_MCP_BATCH_MAX_BYTES", len(raw), maxBytes)
+	}
+	return nil
 }
 
 func validateAndPrepareBatchParams(params map[string]interface{}) error {

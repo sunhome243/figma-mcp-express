@@ -198,6 +198,8 @@ Stop policy is automatic: any op uses a `$N` ref → dependent chain → stops a
 
 Keep one batch to one logical section (a few dozen ops). A batch holds the plugin's single serial slot for its whole run, so an enormous batch blocks every other call and leaves nothing to verify between steps. Build incrementally with batches, not one giant batch.
 
+Server caps fail fast before plugin execution: `FIGMA_MCP_BATCH_MAX_OPS` defaults to `200`, and `FIGMA_MCP_BATCH_MAX_BYTES` defaults to `2097152` encoded bytes. Split the plan when either cap trips; only raise caps for controlled local runs.
+
 ---
 
 ## Part 2 — Catalog + validation rules

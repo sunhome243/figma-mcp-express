@@ -1109,6 +1109,79 @@ func TestRegisterBatchTools_ValidateOnlyAcceptsPaintStylePaintsUpdate(t *testing
 	}
 }
 
+func TestRegisterBatchTools_RejectsOversizedBatchBeforePlugin(t *testing.T) {
+	t.Setenv("FIGMA_MCP_BATCH_MAX_OPS", "1")
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"validateOnly": true,
+		"ops": []any{
+			map[string]any{"type": "get_metadata"},
+			map[string]any{"type": "get_pages"},
+		},
+	})
+	if !res.IsError {
+		t.Fatalf("expected oversized batch to fail, got %s", resultText(t, res))
+	}
+	if txt := resultText(t, res); !strings.Contains(txt, "exceeding the cap") || !strings.Contains(txt, "FIGMA_MCP_BATCH_MAX_OPS") {
+		t.Fatalf("expected actionable max-ops error, got %q", txt)
+	}
+	if captured.Tool != "" {
+		t.Fatalf("oversized validateOnly batch should not call bridge, captured tool %q", captured.Tool)
+	}
+}
+
+func TestRegisterBatchTools_RejectsOversizedBatchPayloadBeforePlugin(t *testing.T) {
+	t.Setenv("FIGMA_MCP_BATCH_MAX_BYTES", "128")
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"validateOnly": true,
+		"ops": []any{
+			map[string]any{
+				"type": "create_text",
+				"params": map[string]any{
+					"text": strings.Repeat("x", 256),
+				},
+			},
+		},
+	})
+	if !res.IsError {
+		t.Fatalf("expected oversized batch payload to fail, got %s", resultText(t, res))
+	}
+	if txt := resultText(t, res); !strings.Contains(txt, "encoded ops payload") || !strings.Contains(txt, "FIGMA_MCP_BATCH_MAX_BYTES") {
+		t.Fatalf("expected actionable max-bytes error, got %q", txt)
+	}
+	if captured.Tool != "" {
+		t.Fatalf("oversized validateOnly batch should not call bridge, captured tool %q", captured.Tool)
+	}
+}
+
+func TestRegisterBatchTools_RejectsUnknownTopLevelBatchParam(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"validateOnly": true,
+		"timeoutMs":    float64(5000),
+		"ops":          []any{map[string]any{"type": "get_metadata"}},
+	})
+	if !res.IsError {
+		t.Fatalf("expected unknown top-level param to fail, got %s", resultText(t, res))
+	}
+	if txt := resultText(t, res); !strings.Contains(txt, "unknown top-level param") || !strings.Contains(txt, "timeoutMs") {
+		t.Fatalf("expected unknown-param error, got %q", txt)
+	}
+	if captured.Tool != "" {
+		t.Fatalf("failed validateOnly batch should not call bridge, captured tool %q", captured.Tool)
+	}
+}
+
 func TestRegisterBatchTools_NormalizesKnownIDParamsBeforeValidationAndForwarding(t *testing.T) {
 	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
 		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},

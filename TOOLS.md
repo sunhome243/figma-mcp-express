@@ -1136,6 +1136,8 @@ Use when you have a known multi-step sequence, a bulk apply, a read chain, or wa
 
 Reads inside a batch are always live and bypass the singleflight cache. Do not use batch as a bypass for heavy catalog reads — use `fetch_library_catalog` or `get_local_components` directly.
 
+**Safety caps.** `batch` fails fast before plugin execution when top-level ops exceed `FIGMA_MCP_BATCH_MAX_OPS` (default `200`) or encoded `ops` exceed `FIGMA_MCP_BATCH_MAX_BYTES` (default `2097152`). Split large work into logical sections; raise caps only for controlled local runs.
+
 **`$N.field` ref resolution.** A string value of the form `$N.field.subfield` in `nodeIds` or `params` resolves to op N's result data at that path before the op runs. Refs may only point to earlier ops (N < current index). Array indices use dot notation: `$0.nodes.0.id`.
 
 **Channel routing.** Put `channel` on the outer `batch` call only. Do not include `channel` in `ops[*].params`; per-op params are validated against `BatchOpCatalog` and `channel` is not part of any op schema.
