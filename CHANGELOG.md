@@ -6,6 +6,14 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Deep reads no longer re-serialize the subtree per level (the `get_node` timeout root cause)** — `serializeNode` is now depth-aware (optional `maxDepth` + per-node `enrich`), so `get_node`, `get_nodes_info`, and `get_design_context` (full/codegen, non-dedupe) walk the subtree **once** instead of calling the already-recursive `serializeNode` again at every level and re-fetching each child by id. The old wrappers were O(N·D): `get_node(depth:1)` on a large node still fully serialized the entire subtree before truncating — which is why it timed out. Output is byte-identical (golden-locked, including codegen key order).
+
+### Changed
+
+- **`get_nodes_info` now bounds recursion by depth** — it previously recursed unbounded (the same latent timeout `get_node` already guarded against). It now defaults to the same generous depth cap as `get_node` and accepts an optional `depth` param. Trees shallower than the cap are unchanged; only pathologically deep (>50 levels) reads now truncate to `{ childCount }` instead of hanging.
+
 ## [2.0.1] — 2026-06-15
 
 ### Added

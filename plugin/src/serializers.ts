@@ -207,6 +207,24 @@ const makeCaches = (): SerializeCaches => ({
   components: new Map(),
 });
 
+// Options for a depth-bounded / enriched single-pass serialization. All optional;
+// omitting `opts` entirely keeps every existing caller byte-identical.
+//   maxDepth     — stop recursing past this depth. The node AT the cutoff is still
+//                  fully serialized, but its children are dropped for a
+//                  `{ childCount }` summary — the exact truncation shape the
+//                  read-document wrappers (serializeNodeWithDepth / serializeWithDepth)
+//                  produced before this became a single walk. Default Infinity.
+//   enrich       — optional async post-process applied to EVERY serialized node
+//                  AFTER its children/childCount are built, so any keys it appends
+//                  land after `children` (get_design_context codegen depends on
+//                  this exact order — see its key-order golden).
+//   currentDepth — internal recursion counter; top-level callers pass 0 (or omit).
+export interface SerializeOptions {
+  maxDepth?: number;
+  enrich?: (node: any, serialized: any) => any | Promise<any>;
+  currentDepth?: number;
+}
+
 export const serializeNode = async (
   node: any,
   caches: SerializeCaches = makeCaches(),
@@ -216,8 +234,15 @@ export const serializeNode = async (
   // periodically yield the JS thread and post a progress_update that resets the
   // Go-bridge inactivity timer. Omitted by depth-bounded callers that tick themselves.
   onVisit?: (total?: number) => void | Promise<void>,
+  opts?: SerializeOptions,
 ): Promise<any> => {
   if (onVisit) await onVisit();
+  const maxDepth = opts?.maxDepth ?? Infinity;
+  const currentDepth = opts?.currentDepth ?? 0;
+  const enrich = opts?.enrich;
+  // Apply the optional per-node enrichment last so its keys append AFTER children.
+  const finish = async (value: any) => (enrich ? await enrich(node, value) : value);
+
   const styles = await serializeStyles(node, caches.styles);
   let base: any = {
     id: node.id,
@@ -231,7 +256,7 @@ export const serializeNode = async (
   if ("opacity" in node && node.opacity !== 1) base.opacity = node.opacity;
   if ("visible" in node && node.visible === false) base.visible = false;
 
-  if (node.type === "TEXT") return serializeText(node, base, caches.styles);
+  if (node.type === "TEXT") return finish(await serializeText(node, base, caches.styles));
   // INSTANCE: resolve the main component name + key inline so the node read is
   // self-contained — the model knows which component it is and can re-import by key
   // without a follow-up round-trip (the read→dereference→read chain is the single-
@@ -254,13 +279,23 @@ export const serializeNode = async (
     }
   }
   if ("children" in node) {
-    return Object.assign({}, base, {
-      children: await Promise.all(
-        node.children.map((child: any) => serializeNode(child, caches, onVisit)),
+    // At the depth cap: serialize THIS node fully but drop its children for a
+    // { childCount } summary — byte-identical to the old wrapper truncation.
+    if (currentDepth >= maxDepth) {
+      return finish(Object.assign({}, base, { childCount: node.children.length }));
+    }
+    const children = await Promise.all(
+      node.children.map((child: any) =>
+        serializeNode(child, caches, onVisit, {
+          maxDepth,
+          enrich,
+          currentDepth: currentDepth + 1,
+        }),
       ),
-    });
+    );
+    return finish(Object.assign({}, base, { children }));
   }
-  return base;
+  return finish(base);
 };
 
 // deduplicateStyles does a two-pass walk over a serialized node tree.

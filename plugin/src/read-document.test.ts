@@ -792,6 +792,29 @@ describe("get_nodes_info — cooperative yielding", () => {
     expect(res?.data[0].children).toHaveLength(3);
     expect(res?.data[1].children).toHaveLength(3);
   });
+
+  // (e) NEW: depth cap — get_nodes_info previously recursed unbounded (latent
+  // timeout on a giant node). A depth param now bounds it, same as get_node:
+  // the node at the cap is serialized but its children collapse to childCount.
+  it("depth:1 returns each node + direct children only, grandchildren truncated", async () => {
+    // 5 branches × 10 leaves under root → request the root with depth:1
+    const root = makeDeepTree("root:info-depth", 5, 10);
+    setupFigma(root);
+
+    const res = await handleReadDocumentRequest({
+      type: "get_nodes_info",
+      requestId: "req-test-42",
+      nodeIds: ["root:info-depth"],
+      params: { depth: 1 },
+    });
+
+    expect(res?.data).toHaveLength(1);
+    const node = res?.data[0];
+    expect(node.children).toHaveLength(5); // direct children present
+    const branch0 = node.children[0];
+    expect(branch0.children).toBeUndefined(); // grandchildren truncated
+    expect(branch0.childCount).toBe(10);
+  });
 });
 
 // ── get_design_context: extractInstanceOverrides (dedupeComponents:true) ─────
