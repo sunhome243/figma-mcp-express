@@ -128,6 +128,24 @@ describe("get_screenshot", () => {
     // CRITICAL: progress must be > 0 or the Go bridge ignores the tick.
     expect(ticks.every((m) => m.progress > 0)).toBe(true);
   });
+
+  it("ticks exactly once per frame and preserves export order/data (serial refactor)", async () => {
+    mockNodes["1:1"] = makeExportable("1:1", "A");
+    mockNodes["2:2"] = makeExportable("2:2", "B");
+    const res = await handleReadRequest(makeRequest("get_screenshot", ["1:1", "2:2"]));
+    // Data integrity after the Promise.all → serial-loop refactor.
+    expect(res?.data.exports.map((e: any) => e.nodeId)).toEqual(["1:1", "2:2"]);
+    expect(res?.data.exports.every((e: any) => e.base64 === "QkFTRTY0")).toBe(true);
+    // every=1 → one tick per exported frame.
+    expect(progressTicks("req-test-1").length).toBe(2);
+  });
+
+  it("still ticks for SVG (no scale constraint path)", async () => {
+    mockNodes["1:1"] = makeExportable("1:1", "Icon");
+    mockNodes["2:2"] = makeExportable("2:2", "Icon2");
+    await handleReadRequest(makeRequest("get_screenshot", ["1:1", "2:2"], { format: "SVG" }));
+    expect(progressTicks("req-test-1").length).toBe(2);
+  });
 });
 
 // ── export_frames_to_pdf ────────────────────────────────────────────────────

@@ -408,6 +408,27 @@ describe("bulkApply progress heartbeat", () => {
     const ticks = posted.filter((m) => m.type === "progress_update");
     expect(ticks.length).toBe(0);
   });
+
+  it("respects the cadence boundary (49 → 0 ticks, 50 → 1 tick)", async () => {
+    const run = async (rid: string, count: number) => {
+      await bulkApply(
+        { type: "set_fills", requestId: rid, nodeIds: Array.from({ length: count }, (_, i) => `1:${i}`) },
+        () => ({ ok: true }),
+      );
+      return posted.filter((m) => m.type === "progress_update" && m.requestId === rid).length;
+    };
+    expect(await run("under", 49)).toBe(0);
+    expect(await run("at", 50)).toBe(1);
+  });
+
+  it("still ticks even when every node errors (timer must survive a failing batch)", async () => {
+    await bulkApply(
+      { type: "set_fills", requestId: "req-err", nodeIds: Array.from({ length: 50 }, (_, i) => `1:${i}`) },
+      () => { throw new Error("nope"); },
+    );
+    const ticks = posted.filter((m) => m.type === "progress_update" && m.requestId === "req-err");
+    expect(ticks.length).toBe(1);
+  });
 });
 
 // ── getParentNode ─────────────────────────────────────────────────────────────
