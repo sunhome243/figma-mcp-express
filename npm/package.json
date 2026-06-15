@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-express",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Fast, quota-free, agent-ready Figma MCP server with compact core tools, validated batch ops, multi-file routing, and library automation.",
   "mcpName": "io.github.sunhome243/figma-mcp-express",
   "bin": {
