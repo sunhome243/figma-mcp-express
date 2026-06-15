@@ -1057,3 +1057,59 @@ describe("get_metadata — no traversal (no progress expected)", () => {
     expect(progressMsgs.length).toBe(0);
   });
 });
+
+// ── get_fonts: cooperative yielding (#3) ──────────────────────────────────────
+// get_fonts walks the whole page collecting fonts. The walk must yield + emit a
+// progress_update so a large page doesn't trip the Go-bridge watchdog, while
+// returning the same aggregated font data.
+
+describe("get_fonts — cooperative yielding", () => {
+  it("emits ≥1 progress_update (progress > 0) on a large page (>800 nodes)", async () => {
+    const root = makeDeepTree("root:fonts", 40, 25, "TEXT"); // 1041 nodes
+    setupFigma(root);
+
+    const res = await handleReadDocumentRequest(makeRequest("get_fonts"));
+
+    // Data integrity: all leaves are Inter/Regular → one aggregated entry.
+    expect(res?.data.count).toBe(1);
+    expect(res?.data.fonts[0].family).toBe("Inter");
+    expect(res?.data.fonts[0].style).toBe("Regular");
+    expect(res?.data.fonts[0].nodeCount).toBe(1000);
+
+    const progressMsgs = posted.filter(
+      (m) => m.type === "progress_update" && m.requestId === "req-test-42",
+    );
+    expect(progressMsgs.length).toBeGreaterThanOrEqual(1);
+    expect(progressMsgs[0].progress).toBeGreaterThan(0);
+  });
+
+  it("emits ZERO progress_update on a small page (<800 nodes)", async () => {
+    const root = makeDeepTree("root:fonts-small", 4, 25, "TEXT"); // 105 nodes
+    setupFigma(root);
+    await handleReadDocumentRequest(makeRequest("get_fonts"));
+    const progressMsgs = posted.filter(
+      (m) => m.type === "progress_update" && m.requestId === "req-test-42",
+    );
+    expect(progressMsgs.length).toBe(0);
+  });
+});
+
+// ── get_document: cooperative yielding (#4) ───────────────────────────────────
+// get_document serializes the entire current page via serializeNode. Threading a
+// per-node tick (via onVisit) keeps the inactivity timer alive on a large page.
+
+describe("get_document — cooperative yielding", () => {
+  it("emits ≥1 progress_update (progress > 0) on a large page (>800 nodes)", async () => {
+    const root = makeFlatTree("root:doc", 2000); // 2001 nodes
+    setupFigma(root);
+
+    const res = await handleReadDocumentRequest(makeRequest("get_document"));
+    expect(res?.data).toBeTruthy();
+
+    const progressMsgs = posted.filter(
+      (m) => m.type === "progress_update" && m.requestId === "req-test-42",
+    );
+    expect(progressMsgs.length).toBeGreaterThanOrEqual(1);
+    expect(progressMsgs[0].progress).toBeGreaterThan(0);
+  });
+});

@@ -6,6 +6,23 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-06-15
+
+### Added
+
+- **Plugin-API hygiene linting (`eslint-plugin-figma-plugins`)** — stood up ESLint for `plugin/src`, running only `@figma/eslint-plugin-figma-plugins` (no general style rules). It mechanically bans the deprecated synchronous Figma APIs forbidden under `documentAccess: "dynamic-page"`, converting the "async-APIs-only" guarantee from hand-reviewed to enforced. Wired into CI (`verify-plugin` → `make lint-ts`, `--max-warnings 0`); the codebase currently lints clean (43 files, 0 findings).
+
+### Fixed
+
+- **Long exports keep the bridge alive** — `get_screenshot` now exports serially (was a parallel `Promise.all` with no heartbeat) and both `get_screenshot` and `export_frames_to_pdf` emit a `progress_update` per frame, so a multi-frame export can no longer exceed the Go-bridge inactivity window and be killed mid-flight on a single thread.
+- **Bulk writes keep the bridge alive** — `bulkApply` and the standalone multi-node loops in `write-modify.ts` (`move_nodes`, `resize_nodes`, `lock/unlock_nodes`, `rotate_nodes`, `reorder_nodes`, `set_blend_mode`, `set_constraints`, `reparent_nodes`, `batch_rename_nodes`, `find_replace_text`) and `write-components.ts` (`detach_instance`, `delete_nodes`, `ungroup_nodes`) now emit a `progress_update` every 50 mutations, so a large single-op `nodeIds` array no longer trips the watchdog. Single-node calls emit no tick (zero hot-path overhead).
+- **Whole-page reads keep the bridge alive** — `get_fonts` (previously a synchronous, unyielding recursive walk) is now async with a per-node heartbeat, and `get_document` threads a heartbeat through `serializeNode` (new optional `onVisit`), so large pages emit `progress_update` ticks during the walk.
+- **UI→plugin messages are origin-scoped** — every `parent.postMessage` from the plugin UI now carries `pluginId: "figma-mcp-express"`, so another plugin or a navigated iframe cannot intercept the WebSocket host/port config (per Figma's documented secure-messaging guidance).
+
+### Internal
+
+- Extracted the shared `makeProgress` heartbeat helper into `plugin/src/progress.ts` (was private to `read-document.ts`) so reads, writes, and exports use one tick implementation; added an `every` cadence parameter (800 for node walks, 1 per-frame for exports, 50 for bulk writes).
+
 ## [2.0.0] — 2026-06-14
 
 ### Breaking Changes
@@ -50,7 +67,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- **Hung library import no longer wedges the plugin thread** — `figma.importComponentByKeyAsync` / `importComponentSetByKeyAsync` / `importVariableByKeyAsync` / `importStyleByKeyAsync` can hang and never resolve or reject (a COMPONENT_SET key passed to the component importer, or an unpublished/unreachable library), with no built-in timeout or progress tick. Such a hang occupied the single plugin thread until the server-side 120s inactivity ceiling fired, and under concurrent load each fresh attempt re-armed that window — so the import path appeared permanently wedged until a manual plugin restart (observed in a 4-screen concurrent redesign run). All four `import_*_by_key` calls in `plugin/src/write-library.ts` are now wrapped in `withImportTimeout` (a `Promise.race` against a 15s reject-on-timeout, timer always cleared on settle), so a hung import fails fast — the server clears its `importInFlight` marker and the next import proceeds without a restart. The timeout message deliberately omits "not found"/"not a component" so it never triggers the COMPONENT_SET fallback (which would re-hang on the set importer). Covered by 5 new `withImportTimeout` tests.
+- **Hung library import no longer wedges the plugin thread** — `figma.importComponentByKeyAsync` / `importComponentSetByKeyAsync` / `importVariableByKeyAsync` / `importStyleByKeyAsync` can hang and never resolve or reject (a COMPONENT*SET key passed to the component importer, or an unpublished/unreachable library), with no built-in timeout or progress tick. Such a hang occupied the single plugin thread until the server-side 120s inactivity ceiling fired, and under concurrent load each fresh attempt re-armed that window — so the import path appeared permanently wedged until a manual plugin restart (observed in a 4-screen concurrent redesign run). All four `import*\*\_by_key`calls in`plugin/src/write-library.ts`are now wrapped in`withImportTimeout`(a`Promise.race`against a 15s reject-on-timeout, timer always cleared on settle), so a hung import fails fast — the server clears its`importInFlight`marker and the next import proceeds without a restart. The timeout message deliberately omits "not found"/"not a component" so it never triggers the COMPONENT_SET fallback (which would re-hang on the set importer). Covered by 5 new`withImportTimeout` tests.
 
 ## [1.0.2] — 2026-06-12
 
@@ -116,6 +133,7 @@ Initial release as figma-mcp-express, forked from [vkhanhqui/figma-mcp-go](https
 - **Timeouts are server-managed** — removed the client `timeoutMs` param. Ceilings are set by op type: `FIGMA_MCP_READ_TIMEOUT` (default 600s) for heavy reads + `batch`, 120s for light ops. A timeout means **re-scope narrower**, never "raise a timeout." The timer is inactivity-based — a read that ticks progress never trips it.
 - **Style and variable workflows are broader than upstream** — paint/effect styles accept richer `paints[]` / `effects[]` payloads, and `bind_variable_to_node` now supports a much larger set of bindable fields with stricter request-level validation for unsupported ones.
 - **Reparenting is less destructive by default** — `reparent_nodes` now preserves absolute canvas position unless callers explicitly opt out.
+
 ### Fixed
 
 - `set_opacity` / `set_visible` are LIVE top-level tools (previously mislabeled as demoted) — they are _also_ valid `batch` ops.

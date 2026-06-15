@@ -1,4 +1,4 @@
-.PHONY: test test-go test-ts coverage coverage-go coverage-go-html coverage-ts build build-go build-ts run
+.PHONY: test test-go test-ts lint-ts coverage coverage-go coverage-go-html coverage-ts build build-go build-ts run
 
 # Version stamped into the binary via -ldflags, so `figma-mcp-express --version` reports a
 # real value (git describe) instead of "dev" — the only way to confirm a reload picked
@@ -28,6 +28,11 @@ test-go:
 
 test-ts:
 	cd plugin && bun test
+
+# Figma-plugin API hygiene: fails on any deprecated sync API forbidden under
+# documentAccess: "dynamic-page" (--max-warnings 0 makes the advisory rules fail too).
+lint-ts:
+	cd plugin && bunx eslint . --max-warnings 0
 
 coverage: coverage-go coverage-ts
 

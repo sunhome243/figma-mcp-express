@@ -13,6 +13,7 @@ import { handleReadRequest } from "./read-handlers";
 let mockNodes: Record<string, any>;
 let mockSelection: any[];
 let lastExportSettings: any[];
+let posted: any[];
 
 const makeRequest = (type: string, nodeIds?: string[], params?: any) => ({
   type,
@@ -34,12 +35,19 @@ beforeEach(() => {
   lastExportSettings = [];
   mockNodes = {};
   mockSelection = [];
+  posted = [];
   (globalThis as any).figma = {
     get currentPage() { return { id: "0:1", name: "Page 1", get selection() { return mockSelection; } }; },
     getNodeByIdAsync: async (id: string) => mockNodes[id] ?? null,
     base64Encode: (_bytes: Uint8Array) => "QkFTRTY0", // deterministic stub
+    ui: { postMessage: (msg: any) => posted.push(msg) },
   };
 });
+
+const progressTicks = (requestId: string) =>
+  posted.filter(
+    (m) => m.type === "progress_update" && m.requestId === requestId,
+  );
 
 // ── get_screenshot ──────────────────────────────────────────────────────────
 
@@ -105,6 +113,39 @@ describe("get_screenshot", () => {
       handleReadRequest(makeRequest("get_screenshot", []))
     ).rejects.toThrow("No nodes to export");
   });
+
+  // Single-threaded survival: each frame export is expensive and blocks the JS
+  // thread. A progress_update per frame (progress > 0) resets the Go-bridge
+  // inactivity timer so a multi-frame export is not killed by the watchdog.
+  it("emits a progress_update per frame (progress > 0) during a multi-node export", async () => {
+    mockNodes["1:1"] = makeExportable("1:1", "A");
+    mockNodes["2:2"] = makeExportable("2:2", "B");
+    mockNodes["3:3"] = makeExportable("3:3", "C");
+    const res = await handleReadRequest(makeRequest("get_screenshot", ["1:1", "2:2", "3:3"]));
+    expect(res?.data.exports).toHaveLength(3);
+    const ticks = progressTicks("req-test-1");
+    expect(ticks.length).toBeGreaterThanOrEqual(3);
+    // CRITICAL: progress must be > 0 or the Go bridge ignores the tick.
+    expect(ticks.every((m) => m.progress > 0)).toBe(true);
+  });
+
+  it("ticks exactly once per frame and preserves export order/data (serial refactor)", async () => {
+    mockNodes["1:1"] = makeExportable("1:1", "A");
+    mockNodes["2:2"] = makeExportable("2:2", "B");
+    const res = await handleReadRequest(makeRequest("get_screenshot", ["1:1", "2:2"]));
+    // Data integrity after the Promise.all → serial-loop refactor.
+    expect(res?.data.exports.map((e: any) => e.nodeId)).toEqual(["1:1", "2:2"]);
+    expect(res?.data.exports.every((e: any) => e.base64 === "QkFTRTY0")).toBe(true);
+    // every=1 → one tick per exported frame.
+    expect(progressTicks("req-test-1").length).toBe(2);
+  });
+
+  it("still ticks for SVG (no scale constraint path)", async () => {
+    mockNodes["1:1"] = makeExportable("1:1", "Icon");
+    mockNodes["2:2"] = makeExportable("2:2", "Icon2");
+    await handleReadRequest(makeRequest("get_screenshot", ["1:1", "2:2"], { format: "SVG" }));
+    expect(progressTicks("req-test-1").length).toBe(2);
+  });
 });
 
 // ── export_frames_to_pdf ────────────────────────────────────────────────────
@@ -124,6 +165,16 @@ describe("export_frames_to_pdf", () => {
     mockNodes["3:3"] = makeExportable("3:3", "Page C");
     const res = await handleReadRequest(makeRequest("export_frames_to_pdf", ["1:1", "2:2", "3:3"]));
     expect(res?.data.frames.map((f: any) => f.nodeName)).toEqual(["Page A", "Page B", "Page C"]);
+  });
+
+  it("emits a progress_update per frame (progress > 0) during a multi-frame PDF export", async () => {
+    mockNodes["1:1"] = makeExportable("1:1", "Page A");
+    mockNodes["2:2"] = makeExportable("2:2", "Page B");
+    mockNodes["3:3"] = makeExportable("3:3", "Page C");
+    await handleReadRequest(makeRequest("export_frames_to_pdf", ["1:1", "2:2", "3:3"]));
+    const ticks = progressTicks("req-test-1");
+    expect(ticks.length).toBeGreaterThanOrEqual(3);
+    expect(ticks.every((m) => m.progress > 0)).toBe(true);
   });
 
   it("throws when nodeIds is empty", async () => {

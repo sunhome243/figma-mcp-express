@@ -1,5 +1,13 @@
 // Write helpers — utilities used exclusively by write handlers.
 
+import { makeProgress } from "./progress";
+
+// Tick cadence for bulk-write loops. Writes are heavier than read-walk visits, so
+// tick more often than the 800-node read default — a progress_update every 50
+// mutations keeps the Go-bridge inactivity timer alive on a large single-op array
+// without meaningfully slowing the common small bulk apply.
+export const WRITE_PROGRESS_EVERY = 50;
+
 // bulkApply is the shared "all→all" loop for setters that should apply to EVERY
 // id in request.nodeIds and report a STRUCTURED per-node result instead of
 // aborting on the first failure. It is the plugin-side half of the bulk-apply
@@ -21,6 +29,7 @@ export const bulkApply = async (
 ): Promise<any> => {
   const nodeIds: string[] = request.nodeIds || [];
   if (nodeIds.length === 0) throw new Error("nodeIds is required");
+  const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
   const results: any[] = [];
   for (const nid of nodeIds) {
     const n = await figma.getNodeByIdAsync(nid) as any;
@@ -31,6 +40,7 @@ export const bulkApply = async (
     } catch (e) {
       results.push({ nodeId: nid, error: e instanceof Error ? e.message : String(e) });
     }
+    await tick(nodeIds.length);
   }
   figma.commitUndo();
   return { type: request.type, requestId: request.requestId, data: { results } };
