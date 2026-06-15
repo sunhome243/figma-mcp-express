@@ -305,6 +305,45 @@ describe("codegen — depth, text, and full regression", () => {
     expect(child.tokens.fontSize).toBe("spacing/8");
   });
 
+  // KEY-ORDER GOLDEN (byte-identical contract): enrichForCodegen appends
+  // autoLayout → tokens → componentRef → codeConnect AFTER the base keys, and the
+  // base object ends with `children`. A single-walk refactor MUST preserve this
+  // exact order on BOTH the parent and every enriched child, or the serialized
+  // JSON bytes change. Locked here before the depth-aware refactor.
+  it("emits codegen keys in a stable order, after children (parent + child)", async () => {
+    const childInstance = {
+      id: "9:2", name: "Btn", type: "INSTANCE",
+      x: 0, y: 0, width: 80, height: 32,
+      layoutMode: "HORIZONTAL", itemSpacing: 8,
+      boundVariables: { itemSpacing: { type: "VARIABLE_ALIAS", id: "VariableID:2" } },
+      componentProperties: {},
+      getMainComponentAsync: async () => ({ id: "9:100", key: "btnkey", name: "Button", remote: true }),
+      children: [],
+    };
+    const root = {
+      id: "9:1", name: "Root", type: "FRAME",
+      x: 0, y: 0, width: 200, height: 100,
+      layoutMode: "VERTICAL", itemSpacing: 8,
+      boundVariables: { paddingLeft: { type: "VARIABLE_ALIAS", id: "VariableID:1" } },
+      children: [childInstance],
+    };
+    registerTree(root);
+    figma.currentPage.selection = [root];
+
+    const res = await handleReadDocumentRequest(makeRequest({ detail: "codegen", depth: 2 }));
+    const node = res!.data.context[0];
+    // Parent: base keys … children, then autoLayout, then tokens.
+    expect(Object.keys(node)).toEqual([
+      "id", "name", "type", "bounds", "styles", "children", "autoLayout", "tokens",
+    ]);
+    // Child INSTANCE: base … mainComponent, then children, then enrich keys incl. componentRef.
+    const child = node.children[0];
+    expect(Object.keys(child)).toEqual([
+      "id", "name", "type", "bounds", "styles", "mainComponent", "children",
+      "autoLayout", "tokens", "componentRef",
+    ]);
+  });
+
   it("full detail has NONE of the codegen keys (regression)", async () => {
     const frame = {
       id: "5:1", name: "Row", type: "FRAME",

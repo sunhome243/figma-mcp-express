@@ -31,8 +31,20 @@ export const bulkApply = async (
   if (nodeIds.length === 0) throw new Error("nodeIds is required");
   const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
   const results: any[] = [];
-  for (const nid of nodeIds) {
-    const n = await figma.getNodeByIdAsync(nid) as any;
+  // Prefetch every node in parallel before the mutation loop. getNodeByIdAsync
+  // lazy-loads the node's page under documentAccess:"dynamic-page", so a serial
+  // await-per-node paid that latency N times back-to-back; Promise.all overlaps
+  // the loads (the pattern group_nodes already uses for its fetches). Mutations
+  // stay SEQUENTIAL below so per-node error attribution, result order, and the
+  // single trailing commitUndo are unchanged. (For nodes already on the loaded
+  // page each fetch resolves on a microtask, so this is a no-op there — the win
+  // is on cross-page / not-yet-loaded targets.)
+  const fetched = (await Promise.all(
+    nodeIds.map((nid) => figma.getNodeByIdAsync(nid)),
+  )) as any[];
+  for (let i = 0; i < nodeIds.length; i++) {
+    const nid = nodeIds[i];
+    const n = fetched[i];
     if (!n) { results.push({ nodeId: nid, error: "Node not found" }); continue; }
     try {
       const fields = await apply(n, nid);

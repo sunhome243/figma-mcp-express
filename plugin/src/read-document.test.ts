@@ -792,6 +792,29 @@ describe("get_nodes_info — cooperative yielding", () => {
     expect(res?.data[0].children).toHaveLength(3);
     expect(res?.data[1].children).toHaveLength(3);
   });
+
+  // (e) NEW: depth cap — get_nodes_info previously recursed unbounded (latent
+  // timeout on a giant node). A depth param now bounds it, same as get_node:
+  // the node at the cap is serialized but its children collapse to childCount.
+  it("depth:1 returns each node + direct children only, grandchildren truncated", async () => {
+    // 5 branches × 10 leaves under root → request the root with depth:1
+    const root = makeDeepTree("root:info-depth", 5, 10);
+    setupFigma(root);
+
+    const res = await handleReadDocumentRequest({
+      type: "get_nodes_info",
+      requestId: "req-test-42",
+      nodeIds: ["root:info-depth"],
+      params: { depth: 1 },
+    });
+
+    expect(res?.data).toHaveLength(1);
+    const node = res?.data[0];
+    expect(node.children).toHaveLength(5); // direct children present
+    const branch0 = node.children[0];
+    expect(branch0.children).toBeUndefined(); // grandchildren truncated
+    expect(branch0.childCount).toBe(10);
+  });
 });
 
 // ── get_design_context: extractInstanceOverrides (dedupeComponents:true) ─────
@@ -1111,5 +1134,65 @@ describe("get_document — cooperative yielding", () => {
     );
     expect(progressMsgs.length).toBeGreaterThanOrEqual(1);
     expect(progressMsgs[0].progress).toBeGreaterThan(0);
+  });
+});
+
+// ── prewarm: parallel cache pre-population, no double-fetch ───────────────────
+//
+// prewarmReadCaches resolves each unique style id / instance main-component up
+// front via Promise.all, then the walk hits the shared cache. The guarantee we
+// assert: a style id used by many nodes (+ prewarm) is fetched EXACTLY ONCE, the
+// instance main-component EXACTLY ONCE, and the serialized output is correct — so
+// prewarm parallelizes without adding redundant lookups or changing output.
+
+describe("prewarm — parallel lookups, no double-fetch", () => {
+  const styledChild = (id: string) => ({
+    id, name: id, type: "FRAME" as const, visible: true,
+    x: 0, y: 0, width: 10, height: 10,
+    fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }],
+    fillStyleId: "S1",
+  });
+
+  it("get_node: resolves a shared style id once and the instance ref once", async () => {
+    const styleCalls: string[] = [];
+    const mainCompCalls: string[] = [];
+    const inst = {
+      id: "i:1", name: "Inst", type: "INSTANCE" as const, visible: true,
+      x: 0, y: 0, width: 10, height: 10,
+      fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }],
+      fillStyleId: "S1",
+      componentProperties: {},
+      getMainComponentAsync: async () => {
+        mainCompCalls.push("i:1");
+        return { id: "mc:1", key: "k1", name: "Comp", remote: true };
+      },
+    };
+    const root = {
+      id: "root", name: "Root", type: "FRAME" as const, visible: true,
+      x: 0, y: 0, width: 100, height: 100,
+      fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }],
+      fillStyleId: "S1",
+      children: [styledChild("c1"), styledChild("c2"), inst],
+    };
+    setupFigma(root);
+    (globalThis as any).figma.getStyleByIdAsync = async (id: string) => {
+      styleCalls.push(id);
+      return { name: `style:${id}` };
+    };
+
+    const res = await handleReadDocumentRequest(
+      makeRequest("get_node", {}, ["root"]),
+    );
+
+    // Correctness: style names + instance ref serialized as expected.
+    expect(res?.data.styles.fillStyle).toBe("style:S1");
+    expect(res?.data.children).toHaveLength(3);
+    expect(res?.data.children[2].mainComponent).toEqual({
+      key: "k1", name: "Comp", remote: true,
+    });
+    // 4 nodes use S1 + prewarm — but exactly ONE fetch (shared cache).
+    expect(styleCalls.filter((id) => id === "S1").length).toBe(1);
+    // Instance main component fetched exactly once (prewarm, not re-fetched inline).
+    expect(mainCompCalls.length).toBe(1);
   });
 });

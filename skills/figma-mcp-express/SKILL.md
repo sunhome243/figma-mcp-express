@@ -22,14 +22,12 @@ Use the compact core surface first. In default `core` profile, low-level write p
 
 ## Working Rules
 
-- Read wide-shallow, then targeted-deep: `get_pages`, `search_nodes` / `scan_nodes_by_types`, then `get_node` / `get_nodes_info`.
-- Use `get_design_context detail:"codegen"` for codegen-grade context.
-- Use `save_screenshots`, not base64 screenshot payloads, for visual review.
-- After every write, validate structurally with a trailing read op or a follow-up `get_node`; screenshots are the final visual pass, not proof of mutation.
-- Build one logical section per batch. Avoid one huge batch that blocks the plugin queue.
-- Use `continueOnError:true` for scanned lists; inspect per-item errors.
-- For multi-file work, channel is mandatory. A channel maps to one open Figma file.
-- Library import keys are not node IDs. Component/style keys must be full 40-char lowercase hex; for component sets pass `assetType:"COMPONENT_SET"` or fetch the catalog first so the server can inject the component-set route hint.
+- Read wide-shallow, then targeted-deep. **Two-phase bounded read** for a large node: list shallow (`get_design_context detail:"minimal" depth:1`), then deep per frame (`scan_text_nodes` + `get_node depth:2-3`). `depth` bounds the work.
+- After every write, validate structurally with a trailing/follow-up read; `save_screenshots` (not base64) is the final visual pass, not mutation proof.
+- Build one logical section per batch; use `continueOnError:true` for scanned lists.
+- For multi-file work, channel is mandatory — one `channel` per open file, on every file-specific call.
+
+Read-tool choice, validation matrix, batch refs, import-key format, and gotchas live in the references below.
 
 ## Reference Router
 

@@ -431,6 +431,43 @@ describe("bulkApply progress heartbeat", () => {
   });
 });
 
+// ── bulkApply parallel prefetch ──────────────────────────────────────────────
+// Fetches are issued for ALL nodes before any mutation runs (parallel prefetch);
+// mutations then run sequentially, preserving result order and per-node errors.
+describe("bulkApply parallel prefetch", () => {
+  it("issues every getNodeByIdAsync before the first apply, and keeps order", async () => {
+    const events: string[] = [];
+    let resolveCount = 0;
+    (globalThis as any).figma = {
+      // Defer resolution so we can observe that ALL fetches are in flight before
+      // any apply runs — a serial await-per-node loop would interleave fetch→apply.
+      getNodeByIdAsync: async (id: string) => {
+        events.push(`fetch:${id}`);
+        await Promise.resolve();
+        resolveCount++;
+        return id === "1:miss" ? null : { id, name: `n${id}` };
+      },
+      commitUndo: () => {},
+      ui: { postMessage: () => {} },
+    };
+
+    const res = await bulkApply(
+      { type: "set_fills", requestId: "req-pf", nodeIds: ["1:0", "1:miss", "1:2"] },
+      (n, _id) => { events.push(`apply:${n.id}`); return { ok: true }; },
+    );
+
+    // All three fetches were issued before any apply event.
+    const firstApply = events.findIndex((e) => e.startsWith("apply:"));
+    const fetchEvents = events.slice(0, firstApply).filter((e) => e.startsWith("fetch:"));
+    expect(fetchEvents).toEqual(["fetch:1:0", "fetch:1:miss", "fetch:1:2"]);
+    // Order preserved; the missing node yields an ordered "Node not found" entry,
+    // and only the found nodes are applied.
+    expect(res.data.results.map((r: any) => r.nodeId)).toEqual(["1:0", "1:miss", "1:2"]);
+    expect(res.data.results[1].error).toBe("Node not found");
+    expect(events.filter((e) => e.startsWith("apply:"))).toEqual(["apply:1:0", "apply:1:2"]);
+  });
+});
+
 // ── getParentNode ─────────────────────────────────────────────────────────────
 
 describe("getParentNode", () => {

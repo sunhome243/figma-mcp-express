@@ -11,12 +11,14 @@ Use this reference after loading the `figma-mcp-express` skill. It describes whi
 | Need all nodes of a type under a frame | `scan_nodes_by_types` |
 | Need text nodes only | `scan_text_nodes` |
 | Known one node id | `get_node` with a small `depth` |
-| Known many node ids | `get_nodes_info` |
+| Known many node ids | `get_nodes_info` (also accepts `depth`) |
 | Need token-efficient selected tree | `get_design_context` |
 | Need codegen-grade context | `get_design_context` with `detail:"codegen"` |
 | Need published library catalog | `fetch_library_catalog` with `FIGMA_TOKEN` |
 
 Avoid page-level deep reads. If a result spills to `.figma-mcp-cache/`, query the sidecar files with shell tools instead of pasting the full payload into context.
+
+**Phased read on a large node** — never deep-read a giant node in one call. First `get_design_context detail:"minimal" depth:1` (or `get_node depth:1`) to list the top-level frames + `childCount`, then read ONE frame at a time: `scan_text_nodes(frameId)` for copy, `get_node(frameId, depth:2-3)` / `scan_nodes_by_types(frameId, types)` for structure. `depth` bounds serialization work, so a shallow read returns fast even on a multi-thousand-node section; only descend where you need detail.
 
 ## Batch Discovery
 
@@ -28,6 +30,8 @@ Avoid page-level deep reads. If a result spills to `.figma-mcp-cache/`, query th
 In the default `core` profile, **ALL writes go through `batch`** — there are no top-level write tools (`create_frame`, `set_fills`, `import_component_by_key`, … are batch op types). When unsure whether a capability exists, `search_batch_ops` FIRST rather than guessing a top-level tool name. (Reads in the decision tree above stay top-level.)
 
 Do not mirror operation schemas in this file. `BatchOpCatalog` is the source of truth.
+
+**Library import keys are not node IDs.** Component/style keys must be full 40-char lowercase hex; for component sets pass `assetType:"COMPONENT_SET"`, or `fetch_library_catalog` first so the server injects the component-set route hint.
 
 ## Validate After Write
 

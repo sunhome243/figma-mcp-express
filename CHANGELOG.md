@@ -6,6 +6,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-06-15
+
+### Fixed
+
+- **Deep reads no longer re-serialize the subtree per level (the `get_node` timeout root cause)** — `serializeNode` is now depth-aware (optional `maxDepth` + per-node `enrich`), so `get_node`, `get_nodes_info`, and `get_design_context` (full/codegen, non-dedupe) walk the subtree **once** instead of calling the already-recursive `serializeNode` again at every level and re-fetching each child by id. The old wrappers were O(N·D): `get_node(depth:1)` on a large node still fully serialized the entire subtree before truncating — which is why it timed out. Output is byte-identical (golden-locked, including codegen key order).
+- **Read lookups are prefetched in parallel** — `get_node`/`get_nodes_info`/`get_design_context` now run a cheap pre-pass (`prewarmReadCaches`) that collects the unique style ids, INSTANCE main-components, and (codegen) bound-variable ids in the subtree and resolves them all with one `Promise.all` into the per-read caches, instead of awaiting each distinct id serially mid-walk. The walk then hits the cache for every id. Byte-identical: prewarm uses the same resolver functions and the walk still checks the cache first, so a collection miss falls back to inline resolution (most impact on component-heavy / codegen reads).
+- **Bulk writes prefetch their nodes in parallel** — `bulkApply` (the shared all-nodes setter loop behind `set_fills`, `set_strokes`, token binding, etc.) awaited `getNodeByIdAsync` once per node serially before mutating; under `documentAccess:"dynamic-page"` each fetch lazy-loads the node's page, so N fetches paid that latency back-to-back. It now prefetches all nodes with one `Promise.all` (the pattern `group_nodes` already used) and mutates sequentially — result order, per-node error attribution, and the single trailing `commitUndo` are unchanged. No-op for already-loaded same-page nodes; the win is on cross-page targets.
+
+### Changed
+
+- **`get_nodes_info` now bounds recursion by depth and exposes a `depth` param** — it previously recursed unbounded (the same latent timeout `get_node` already guarded against), and the param was not declared in the tool schema. It now defaults to the same generous depth cap as `get_node` and accepts an optional `depth`. Trees shallower than the cap are unchanged; only pathologically deep (>50 levels) reads now truncate to `{ childCount }` instead of hanging.
+- **`figma-mcp-express` skill leaned + two-phase bounded read named** — trimmed `SKILL.md` (read recipe and import-key format moved into `references/tool-selection.md`) and documented the two-phase bounded read (list shallow → deep per frame) as the default for large nodes, now that `depth` genuinely bounds serialization work.
+
 ## [2.0.1] — 2026-06-15
 
 ### Added

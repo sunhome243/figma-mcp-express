@@ -7,6 +7,7 @@ import {
   serializeAutoLayout,
   serializeCodegenTokens,
   serializeComponentRef,
+  prewarmReadCaches,
   type SerializeCaches,
 } from "./serializers";
 import { makeProgress } from "./progress";
@@ -71,35 +72,20 @@ export const handleReadDocumentRequest = async (request: any) => {
       const tickNode = makeProgress(request.requestId, "get_node");
       const caches = makeReadCaches();
 
-      const serializeNodeWithDepth = async (n: any, currentDepth: number): Promise<any> => {
-        await tickNode();
-        const serialized = await serializeNode(n, caches);
-        if (currentDepth >= depth && serialized.children) {
-          return Object.assign({}, serialized, {
-            children: undefined,
-            childCount: n.children ? n.children.length : 0,
-          });
-        }
-        if (serialized.children) {
-          const childNodes = await Promise.all(
-            serialized.children.map((child: any) =>
-              figma.getNodeByIdAsync(child.id),
-            ),
-          );
-          const serializedChildren = await Promise.all(
-            childNodes
-              .filter((c) => c !== null && c.type !== "DOCUMENT")
-              .map((c) => serializeNodeWithDepth(c, currentDepth + 1)),
-          );
-          return Object.assign({}, serialized, { children: serializedChildren });
-        }
-        return serialized;
-      };
+      // Prefetch the unique style + main-component lookups in parallel so the walk
+      // below hits the cache instead of awaiting each distinct id serially.
+      await prewarmReadCaches([node], caches, { maxDepth: depth });
 
+      // Single depth-bounded walk. serializeNode applies the depth cap + the
+      // { childCount } truncation itself, so there is no second re-walk: the old
+      // serializeNodeWithDepth called serializeNode(n) — which already recursed the
+      // WHOLE subtree — once per level (O(N·D)) and re-fetched every child by id.
+      // That double-serialization is why get_node(depth:1) on a giant node still
+      // timed out (it fully serialized the subtree before truncating).
       return {
         type: request.type,
         requestId: request.requestId,
-        data: await serializeNodeWithDepth(node, 0),
+        data: await serializeNode(node, caches, tickNode, { maxDepth: depth }),
       };
     }
 
@@ -109,38 +95,39 @@ export const handleReadDocumentRequest = async (request: any) => {
       const nodes = await Promise.all(
         request.nodeIds.map((id: string) => figma.getNodeByIdAsync(id)),
       );
+      // Depth cap: get_nodes_info previously did an UNBOUNDED full recursion — the
+      // same latent timeout get_node had on a giant node. Default to the same
+      // generous cap as get_node (callers may override via params.depth). Normal
+      // trees (well under the cap) are byte-identical to before.
+      const depth =
+        request.params && request.params.depth != null
+          ? request.params.depth
+          : DEFAULT_GET_NODE_DEPTH;
       // Shared tick counter across all node serializations so the 800-node
       // threshold is accumulated globally — mirrors get_design_context's shared
       // tickContext across selection nodes.
       const tickInfo = makeProgress(request.requestId, "get_nodes_info");
       const caches = makeReadCaches();
 
-      const serializeInfoNode = async (n: any): Promise<any> => {
-        await tickInfo();
-        const serialized = await serializeNode(n, caches);
-        if (serialized.children) {
-          const childNodes = await Promise.all(
-            serialized.children.map((child: any) =>
-              figma.getNodeByIdAsync(child.id),
-            ),
-          );
-          const serializedChildren = await Promise.all(
-            childNodes
-              .filter((c) => c !== null && c.type !== "DOCUMENT")
-              .map((c) => serializeInfoNode(c)),
-          );
-          return Object.assign({}, serialized, { children: serializedChildren });
-        }
-        return serialized;
-      };
+      // Prefetch unique style + main-component lookups across all requested nodes
+      // in parallel before the serial-per-node walk.
+      await prewarmReadCaches(
+        nodes.filter((n) => n !== null && n.type !== "DOCUMENT"),
+        caches,
+        { maxDepth: depth },
+      );
 
+      // The old serializeInfoNode re-walked the tree calling serializeNode per
+      // level — 100% redundant, since serializeNode already recurses the whole
+      // subtree. One serializeNode call per requested node yields byte-identical
+      // output (now depth-bounded) without the per-level re-serialize + re-fetch.
       return {
         type: request.type,
         requestId: request.requestId,
         data: await Promise.all(
           nodes
             .filter((n) => n !== null && n.type !== "DOCUMENT")
-            .map((n) => serializeInfoNode(n)),
+            .map((n) => serializeNode(n, caches, tickInfo, { maxDepth: depth })),
         ),
       };
     }
@@ -305,6 +292,22 @@ export const handleReadDocumentRequest = async (request: any) => {
           return result;
         }
         if (detail === "full" || detail === "codegen") {
+          // Fast single-walk path (the common case): serializeNode applies the
+          // depth cap + { childCount } truncation AND — for codegen — the per-node
+          // enrichment, appended AFTER children so key order is preserved, all in
+          // ONE pass. Replaces the old serializeNode(full-subtree)-then-re-walk
+          // that re-serialized every subtree once per level (O(N·D)) and re-fetched
+          // each child by id.
+          if (!dedupeComponents) {
+            return await serializeNode(node, caches, tickContext, {
+              maxDepth: depth,
+              currentDepth,
+              enrich: detail === "codegen" ? enrichForCodegen : undefined,
+            });
+          }
+          // dedupeComponents=true: keep the per-level walk so a nested INSTANCE
+          // still hits the dedupe branch above (serializeNode would serialize it in
+          // full instead of compacting it). This path is not the O(N·D) hot case.
           const serialized = await serializeNode(node, caches);
           let result: any;
           if (currentDepth >= depth && serialized.children) {
@@ -346,12 +349,21 @@ export const handleReadDocumentRequest = async (request: any) => {
       };
 
       const selection = figma.currentPage.selection;
-      const rawContextNodes =
-        selection.length > 0
-          ? await Promise.all(
-              selection.map((node) => serializeWithDepth(node, 0)),
-            )
-          : [await serializeWithDepth(figma.currentPage, 0)];
+      const roots =
+        selection.length > 0 ? Array.from(selection) : [figma.currentPage];
+      // Prefetch the unique style / main-component / (codegen) token lookups across
+      // all roots in parallel for the single-walk fast path (the dedupeComponents
+      // and compact/minimal paths still resolve correctly inline — prewarm only
+      // ever populates caches, never changes output).
+      if (!dedupeComponents && (detail === "full" || detail === "codegen")) {
+        await prewarmReadCaches(roots, caches, {
+          maxDepth: depth,
+          tokenCache: detail === "codegen" ? tokenCache : undefined,
+        });
+      }
+      const rawContextNodes = await Promise.all(
+        roots.map((node) => serializeWithDepth(node, 0)),
+      );
       const { tree: dedupedNodes, globalVars } = deduplicateStyles({ children: rawContextNodes });
       const contextNodes = (dedupedNodes as any).children;
       return {
