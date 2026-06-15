@@ -92,6 +92,7 @@ Get full details for multiple nodes by ID in one round-trip. Prefer this over ca
 | Name                          | Type     | Required | Description                                     |
 | ----------------------------- | -------- | -------- | ----------------------------------------------- |
 | nodeIds                       | string[] | Yes      | List of node IDs in colon format                |
+| depth                         | number   | No       | Levels deep to traverse per node. Default 50 (bounded). `0` = node only, `1` = node + direct children. A node with `childCount` but no `children` was truncated. |
 | skipInvisibleInstanceChildren | boolean  | No       | Skip hidden instances' children. Default false. |
 | channel                       | string   | No       | Target a specific connected file by channel id. |
 

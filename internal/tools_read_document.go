@@ -65,12 +65,15 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 	s.AddTool(mcp.NewTool("get_nodes_info",
 		mcp.WithDescription("Get full details for multiple nodes by ID in one round-trip. "+
 			"PREFER A SIBLING WHEN: you only need ONE node → get_node (simpler); you want the structure/id map of a subtree → get_metadata; you want a token-efficient whole-selection/page tree → get_design_context; you don't yet know the ids → search_nodes / scan_nodes_by_types to discover them first. This is the right tool the moment you have 2+ known ids — prefer it over a get_node loop. "+
-			"SCOPING: ids in colon format e.g. ['4029:12345','4029:67890']. Large responses spill to disk as {spilled:true,path,bytes,preview} — read with jq/grep, don't expect the full payload inline. Timeouts are server-managed; a slow read that ticks progress is progressing, not hung — fix a real timeout with a narrower read, not a longer timeout. "+
+			"SCOPING: ids in colon format e.g. ['4029:12345','4029:67890']. depth bounds traversal per node (default 50). Large responses spill to disk — read with jq/grep. "+
 			"CHAIN: official discipline is get_metadata first → then get_nodes_info on the targets. Also a `batch` op type — use it as a trailing write→read verify over several created ids in one batch."),
 		mcp.WithArray("nodeIds",
 			mcp.Required(),
 			mcp.Description("List of node IDs in colon format e.g. ['4029:12345', '4029:67890']"),
 			mcp.WithStringItems(),
+		),
+		mcp.WithNumber("depth",
+			mcp.Description("How many levels deep to traverse per node (default 50, bounded). depth:0 returns each node only (no children), depth:1 node + direct children, etc."),
 		),
 		skipInvisibleChildrenParam(),
 		channelParam(),
@@ -78,6 +81,9 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		raw, _ := req.GetArguments()["nodeIds"].([]interface{})
 		nodeIDs := toStringSlice(raw)
 		params := map[string]interface{}{}
+		if d, ok := req.GetArguments()["depth"].(float64); ok && d >= 0 {
+			params["depth"] = d
+		}
 		applySkipInvisible(req, params)
 		resp, err := node.Send(ctx, "get_nodes_info", nodeIDs, withChannel(req, params))
 		return renderResponse(resp, err)
