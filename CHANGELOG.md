@@ -9,6 +9,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - **Deep reads no longer re-serialize the subtree per level (the `get_node` timeout root cause)** — `serializeNode` is now depth-aware (optional `maxDepth` + per-node `enrich`), so `get_node`, `get_nodes_info`, and `get_design_context` (full/codegen, non-dedupe) walk the subtree **once** instead of calling the already-recursive `serializeNode` again at every level and re-fetching each child by id. The old wrappers were O(N·D): `get_node(depth:1)` on a large node still fully serialized the entire subtree before truncating — which is why it timed out. Output is byte-identical (golden-locked, including codegen key order).
+- **Read lookups are prefetched in parallel** — `get_node`/`get_nodes_info`/`get_design_context` now run a cheap pre-pass (`prewarmReadCaches`) that collects the unique style ids, INSTANCE main-components, and (codegen) bound-variable ids in the subtree and resolves them all with one `Promise.all` into the per-read caches, instead of awaiting each distinct id serially mid-walk. The walk then hits the cache for every id. Byte-identical: prewarm uses the same resolver functions and the walk still checks the cache first, so a collection miss falls back to inline resolution (most impact on component-heavy / codegen reads).
 
 ### Changed
 

@@ -1136,3 +1136,63 @@ describe("get_document — cooperative yielding", () => {
     expect(progressMsgs[0].progress).toBeGreaterThan(0);
   });
 });
+
+// ── prewarm: parallel cache pre-population, no double-fetch ───────────────────
+//
+// prewarmReadCaches resolves each unique style id / instance main-component up
+// front via Promise.all, then the walk hits the shared cache. The guarantee we
+// assert: a style id used by many nodes (+ prewarm) is fetched EXACTLY ONCE, the
+// instance main-component EXACTLY ONCE, and the serialized output is correct — so
+// prewarm parallelizes without adding redundant lookups or changing output.
+
+describe("prewarm — parallel lookups, no double-fetch", () => {
+  const styledChild = (id: string) => ({
+    id, name: id, type: "FRAME" as const, visible: true,
+    x: 0, y: 0, width: 10, height: 10,
+    fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }],
+    fillStyleId: "S1",
+  });
+
+  it("get_node: resolves a shared style id once and the instance ref once", async () => {
+    const styleCalls: string[] = [];
+    const mainCompCalls: string[] = [];
+    const inst = {
+      id: "i:1", name: "Inst", type: "INSTANCE" as const, visible: true,
+      x: 0, y: 0, width: 10, height: 10,
+      fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }],
+      fillStyleId: "S1",
+      componentProperties: {},
+      getMainComponentAsync: async () => {
+        mainCompCalls.push("i:1");
+        return { id: "mc:1", key: "k1", name: "Comp", remote: true };
+      },
+    };
+    const root = {
+      id: "root", name: "Root", type: "FRAME" as const, visible: true,
+      x: 0, y: 0, width: 100, height: 100,
+      fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }],
+      fillStyleId: "S1",
+      children: [styledChild("c1"), styledChild("c2"), inst],
+    };
+    setupFigma(root);
+    (globalThis as any).figma.getStyleByIdAsync = async (id: string) => {
+      styleCalls.push(id);
+      return { name: `style:${id}` };
+    };
+
+    const res = await handleReadDocumentRequest(
+      makeRequest("get_node", {}, ["root"]),
+    );
+
+    // Correctness: style names + instance ref serialized as expected.
+    expect(res?.data.styles.fillStyle).toBe("style:S1");
+    expect(res?.data.children).toHaveLength(3);
+    expect(res?.data.children[2].mainComponent).toEqual({
+      key: "k1", name: "Comp", remote: true,
+    });
+    // 4 nodes use S1 + prewarm — but exactly ONE fetch (shared cache).
+    expect(styleCalls.filter((id) => id === "S1").length).toBe(1);
+    // Instance main component fetched exactly once (prewarm, not re-fetched inline).
+    expect(mainCompCalls.length).toBe(1);
+  });
+});

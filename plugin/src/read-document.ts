@@ -7,6 +7,7 @@ import {
   serializeAutoLayout,
   serializeCodegenTokens,
   serializeComponentRef,
+  prewarmReadCaches,
   type SerializeCaches,
 } from "./serializers";
 import { makeProgress } from "./progress";
@@ -71,6 +72,10 @@ export const handleReadDocumentRequest = async (request: any) => {
       const tickNode = makeProgress(request.requestId, "get_node");
       const caches = makeReadCaches();
 
+      // Prefetch the unique style + main-component lookups in parallel so the walk
+      // below hits the cache instead of awaiting each distinct id serially.
+      await prewarmReadCaches([node], caches, { maxDepth: depth });
+
       // Single depth-bounded walk. serializeNode applies the depth cap + the
       // { childCount } truncation itself, so there is no second re-walk: the old
       // serializeNodeWithDepth called serializeNode(n) — which already recursed the
@@ -103,6 +108,14 @@ export const handleReadDocumentRequest = async (request: any) => {
       // tickContext across selection nodes.
       const tickInfo = makeProgress(request.requestId, "get_nodes_info");
       const caches = makeReadCaches();
+
+      // Prefetch unique style + main-component lookups across all requested nodes
+      // in parallel before the serial-per-node walk.
+      await prewarmReadCaches(
+        nodes.filter((n) => n !== null && n.type !== "DOCUMENT"),
+        caches,
+        { maxDepth: depth },
+      );
 
       // The old serializeInfoNode re-walked the tree calling serializeNode per
       // level — 100% redundant, since serializeNode already recurses the whole
@@ -336,12 +349,21 @@ export const handleReadDocumentRequest = async (request: any) => {
       };
 
       const selection = figma.currentPage.selection;
-      const rawContextNodes =
-        selection.length > 0
-          ? await Promise.all(
-              selection.map((node) => serializeWithDepth(node, 0)),
-            )
-          : [await serializeWithDepth(figma.currentPage, 0)];
+      const roots =
+        selection.length > 0 ? Array.from(selection) : [figma.currentPage];
+      // Prefetch the unique style / main-component / (codegen) token lookups across
+      // all roots in parallel for the single-walk fast path (the dedupeComponents
+      // and compact/minimal paths still resolve correctly inline — prewarm only
+      // ever populates caches, never changes output).
+      if (!dedupeComponents && (detail === "full" || detail === "codegen")) {
+        await prewarmReadCaches(roots, caches, {
+          maxDepth: depth,
+          tokenCache: detail === "codegen" ? tokenCache : undefined,
+        });
+      }
+      const rawContextNodes = await Promise.all(
+        roots.map((node) => serializeWithDepth(node, 0)),
+      );
       const { tree: dedupedNodes, globalVars } = deduplicateStyles({ children: rawContextNodes });
       const contextNodes = (dedupedNodes as any).children;
       return {

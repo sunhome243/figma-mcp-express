@@ -411,25 +411,34 @@ const TEXT_BINDABLE_FIELDS = new Set([
 // Other array fields (fills/strokes/effects/layoutGrids) are handled at paint/effect
 // level. Resolution is cached per id and degrades gracefully on throw/miss.
 // Returns undefined when nothing resolves.
+// Per-read memo for getVariableByIdAsync, keyed by variable id. Extracted so the
+// codegen serialization walk AND the prewarm pre-pass resolve a token id through
+// the EXACT same code path → identical cached value (the byte-identity guarantee
+// for prewarm rests on this). Caches misses too; degrades to undefined on throw.
+export const resolveVariableName = async (
+  id: string,
+  cache: Map<string, string | undefined>,
+): Promise<string | undefined> => {
+  if (!id) return undefined;
+  if (cache.has(id)) return cache.get(id);
+  let name: string | undefined;
+  try {
+    const variable = await figma.variables.getVariableByIdAsync(id);
+    name = variable?.name ?? undefined;
+  } catch {
+    name = undefined;
+  }
+  cache.set(id, name);
+  return name;
+};
+
 export const serializeCodegenTokens = async (
   node: any,
   cache: Map<string, string | undefined> = new Map(),
 ) => {
   const tokens: Record<string, string> = {};
 
-  const resolve = async (id: string): Promise<string | undefined> => {
-    if (!id) return undefined;
-    if (cache.has(id)) return cache.get(id);
-    let name: string | undefined;
-    try {
-      const variable = await figma.variables.getVariableByIdAsync(id);
-      name = variable?.name ?? undefined;
-    } catch {
-      name = undefined;
-    }
-    cache.set(id, name);
-    return name;
-  };
+  const resolve = (id: string) => resolveVariableName(id, cache);
 
   // Node-level bound variables: scalar aliases + text-typography arrays.
   const bound = node.boundVariables;
@@ -510,6 +519,87 @@ export const serializeComponentRef = async (
   const ref = mc ? { key: mc.key, name: mc.name, remote: mc.remote === true } : undefined;
   cache.set(node.id, ref);
   return ref;
+};
+
+// ── Prewarm: parallelize the per-read async lookups ──────────────────────────
+// serializeNode resolves styles / main-components / (codegen) token names INLINE
+// during the recursive walk, so on a cache MISS each distinct id is fetched
+// serially — await blocks the next node. prewarmReadCaches does ONE cheap
+// structural pass collecting the unique ids, then resolves them ALL with one
+// Promise.all into the SAME caches the walk uses, so the walk then hits the cache
+// for every id and runs effectively synchronously (the async I/O overlaps).
+//
+// Byte-identity guarantee: prewarm only POPULATES the caches, using the exact same
+// resolver functions the inline walk uses (resolveStyleName / serializeComponentRef
+// / resolveVariableName). The walk always checks the cache first, so a prewarmed
+// value is identical to what inline resolution would produce, and a collection MISS
+// simply falls back to correct inline resolution. Over- or under-collecting can
+// only change how much is parallelized, never the output.
+
+// Mirror serializeCodegenTokens's id sources (scalar + text[0] bound variables,
+// paint-level fill/stroke color bindings, effect bindings). Imperfection is safe.
+const collectCodegenVariableIds = (node: any, out: Set<string>): void => {
+  const bound = node.boundVariables;
+  if (bound && typeof bound === "object") {
+    for (const [field, value] of Object.entries(bound)) {
+      let id: unknown;
+      if (TEXT_BINDABLE_FIELDS.has(field) && Array.isArray(value)) id = (value[0] as any)?.id;
+      else if (Array.isArray(value)) continue;
+      else id = (value as any)?.id;
+      if (typeof id === "string") out.add(id);
+    }
+  }
+  for (const paintField of ["fills", "strokes"]) {
+    const paints = node[paintField];
+    if (!Array.isArray(paints)) continue;
+    for (const p of paints) {
+      const colorId = p?.boundVariables?.color?.id;
+      if (typeof colorId === "string") out.add(colorId);
+    }
+  }
+  const effects = node.effects;
+  if (Array.isArray(effects)) {
+    for (const e of effects) {
+      const eb = e?.boundVariables;
+      if (!eb || typeof eb !== "object") continue;
+      for (const alias of Object.values(eb)) {
+        const id = (alias as any)?.id;
+        if (typeof id === "string") out.add(id);
+      }
+    }
+  }
+};
+
+export const prewarmReadCaches = async (
+  roots: any[],
+  caches: SerializeCaches,
+  opts?: { maxDepth?: number; tokenCache?: Map<string, string | undefined> },
+): Promise<void> => {
+  const maxDepth = opts?.maxDepth ?? Infinity;
+  const tokenCache = opts?.tokenCache;
+  const styleIds = new Set<string>();
+  const instances: any[] = [];
+  const variableIds = new Set<string>();
+
+  const collect = (node: any, depth: number): void => {
+    if (typeof node.fillStyleId === "string" && node.fillStyleId) styleIds.add(node.fillStyleId);
+    if (typeof node.strokeStyleId === "string" && node.strokeStyleId) styleIds.add(node.strokeStyleId);
+    if (typeof node.textStyleId === "string" && node.textStyleId) styleIds.add(node.textStyleId);
+    if (node.type === "INSTANCE" && typeof node.getMainComponentAsync === "function") instances.push(node);
+    if (tokenCache) collectCodegenVariableIds(node, variableIds);
+    // Mirror serializeNode's visitation: the node AT the cap is still serialized
+    // (its own ids count) but its children are not visited.
+    if (depth < maxDepth && "children" in node && Array.isArray(node.children)) {
+      for (const c of node.children) collect(c, depth + 1);
+    }
+  };
+  for (const r of roots) if (r) collect(r, 0);
+
+  await Promise.all([
+    ...Array.from(styleIds).map((id) => resolveStyleName(id, caches.styles)),
+    ...instances.map((n) => serializeComponentRef(n, caches.components)),
+    ...(tokenCache ? Array.from(variableIds).map((id) => resolveVariableName(id, tokenCache)) : []),
+  ]);
 };
 
 export const serializeVariableValue = (value: any) => {
