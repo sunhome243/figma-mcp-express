@@ -210,7 +210,14 @@ const makeCaches = (): SerializeCaches => ({
 export const serializeNode = async (
   node: any,
   caches: SerializeCaches = makeCaches(),
+  // Optional per-node heartbeat. serializeNode recurses over the whole subtree in
+  // one call (unbounded Promise.all over children), so a full-page walk (get_document)
+  // has no natural place to yield. Passing a tick (e.g. makeProgress) lets the walk
+  // periodically yield the JS thread and post a progress_update that resets the
+  // Go-bridge inactivity timer. Omitted by depth-bounded callers that tick themselves.
+  onVisit?: (total?: number) => void | Promise<void>,
 ): Promise<any> => {
+  if (onVisit) await onVisit();
   const styles = await serializeStyles(node, caches.styles);
   let base: any = {
     id: node.id,
@@ -249,7 +256,7 @@ export const serializeNode = async (
   if ("children" in node) {
     return Object.assign({}, base, {
       children: await Promise.all(
-        node.children.map((child: any) => serializeNode(child, caches)),
+        node.children.map((child: any) => serializeNode(child, caches, onVisit)),
       ),
     });
   }

@@ -9,6 +9,7 @@ import {
   serializeComponentRef,
   type SerializeCaches,
 } from "./serializers";
+import { makeProgress } from "./progress";
 
 // One per-read cache set, threaded into every serializeNode + serializeComponentRef
 // call in a single handler so a style/component shared by many nodes resolves once
@@ -25,38 +26,13 @@ const makeReadCaches = (): SerializeCaches => ({
 // call (pass a larger depth or Infinity for an unbounded read).
 const DEFAULT_GET_NODE_DEPTH = 50;
 
-/**
- * Returns an async tick function that, every ~800 calls, yields the JS event
- * loop (via setTimeout(0)) and posts a progress_update to the bridge.
- *
- * This prevents the single-threaded Figma plugin sandbox from monopolising the
- * JS thread during large-subtree traversals — other queued commands can
- * interleave. The progress_update also resets the Go-bridge per-request
- * timeout to 120s (see internal/bridge.go), so long walks survive.
- *
- * The returned data shape of each handler is byte-for-byte identical; yielding
- * and progress messages are side-effects only.
- */
-function makeProgress(requestId: string, label: string) {
-  let n = 0;
-  return async (total?: number) => {
-    n++;
-    if (n % 800 === 0) {
-      await new Promise<void>((r) => setTimeout(r, 0));
-      figma.ui.postMessage({
-        type: "progress_update",
-        requestId,
-        progress: total ? Math.min(99, Math.round((n / total) * 99)) : 1,
-        message: `${label}: processed ${n} nodes`,
-      });
-    }
-  };
-}
-
 export const handleReadDocumentRequest = async (request: any) => {
   switch (request.type) {
     case "get_document": {
-      const raw = await serializeNode(figma.currentPage, makeReadCaches());
+      // serializeNode walks the entire page in one recursive call; thread a tick
+      // through onVisit so a large page keeps the Go-bridge inactivity timer alive.
+      const tick = makeProgress(request.requestId, "get_document");
+      const raw = await serializeNode(figma.currentPage, makeReadCaches(), tick);
       const { tree, globalVars } = deduplicateStyles(raw);
       return {
         type: request.type,
@@ -441,8 +417,12 @@ export const handleReadDocumentRequest = async (request: any) => {
       };
 
     case "get_fonts": {
+      // Async + per-node tick: the walk covers the whole page, so yield + emit a
+      // progress_update periodically to keep the Go-bridge inactivity timer alive.
+      const tick = makeProgress(request.requestId, "get_fonts");
       const fontMap = new Map<string, any>();
-      const collectFonts = (n: any) => {
+      const collectFonts = async (n: any) => {
+        await tick();
         if (n.type === "TEXT") {
           const fontName = n.fontName;
           if (typeof fontName !== "symbol" && fontName) {
@@ -453,9 +433,11 @@ export const handleReadDocumentRequest = async (request: any) => {
             fontMap.get(key).nodeCount++;
           }
         }
-        if ("children" in n) n.children.forEach(collectFonts);
+        if ("children" in n) {
+          for (const child of n.children) await collectFonts(child);
+        }
       };
-      collectFonts(figma.currentPage);
+      await collectFonts(figma.currentPage);
       const fonts = Array.from(fontMap.values()).sort((a, b) => b.nodeCount - a.nodeCount);
       return {
         type: request.type,

@@ -5,6 +5,7 @@ import {
   applyAutoLayout,
   base64ToBytes,
   getParentNode,
+  bulkApply,
 } from "./write-helpers";
 
 // ── figma.variables mock ──────────────────────────────────────────────────────
@@ -366,6 +367,46 @@ describe("base64ToBytes", () => {
   it("strips non-base64 characters (e.g. newlines)", () => {
     const bytes = base64ToBytes("TW\nFu");
     expect(bytes).toEqual(new Uint8Array([77, 97, 110]));
+  });
+});
+
+// ── bulkApply progress heartbeat ──────────────────────────────────────────────
+// A single bulk op over a large nodeIds array runs serially on the one JS thread
+// with no batch-level tick in between. bulkApply must emit a progress_update
+// during the loop so the Go-bridge inactivity timer is reset.
+
+describe("bulkApply progress heartbeat", () => {
+  let posted: any[];
+  beforeEach(() => {
+    posted = [];
+    (globalThis as any).figma = {
+      getNodeByIdAsync: async (id: string) => ({ id, name: `n${id}` }),
+      commitUndo: () => {},
+      ui: { postMessage: (msg: any) => posted.push(msg) },
+    };
+  });
+
+  it("emits ≥1 progress_update (progress > 0) over a large nodeIds array", async () => {
+    const nodeIds = Array.from({ length: 60 }, (_, i) => `1:${i}`);
+    const res = await bulkApply(
+      { type: "set_fills", requestId: "req-bulk-1", nodeIds },
+      (_n, _id) => ({ ok: true }),
+    );
+    expect(res.data.results).toHaveLength(60);
+    const ticks = posted.filter(
+      (m) => m.type === "progress_update" && m.requestId === "req-bulk-1",
+    );
+    expect(ticks.length).toBeGreaterThanOrEqual(1);
+    expect(ticks.every((m) => m.progress > 0)).toBe(true);
+  });
+
+  it("emits zero progress_update for a single-node apply (no overhead on the hot path)", async () => {
+    await bulkApply(
+      { type: "set_fills", requestId: "req-bulk-2", nodeIds: ["1:1"] },
+      (_n, _id) => ({ ok: true }),
+    );
+    const ticks = posted.filter((m) => m.type === "progress_update");
+    expect(ticks.length).toBe(0);
   });
 });
 

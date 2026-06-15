@@ -25,15 +25,22 @@
   const FULL_W = 320, FULL_H = 245;
   const PILL_W = 210, PILL_H = 36;
 
+  // Tag every UI→plugin message with our pluginId (the manifest id). Figma routes
+  // pluginMessage to the plugin code only when pluginId matches, so another plugin
+  // or a navigated iframe cannot intercept these messages (which carry the WS
+  // host/port config). See developers.figma.com/docs/plugins/creating-ui.
+  const PLUGIN_ID = "figma-mcp-express";
+  function postToPlugin(message: unknown) {
+    parent.postMessage({ pluginMessage: message, pluginId: PLUGIN_ID }, "*");
+  }
+
   function toggleMinimize() {
     minimized = !minimized;
-    parent.postMessage({
-      pluginMessage: {
-        type: "resize",
-        width: minimized ? PILL_W : FULL_W,
-        height: minimized ? PILL_H : FULL_H,
-      }
-    }, "*");
+    postToPlugin({
+      type: "resize",
+      width: minimized ? PILL_W : FULL_W,
+      height: minimized ? PILL_H : FULL_H,
+    });
   }
 
   let socket: WebSocket | null = null;
@@ -86,7 +93,7 @@
       connected = true;
       reconnectAttempt = 0; // reset backoff on a successful connect
       sendRegister(ws);
-      parent.postMessage({ pluginMessage: { type: "ui-ready" } }, "*");
+      postToPlugin({ type: "ui-ready" });
     };
 
     ws.onclose = () => {
@@ -109,7 +116,7 @@
           activeRequests.add(payload.requestId);
           activeRequests = activeRequests;
         }
-        parent.postMessage({ pluginMessage: { type: "server-request", payload } }, "*");
+        postToPlugin({ type: "server-request", payload });
       } catch {
         // ignore malformed frames
       }
@@ -165,10 +172,7 @@
     serverPort = p > 0 && p <= 65535 ? String(p) : "1994";
     // Persist via plugin core (figma.clientStorage), since localStorage is
     // unavailable in Figma's data: URL environment.
-    parent.postMessage(
-      { pluginMessage: { type: "save_ws_config", host: serverHost, port: serverPort } },
-      "*"
-    );
+    postToPlugin({ type: "save_ws_config", host: serverHost, port: serverPort });
     showSettings = false;
     // Cancel any pending reconnect and reconnect immediately with the new address.
     if (reconnectTimer !== null) {
@@ -189,7 +193,7 @@
 
     // Request stored config from plugin core (responds with ws_config message).
     // connect() is called once we receive the response.
-    parent.postMessage({ pluginMessage: { type: "get_ws_config" } }, "*");
+    postToPlugin({ type: "get_ws_config" });
 
     // Fallback: if the plugin core doesn't respond within 500 ms (e.g. during
     // dev / hot-reload without a running core), connect with defaults.

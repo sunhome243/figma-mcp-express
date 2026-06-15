@@ -1,5 +1,6 @@
 import { getBounds } from "./serializers";
-import { makeSolidPaint, getParentNode, applyAutoLayout, applyTextStyleProps, applyLayoutSizing, bulkApply } from "./write-helpers";
+import { makeSolidPaint, getParentNode, applyAutoLayout, applyTextStyleProps, applyLayoutSizing, bulkApply, WRITE_PROGRESS_EVERY } from "./write-helpers";
+import { makeProgress } from "./progress";
 
 export const handleWriteModifyRequest = async (request: any) => {
   switch (request.type) {
@@ -104,6 +105,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       const p = request.params || {};
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
@@ -112,6 +114,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         if (p.x != null) n.x = p.x;
         if (p.y != null) n.y = p.y;
         results.push({ nodeId: nid, x: n.x, y: n.y });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -124,6 +127,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       const results: any[] = [];
       const hasLayoutSizing = p.layoutSizingHorizontal != null || p.layoutSizingVertical != null
         || p.layoutGrow != null || p.layoutAlign != null || p.layoutPositioning != null;
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
         if (!n) { results.push({ nodeId: nid, error: "Node not found" }); continue; }
@@ -146,6 +150,7 @@ export const handleWriteModifyRequest = async (request: any) => {
           }
         }
         results.push({ nodeId: nid, width: n.width, height: n.height });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -250,6 +255,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
       const locked = request.type === "lock_nodes";
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
@@ -257,6 +263,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         if (!("locked" in n)) { results.push({ nodeId: nid, error: "Node does not support locking" }); continue; }
         n.locked = locked;
         results.push({ nodeId: nid, locked: n.locked });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -266,6 +273,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       const p = request.params || {};
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
@@ -273,6 +281,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         if (!("rotation" in n)) { results.push({ nodeId: nid, error: "Node does not support rotation" }); continue; }
         n.rotation = p.rotation;
         results.push({ nodeId: nid, rotation: n.rotation });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -286,6 +295,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       if (!validOrders.includes(p.order)) {
         throw new Error(`order must be bringToFront, sendToBack, bringForward, or sendBackward`);
       }
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
@@ -304,6 +314,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         }
         parent.insertChild(newIndex, n);
         results.push({ nodeId: nid, index: newIndex });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -324,6 +335,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       }
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
@@ -331,6 +343,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         if (!("blendMode" in n)) { results.push({ nodeId: nid, error: "Node does not support blend mode" }); continue; }
         n.blendMode = p.blendMode;
         results.push({ nodeId: nid, blendMode: n.blendMode });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -340,6 +353,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       const p = request.params || {};
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
@@ -350,6 +364,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         if (p.vertical)   updated.vertical   = p.vertical;
         n.constraints = updated;
         results.push({ nodeId: nid, constraints: n.constraints });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -370,6 +385,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       // is exact for unrotated/unscaled ancestors (the common case); a rotated/scaled parent
       // would need full transform inversion, which we deliberately don't attempt.
       const preserveAbsPos = p.preserveAbsolutePosition !== false;
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
@@ -391,6 +407,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         } catch (e: any) {
           results.push({ nodeId: nid, error: e.message });
         }
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -400,6 +417,7 @@ export const handleWriteModifyRequest = async (request: any) => {
       const p = request.params || {};
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid) as any;
@@ -422,6 +440,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         if (p.suffix) newName = newName + p.suffix;
         n.name = newName;
         results.push({ nodeId: nid, oldName, name: newName });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -442,6 +461,7 @@ export const handleWriteModifyRequest = async (request: any) => {
         if ("children" in node) (node.children as any[]).forEach(collect);
       };
       collect(root);
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const tn of textNodes) {
         const originalText: string = tn.characters;
@@ -465,6 +485,7 @@ export const handleWriteModifyRequest = async (request: any) => {
           tn.characters = newText;
           results.push({ nodeId: tn.id, nodeName: tn.name, oldText: originalText, newText });
         }
+        await tick(textNodes.length);
       }
       figma.commitUndo();
       const successCount = results.filter((r: any) => !r.error).length;

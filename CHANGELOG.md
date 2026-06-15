@@ -6,6 +6,21 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Plugin-API hygiene linting (`eslint-plugin-figma-plugins`)** — stood up ESLint for `plugin/src`, running only `@figma/eslint-plugin-figma-plugins` (no general style rules). It mechanically bans the deprecated synchronous Figma APIs forbidden under `documentAccess: "dynamic-page"`, converting the "async-APIs-only" guarantee from hand-reviewed to enforced. Wired into CI (`verify-plugin` → `make lint-ts`, `--max-warnings 0`); the codebase currently lints clean (43 files, 0 findings).
+
+### Fixed
+
+- **Long exports keep the bridge alive** — `get_screenshot` now exports serially (was a parallel `Promise.all` with no heartbeat) and both `get_screenshot` and `export_frames_to_pdf` emit a `progress_update` per frame, so a multi-frame export can no longer exceed the Go-bridge inactivity window and be killed mid-flight on a single thread.
+- **Bulk writes keep the bridge alive** — `bulkApply` and the standalone multi-node loops in `write-modify.ts` (`move_nodes`, `resize_nodes`, `lock/unlock_nodes`, `rotate_nodes`, `reorder_nodes`, `set_blend_mode`, `set_constraints`, `reparent_nodes`, `batch_rename_nodes`, `find_replace_text`) and `write-components.ts` (`detach_instance`, `delete_nodes`, `ungroup_nodes`) now emit a `progress_update` every 50 mutations, so a large single-op `nodeIds` array no longer trips the watchdog. Single-node calls emit no tick (zero hot-path overhead).
+- **Whole-page reads keep the bridge alive** — `get_fonts` (previously a synchronous, unyielding recursive walk) is now async with a per-node heartbeat, and `get_document` threads a heartbeat through `serializeNode` (new optional `onVisit`), so large pages emit `progress_update` ticks during the walk.
+- **UI→plugin messages are origin-scoped** — every `parent.postMessage` from the plugin UI now carries `pluginId: "figma-mcp-express"`, so another plugin or a navigated iframe cannot intercept the WebSocket host/port config (per Figma's documented secure-messaging guidance).
+
+### Internal
+
+- Extracted the shared `makeProgress` heartbeat helper into `plugin/src/progress.ts` (was private to `read-document.ts`) so reads, writes, and exports use one tick implementation; added an `every` cadence parameter (800 for node walks, 1 per-frame for exports, 50 for bulk writes).
+
 ## [2.0.0] — 2026-06-14
 
 ### Breaking Changes

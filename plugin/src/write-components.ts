@@ -1,4 +1,5 @@
-import { bulkApply } from "./write-helpers";
+import { bulkApply, WRITE_PROGRESS_EVERY } from "./write-helpers";
+import { makeProgress } from "./progress";
 
 export const handleWriteComponentRequest = async (request: any) => {
   switch (request.type) {
@@ -25,6 +26,7 @@ export const handleWriteComponentRequest = async (request: any) => {
     case "detach_instance": {
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid);
@@ -32,6 +34,7 @@ export const handleWriteComponentRequest = async (request: any) => {
         if (n.type !== "INSTANCE") { results.push({ nodeId: nid, error: "Node is not an INSTANCE" }); continue; }
         const frame = n.detachInstance();
         results.push({ nodeId: nid, newId: frame.id, name: frame.name });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return {
@@ -44,6 +47,7 @@ export const handleWriteComponentRequest = async (request: any) => {
     case "delete_nodes": {
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid);
@@ -60,6 +64,7 @@ export const handleWriteComponentRequest = async (request: any) => {
           }
           results.push({ nodeId: nid, error });
         }
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
@@ -113,6 +118,7 @@ export const handleWriteComponentRequest = async (request: any) => {
     case "ungroup_nodes": {
       const nodeIds = request.nodeIds || [];
       if (nodeIds.length === 0) throw new Error("nodeIds is required");
+      const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const nid of nodeIds) {
         const n = await figma.getNodeByIdAsync(nid);
@@ -128,6 +134,7 @@ export const handleWriteComponentRequest = async (request: any) => {
         }
         group.remove();
         results.push({ nodeId: nid, childIds });
+        await tick(nodeIds.length);
       }
       figma.commitUndo();
       return { type: request.type, requestId: request.requestId, data: { results } };
