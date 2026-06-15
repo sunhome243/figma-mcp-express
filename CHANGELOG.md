@@ -6,6 +6,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`get_design_context dedupe_components:true` no longer serializes the full subtree** — the dedupe path keeps a per-level re-walk (so nested INSTANCEs still compact), and its per-node `serializeNode` was called **unbounded** before being re-walked — the same serialize-everything-then-truncate cost the v2.1.0 `get_node` fix removed, still live in this one path. It's now bounded to `maxDepth:1` (only the node's own fields + direct-child id list are used; deeper serialization was discarded anyway), making per-node work ~2N total instead of Σ-subtree-size. Byte-identical output.
+
 ## [2.1.0] — 2026-06-15
 
 ### Fixed

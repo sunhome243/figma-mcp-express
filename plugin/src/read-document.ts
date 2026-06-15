@@ -306,9 +306,14 @@ export const handleReadDocumentRequest = async (request: any) => {
             });
           }
           // dedupeComponents=true: keep the per-level walk so a nested INSTANCE
-          // still hits the dedupe branch above (serializeNode would serialize it in
-          // full instead of compacting it). This path is not the O(N·D) hot case.
-          const serialized = await serializeNode(node, caches);
+          // still hits the dedupe branch above (a single serializeNode walk would
+          // serialize it in full instead of compacting it). Bound this call to
+          // maxDepth:1 — we use `serialized` ONLY for the node's own fields and the
+          // direct-child id list (the re-walk below replaces children), so a deeper
+          // serialization is pure waste. Without the cap this call serialized the
+          // ENTIRE subtree (the same unbounded-then-truncate cost the get_node fix
+          // removed); the cap makes it byte-identical at ~2N total work.
+          const serialized = await serializeNode(node, caches, undefined, { maxDepth: 1 });
           let result: any;
           if (currentDepth >= depth && serialized.children) {
             result = Object.assign({}, serialized, {

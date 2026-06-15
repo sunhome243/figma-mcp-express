@@ -1196,3 +1196,47 @@ describe("prewarm — parallel lookups, no double-fetch", () => {
     expect(mainCompCalls.length).toBe(1);
   });
 });
+
+// ── get_design_context dedupeComponents — bounded serialization ──────────────
+// The dedupeComponents path keeps a per-level re-walk (so nested INSTANCEs compact),
+// and its per-node serializeNode is bounded to maxDepth:1 — only the node's own
+// fields + direct-child id list are used; deeper serialization is discarded. Each
+// node is therefore serialized as ~1 level → ~2N total body passes, NOT the
+// Σ-subtree-size the old UNBOUNDED call cost. An `id` getter counts serializeNode
+// bodies; this test would FAIL (count ≈ 547) on the pre-fix unbounded code.
+describe("get_design_context dedupeComponents — bounded serialization", () => {
+  it("serializes ~2N body passes on a deep frame tree, not O(Σ subtree size)", async () => {
+    let idReads = 0;
+    const reg = new Map<string, any>();
+    const make = (id: string, depth: number, maxDepth: number, branching: number): any => {
+      const children =
+        depth < maxDepth
+          ? Array.from({ length: branching }, (_, i) => make(`${id}-${i}`, depth + 1, maxDepth, branching))
+          : [];
+      const n: any = { name: id, type: "FRAME", visible: true, x: 0, y: 0, width: 10, height: 10 };
+      Object.defineProperty(n, "id", { get() { idReads++; return id; }, enumerable: true });
+      if (children.length) n.children = children;
+      reg.set(id, n);
+      return n;
+    };
+    const root = make("r", 0, 4, 3); // depth 4, branching 3 → 121 nodes
+    const N = reg.size;
+    setupFigma(root);
+    (globalThis as any).figma.getNodeByIdAsync = async (id: string) => reg.get(id) ?? null;
+    (globalThis as any).figma.currentPage.selection = [root];
+
+    idReads = 0;
+    const res = await handleReadDocumentRequest({
+      type: "get_design_context",
+      requestId: "req-dedupe",
+      params: { dedupeComponents: true, depth: 50 },
+    });
+
+    // Each node serialized as ~1 level → N + (N-1) body passes. Old unbounded code
+    // = Σ subtree size (≈ 547 for this tree), which exceeds 2N (242).
+    expect(idReads).toBeLessThanOrEqual(2 * N);
+    // Correctness: full depth preserved (no truncation at depth 50).
+    expect(res?.data.context[0].children).toHaveLength(3);
+    expect(res?.data.context[0].children[0].children).toHaveLength(3);
+  });
+});
