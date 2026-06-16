@@ -1022,9 +1022,15 @@ Get all variables in a subscribed library collection by its key. Returns name, r
 
 Set prototype reactions on a node. Use `mode="replace"` (default) to overwrite all reactions, or `"append"` to add to existing ones.
 
-Supported triggers: `ON_CLICK`, `ON_HOVER`, `ON_PRESS`, `ON_DRAG`, `AFTER_TIMEOUT`, `MOUSE_ENTER`, `MOUSE_LEAVE`, `MOUSE_UP`, `MOUSE_DOWN`
+Supported triggers: `ON_CLICK`, `ON_HOVER`, `ON_PRESS`, `ON_DRAG`, `AFTER_TIMEOUT` (`timeout` ms), `MOUSE_ENTER`, `MOUSE_LEAVE`, `MOUSE_UP`, `MOUSE_DOWN` (`delay` ms), `ON_KEY_DOWN` (`device`, `keyCodes[]`), `ON_MEDIA_HIT` (`mediaHitTime`), `ON_MEDIA_END`
 
-Supported action types: `NODE` (navigation), `BACK`, `CLOSE`, `URL`
+Supported action types: `NODE` (navigation), `BACK`, `CLOSE`, `URL` (`openInNewTab?`), `SET_VARIABLE` (`variableId`), `SET_VARIABLE_MODE` (`variableCollectionId`, `variableModeId`), `CONDITIONAL` (`conditionalBlocks[]`), `UPDATE_MEDIA_RUNTIME` (`mediaAction`)
+
+- `NODE` navigation: `NAVIGATE`, `OVERLAY`, `SCROLL_TO`, `SWAP`, `CHANGE_TO`. Requires `destinationId` (`navigation` defaults to `NAVIGATE`). Optional: `overlayRelativePosition`, `resetScrollPosition`, `resetVideoPosition`, `resetInteractiveComponents`.
+- Transitions: `DISSOLVE`, `SMART_ANIMATE`, `SCROLL_ANIMATE`, and directional `MOVE_IN`/`MOVE_OUT`/`PUSH`/`SLIDE_IN`/`SLIDE_OUT` (require `direction` + `matchLayers`). Easings include `EASE_*`, `LINEAR`, `GENTLE`, `QUICK`, `BOUNCY`, `SLOW`, `CUSTOM_CUBIC_BEZIER`, `CUSTOM_SPRING`.
+- **Overlay appearance is read-only** in the Plugin API (`overlayPositionType`/`overlayBackground`/`overlayBackgroundInteraction` are configured in the Figma UI on the destination frame). `set_reactions` can open an overlay but not place or style it.
+
+Unknown/future action types pass through unvalidated (forward-compatibility).
 
 | Name      | Type     | Required | Description                                                                               |
 | --------- | -------- | -------- | ----------------------------------------------------------------------------------------- |
@@ -1032,6 +1038,17 @@ Supported action types: `NODE` (navigation), `BACK`, `CLOSE`, `URL`
 | reactions | object[] | Yes      | Array of reaction objects. Each has a `trigger` and an `actions` array of Action objects. |
 | mode      | string   | No       | `replace` (default) or `append`                                                           |
 | channel   | string   | No       | Target a specific connected file by channel id.                                           |
+
+### set_prototype_start
+
+Set the prototype flow starting point(s) for the page containing the given frame(s). `prototypeStartNode` is read-only in the Plugin API; the start of a prototype is controlled through the page's flow starting points. All nodeIds must be on the same page.
+
+| Name    | Type     | Required | Description                                                                  |
+| ------- | -------- | -------- | ---------------------------------------------------------------------------- |
+| nodeIds | string[] | No\*     | Frame node IDs to set as flow starting points (all on the same page). \*Required unless `mode:"clear"`. |
+| names   | string[] | No       | Optional flow names, parallel to nodeIds. Defaults to each frame's name.     |
+| mode    | string   | No       | `replace` (default) overwrites the page's starting points; `append` adds new; `remove` drops the given frames and keeps the rest; `clear` removes all (nodeIds optional — uses the page of the first nodeId if given, else the current page) |
+| channel | string   | No       | Target a specific connected file by channel id.                              |
 
 ### remove_reactions [BATCH OP]
 

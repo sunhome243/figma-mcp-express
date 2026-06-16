@@ -130,9 +130,10 @@ func TestToolSchemas_ArrayItemsHaveType(t *testing.T) {
 // accidentally dropped registrations are caught.
 func TestToolSchemas_AllToolsRegistered(t *testing.T) {
 	resp := listTools(t)
-	// Full profile preserves the legacy 70 top-level tools, plus the two compact
-	// catalog meta-tools used for progressive discovery.
-	const want = 72
+	// Full profile preserves the legacy top-level tools, plus the two compact
+	// catalog meta-tools used for progressive discovery. Count includes the
+	// prototype additions get_prototype + set_prototype_start.
+	const want = 74
 	got := len(resp.Result.Tools)
 	if got != want {
 		t.Errorf("expected %d registered tools, got %d — update the constant if tools were intentionally added or removed", want, got)

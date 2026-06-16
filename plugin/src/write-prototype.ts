@@ -1,25 +1,61 @@
+import { owningPage } from "./node-utils";
+
 // Validate and normalize one action by its well-known type. A NODE (navigation) action's
 // `navigation` and `transition` are non-optional in the Plugin API, so a minimal
 // {type:"NODE", destinationId} would throw at setReactionsAsync — we require the destination
 // and default the other two (NAVIGATE / no transition) so the common case just works.
-// Other action types (BACK, CLOSE, SCROLL_TO, …) pass through unchanged.
+//
+// For NODE we spread the rest of the action through untouched, so OVERLAY-only fields
+// (`overlayRelativePosition`), scroll/video/component reset flags (`resetScrollPosition`,
+// `resetVideoPosition`, `resetInteractiveComponents`), and any `transition` (including
+// directional transitions and advanced easings like GENTLE/BOUNCY/CUSTOM_SPRING) are
+// preserved. URL likewise preserves `openInNewTab`.
+//
+// We additionally guard the required field of each well-known action type so the caller
+// gets a clear error here instead of an opaque setReactionsAsync rejection. Unknown action
+// types pass through unchanged (forward-compatible with future Plugin API additions).
 function normalizeAction(action: any): Action {
   if (!action || typeof action !== "object") return action;
   const type: string = action.type ?? "";
-  if (type === "NODE") {
-    if (action.destinationId == null) {
-      throw new Error(`Action of type "NODE" requires "destinationId"`);
-    }
-    return {
-      ...action,
-      navigation: action.navigation ?? "NAVIGATE",
-      transition: action.transition ?? null,
-    } as Action;
+  switch (type) {
+    case "NODE":
+      if (action.destinationId == null) {
+        throw new Error(`Action of type "NODE" requires "destinationId"`);
+      }
+      return {
+        ...action,
+        navigation: action.navigation ?? "NAVIGATE",
+        transition: action.transition ?? null,
+      } as Action;
+    case "URL":
+      if (!action.url) throw new Error(`Action of type "URL" requires "url"`);
+      return action as Action;
+    case "SET_VARIABLE":
+      if (action.variableId == null) {
+        throw new Error(`Action of type "SET_VARIABLE" requires "variableId"`);
+      }
+      return action as Action;
+    case "SET_VARIABLE_MODE":
+      if (action.variableCollectionId == null || action.variableModeId == null) {
+        throw new Error(
+          `Action of type "SET_VARIABLE_MODE" requires "variableCollectionId" and "variableModeId"`
+        );
+      }
+      return action as Action;
+    case "CONDITIONAL":
+      if (!Array.isArray(action.conditionalBlocks)) {
+        throw new Error(`Action of type "CONDITIONAL" requires a "conditionalBlocks" array`);
+      }
+      return action as Action;
+    case "UPDATE_MEDIA_RUNTIME":
+      if (action.mediaAction == null) {
+        throw new Error(`Action of type "UPDATE_MEDIA_RUNTIME" requires "mediaAction"`);
+      }
+      return action as Action;
+    default:
+      // BACK, CLOSE, and any unknown/future action types pass through unchanged.
+      return action as Action;
   }
-  if (type === "URL" && !action.url) {
-    throw new Error(`Action of type "URL" requires "url"`);
-  }
-  return action as Action;
 }
 
 function buildReaction(r: any): Reaction {
@@ -115,6 +151,118 @@ export const handleWritePrototypeRequest = async (request: any) => {
           removed: current.length - updated.length,
           reactionCount: updated.length,
         },
+      };
+    }
+
+    case "set_prototype_start": {
+      // Set the page's flow starting points. `prototypeStartNode` is read-only in the
+      // Plugin API; the start of a prototype is controlled through page.flowStartingPoints.
+      // There is no async setter — direct assignment of a new array is the documented path
+      // (works under documentAccess:"dynamic-page").
+      const p = request.params || {};
+      const nodeIds: string[] = request.nodeIds ?? [];
+      const mode = p.mode || "replace";
+
+      // Clear mode: empty the page's flow starting points. This is the only path
+      // to remove ALL start points — replace/append both require >=1 nodeId, so
+      // without it a prototype can never be returned to "no defined entry". Targets
+      // the page of the given nodeId(s) when provided, else the current page. When
+      // several nodeIds are given they must share a page (matching the non-clear
+      // path) — otherwise it's ambiguous which page to clear, so we error rather
+      // than silently clear only the first node's page.
+      if (mode === "clear") {
+        let page: any = figma.currentPage;
+        for (const id of nodeIds) {
+          const node = await figma.getNodeByIdAsync(id);
+          if (!node) throw new Error(`Node not found: ${id}`);
+          const ancestor = owningPage(node);
+          if (!ancestor) throw new Error(`Node ${id} is not on a page`);
+          if (nodeIds[0] === id) page = ancestor;
+          else if (page.id !== ancestor.id) {
+            throw new Error("All clear-mode nodes must be on the same page");
+          }
+        }
+        page.flowStartingPoints = [];
+        figma.commitUndo();
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: { pageId: page.id, pageName: page.name, flowStartingPoints: [] },
+        };
+      }
+
+      // Remove mode: drop the given frames from the page's flow starting points and
+      // keep the rest — the targeted inverse of append, for removing one start point
+      // without re-listing the others. It's a cleanup op, so unlike replace/append it
+      // TOLERATES an already-deleted frame: the page is resolved from the first nodeId
+      // that still resolves (else the current page), then entries are filtered by id —
+      // so a dangling start point pointing at a deleted frame is removable here, which
+      // the strict resolve-every-node path below could not. Filtering by id also makes
+      // remove incapable of damaging the wrong page: ids that aren't start points on the
+      // resolved page simply don't match (a no-op), never a destructive change.
+      if (mode === "remove") {
+        if (nodeIds.length === 0) throw new Error("At least one nodeId is required");
+        let page: any = figma.currentPage;
+        for (const id of nodeIds) {
+          const node = await figma.getNodeByIdAsync(id);
+          const ancestor = node ? owningPage(node) : null;
+          if (ancestor) {
+            page = ancestor;
+            break;
+          }
+        }
+        const toRemove = new Set(nodeIds);
+        const current: Array<{ nodeId: string; name: string }> = page.flowStartingPoints
+          ? [...page.flowStartingPoints]
+          : [];
+        const final = current.filter((c) => !toRemove.has(c.nodeId));
+        page.flowStartingPoints = final;
+        figma.commitUndo();
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: { pageId: page.id, pageName: page.name, flowStartingPoints: final },
+        };
+      }
+
+      if (nodeIds.length === 0) throw new Error("At least one nodeId is required");
+
+      const names = parseArray(p.names);
+      // Resolve each target node, validate it exists, and pick its containing page.
+      const entries: Array<{ nodeId: string; name: string }> = [];
+      let page: any = null;
+      for (let i = 0; i < nodeIds.length; i++) {
+        const id = nodeIds[i];
+        const node = await figma.getNodeByIdAsync(id);
+        if (!node) throw new Error(`Node not found: ${id}`);
+        // Prototypes (and flowStartingPoints) are per-page — resolve the owning page.
+        const ancestor = owningPage(node);
+        if (!ancestor) throw new Error(`Node ${id} is not on a page`);
+        if (page == null) page = ancestor;
+        else if (page.id !== ancestor.id) {
+          throw new Error("All starting-point nodes must be on the same page");
+        }
+        const name = (names[i] != null && String(names[i])) || (node as any).name || `Flow ${i + 1}`;
+        entries.push({ nodeId: id, name });
+      }
+
+      const current: Array<{ nodeId: string; name: string }> = page.flowStartingPoints
+        ? [...page.flowStartingPoints]
+        : [];
+      // `append` skips entries whose nodeId is already a starting point; `replace`
+      // (default) sets the page's start points to exactly the given frames. (`remove`
+      // and `clear` are handled in their own tolerant branches above.)
+      const final =
+        mode === "append"
+          ? [...current, ...entries.filter((e) => !current.some((c) => c.nodeId === e.nodeId))]
+          : entries;
+
+      page.flowStartingPoints = final;
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { pageId: page.id, pageName: page.name, flowStartingPoints: final },
       };
     }
 

@@ -242,6 +242,27 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
+	s.AddTool(mcp.NewTool("get_prototype",
+		mcp.WithDescription(`Read the prototype FLOW GRAPH for a whole page (or a scoped subtree). Unlike get_reactions (one node's raw reactions), this walks every reaction-bearing node — buttons and instances included, not just top-level frames — and returns the connections between them.
+
+Returns: { pageId, pageName, flowStartingPoints:[{nodeId,name}], prototypeStartNodeId, reactionNodeCount, edgeCount, edges:[...], overlays:[...] }.
+  edges[]: { sourceId, sourceName, sourceType, trigger, actionType, navigation?, destinationId?, destinationName?, transition?, url? } — one entry per (source node, reaction, action).
+  overlays[]: read-only overlay config of OVERLAY destinations { nodeId, name, overlayPositionType, overlayBackground, overlayBackgroundInteraction }. These cannot be set via the plugin API — use them to detect a dropdown/sheet still at the default CENTER position.
+
+Pass nodeId(s) to scope to subtrees on one page; omit to read the current page. Use this to audit a prototype (dead-ends, unwired buttons, missing back, overlay placement) before or after wiring with set_reactions / set_prototype_start.`),
+		mcp.WithString("nodeId",
+			mcp.Description("Optional. Scope the read to this node's subtree. Omit to read the whole current page. Colon format e.g. '4029:12345'."),
+		),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var nodeIDs []string
+		if nodeID, ok := req.GetArguments()["nodeId"].(string); ok && nodeID != "" {
+			nodeIDs = []string{NormalizeNodeID(nodeID)}
+		}
+		resp, err := node.Send(ctx, "get_prototype", nodeIDs, withChannel(req, nil))
+		return renderResponse(resp, err)
+	})
+
 	s.AddTool(mcp.NewTool("get_viewport",
 		mcp.WithDescription("Get the current Figma viewport: scroll center, zoom level, and visible bounds."),
 		channelParam(),

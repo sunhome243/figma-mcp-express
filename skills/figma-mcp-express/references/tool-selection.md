@@ -70,6 +70,16 @@ Find nodes using raw (unlinked) values instead of design-system styles:
 
 **Rules:** never change visual appearance — only link to a style that already matches. Skip INSTANCE nodes with intentional overrides. Process in chunks of ≤ 20 nodes on large trees.
 
+## Subscribed Libraries (empty `get_variable_defs` ≠ no design system)
+
+`get_variable_defs` returns only a file's **local** variables — it comes back empty in a file that *subscribes* to an external library, even though that library's tokens are fully available. Before concluding a file has no design system:
+
+1. `list_library_variable_collections` — subscribed collections + their keys.
+2. `get_library_variables` per collection key — the variable keys.
+3. `import_variable_by_key` / `import_component_by_key` — bring tokens and components into the file to bind them.
+
+Treat an empty `get_variable_defs` as "no *local* tokens," not "no tokens."
+
 ## Design Structure Notes
 
 When creating a new screen or section, orient first: `get_metadata()` → `get_pages()` → plan the layout hierarchy before creating elements.

@@ -68,6 +68,7 @@ var pluginSupportedBatchOps = []string{
 	"get_node",
 	"get_nodes_info",
 	"get_pages",
+	"get_prototype",
 	"get_reactions",
 	"get_remote_variable_collection",
 	"get_screenshot",
@@ -102,6 +103,7 @@ var pluginSupportedBatchOps = []string{
 	"set_fills",
 	"set_instance_properties",
 	"set_opacity",
+	"set_prototype_start",
 	"set_reactions",
 	"set_strokes",
 	"set_text",
@@ -257,6 +259,10 @@ func isReadOnlyBatchOp(name string) bool {
 
 func batchOpCategory(name string) string {
 	switch {
+	// Prototype ops are matched before the get_/set_ prefix rules so get_prototype and
+	// set_prototype_start group under "prototype" rather than "read"/"modify".
+	case strings.Contains(name, "reaction"), strings.Contains(name, "prototype"):
+		return "prototype"
 	case strings.HasPrefix(name, "get_"), strings.HasPrefix(name, "scan_"), strings.HasPrefix(name, "search_"):
 		return "read"
 	case strings.HasPrefix(name, "create_"):
@@ -271,8 +277,6 @@ func batchOpCategory(name string) string {
 		return "library"
 	case strings.Contains(name, "page"):
 		return "page"
-	case strings.Contains(name, "reaction"):
-		return "prototype"
 	default:
 		return "write"
 	}
