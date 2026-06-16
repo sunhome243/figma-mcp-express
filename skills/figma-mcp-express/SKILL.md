@@ -33,10 +33,11 @@ Read-tool choice, validation matrix, batch refs, import-key format, and gotchas 
 
 | Need | Read |
 |---|---|
-| Read-tool choice, validation matrix, common errors | `references/tool-selection.md` |
-| Batch refs, projection, `map`, validation-first recipes | `references/batch-recipes.md` |
+| Read-tool choice, detail levels, style audit, common errors | `references/tool-selection.md` |
+| Batch refs, projection, `map`, validation-first recipes, write-workflow recipes (rename/text-replace/annotations/reactions/swap-overrides) | `references/batch-recipes.md` |
 | Connection drops, cache spill files, text/image gotchas | `references/gotchas.md` |
 | Parallel agents and channel partitioning | `references/multi-agent.md` |
+| Parameterized generators (type scale, color palette, component variants, design tokens) | MCP prompts: `generate_type_scale`, `generate_color_palette`, `generate_component_variants`, `design_token_generation_strategy` — invoke via the MCP prompts list |
 
 Exact operation names and params live in `BatchOpCatalog`; never copy op schemas into skill docs. Use `get_batch_op_spec` for the current schema.
 

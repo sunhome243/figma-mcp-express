@@ -58,3 +58,23 @@ func TestHintFor_NoHintForOrdinary(t *testing.T) {
 		t.Errorf("unmatched error should yield no hint, got %q", h)
 	}
 }
+
+func TestHintForDesignContextDetail_MinimalAndCompact(t *testing.T) {
+	for _, detail := range []string{"minimal", "compact"} {
+		h := hintForDesignContextDetail(detail)
+		if !strings.Contains(h, "typography") {
+			t.Errorf("detail %q hint should mention typography, got %q", detail, h)
+		}
+		if !strings.Contains(h, "codegen") {
+			t.Errorf("detail %q hint should mention codegen, got %q", detail, h)
+		}
+	}
+}
+
+func TestHintForDesignContextDetail_NoHintForFullOrCodegen(t *testing.T) {
+	for _, detail := range []string{"full", "codegen", ""} {
+		if h := hintForDesignContextDetail(detail); h != "" {
+			t.Errorf("detail %q should yield no hint, got %q", detail, h)
+		}
+	}
+}

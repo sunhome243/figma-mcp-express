@@ -113,8 +113,9 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		if d, ok := req.GetArguments()["depth"].(float64); ok && d > 0 {
 			params["depth"] = d
 		}
-		if det, ok := req.GetArguments()["detail"].(string); ok && det != "" {
-			params["detail"] = det
+		detail, _ := req.GetArguments()["detail"].(string)
+		if detail != "" {
+			params["detail"] = detail
 		}
 		if dd, ok := req.GetArguments()["dedupe_components"].(bool); ok && dd {
 			params["dedupeComponents"] = true
@@ -124,6 +125,21 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 			params["codeConnectMap"] = cc
 		}
 		resp, err := node.Send(ctx, "get_design_context", nil, withChannel(req, params))
+		// Attach a just-in-time hint on successful reads at detail levels that omit
+		// typography, color, and autoLayout — nudging toward detail:full or detail:codegen
+		// without requiring the user to know about the dormant prompt.
+		if err == nil && resp.Error == "" {
+			if hint := hintForDesignContextDetail(detail); hint != "" {
+				if data, ok := resp.Data.(map[string]interface{}); ok {
+					m2 := make(map[string]interface{}, len(data)+1)
+					for k, v := range data {
+						m2[k] = v
+					}
+					m2["hint"] = hint
+					resp.Data = m2
+				}
+			}
+		}
 		return renderResponse(resp, err)
 	})
 

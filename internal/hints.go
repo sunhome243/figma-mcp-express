@@ -63,3 +63,16 @@ func isCatalogRead(requestType string) bool {
 	}
 	return false
 }
+
+// hintForDesignContextDetail returns a just-in-time guidance hint for a
+// successful get_design_context response when the requested detail level omits
+// typography, color, and autoLayout data. Returns "" when no hint is needed
+// (full, codegen, or unspecified detail levels already include that data).
+func hintForDesignContextDetail(detail string) string {
+	switch detail {
+	case "minimal", "compact":
+		return "typography/color/autoLayout omitted at this detail — " +
+			"for code/style fidelity use detail:full or detail:codegen."
+	}
+	return ""
+}

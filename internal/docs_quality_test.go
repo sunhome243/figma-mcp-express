@@ -465,27 +465,9 @@ func TestDocsDoNotMislabelPluginLibraryOpsAsREST(t *testing.T) {
 
 func TestPromptsMatchCurrentSemanticContracts(t *testing.T) {
 	promptsDir := filepath.Join("..", "internal", "prompts")
+	skillRefsDir := filepath.Join("..", "skills", "figma-mcp-express", "references")
 
-	annotation := readTestFile(t, filepath.Join(promptsDir, "annotation_conversion_strategy.go"))
-	for _, forbidden := range []string{
-		"converting manual annotations to Figma's native annotations",
-		"Apply native Figma annotations",
-		"After converting annotations",
-	} {
-		if strings.Contains(annotation, forbidden) {
-			t.Fatalf("annotation prompt must stay read-only until an annotation write op exists; found %q", forbidden)
-		}
-	}
-
-	reactions := readTestFile(t, filepath.Join(promptsDir, "reaction_to_connector_strategy.go"))
-	for _, required := range []string{"actions[]", "destinationId", "destination-bearing actions"} {
-		if !strings.Contains(reactions, required) {
-			t.Fatalf("reaction prompt must describe the current plural actions[] response shape; missing %q", required)
-		}
-	}
-	if strings.Contains(reactions, `"action": {`) || strings.Contains(reactions, "action.type") || strings.Contains(reactions, "action.destinationId") {
-		t.Fatalf("reaction prompt must not describe the stale singular action response shape")
-	}
+	// ── Generator prompts (still registered as MCP prompts) ──────────────────
 
 	palette := readTestFile(t, filepath.Join(promptsDir, "generate_color_palette.go"))
 	if strings.Contains(palette, "modeName \"Value\"") || strings.Contains(palette, "modeName \"Light\"") {
@@ -519,12 +501,42 @@ func TestPromptsMatchCurrentSemanticContracts(t *testing.T) {
 		}
 	}
 
-	design := readTestFile(t, filepath.Join(promptsDir, "design_strategy.go"))
-	if strings.Contains(design, "Use fillColor for backgrounds") {
-		t.Fatal("design strategy prompt must not teach fillColor as the background fill mutator")
+	// ── Folded guidance — contracts now verified in skill reference files ─────
+	// (annotation_conversion_strategy, reaction_to_connector_strategy, and
+	// design_strategy were deprecated; their content lives in batch-recipes.md
+	// and tool-selection.md.)
+
+	batchRecipes := readTestFile(t, filepath.Join(skillRefsDir, "batch-recipes.md"))
+
+	// Annotation recipe must stay read-only: no annotation-write language.
+	for _, forbidden := range []string{
+		"converting manual annotations to Figma's native annotations",
+		"Apply native Figma annotations",
+		"After converting annotations",
+	} {
+		if strings.Contains(batchRecipes, forbidden) {
+			t.Fatalf("annotation recipe must stay read-only until an annotation write op exists; found %q", forbidden)
+		}
 	}
-	if !strings.Contains(design, "batch op set_fills for backgrounds") {
-		t.Fatal("design strategy prompt must route background fills through set_fills batch ops")
+
+	// Reaction recipe must describe the current plural actions[] response shape.
+	for _, required := range []string{"actions[]", "destinationId", "destination-bearing actions"} {
+		if !strings.Contains(batchRecipes, required) {
+			t.Fatalf("reaction recipe must describe the current plural actions[] response shape; missing %q", required)
+		}
+	}
+	if strings.Contains(batchRecipes, `"action": {`) || strings.Contains(batchRecipes, "action.type") || strings.Contains(batchRecipes, "action.destinationId") {
+		t.Fatalf("reaction recipe must not describe the stale singular action response shape")
+	}
+
+	toolSelection := readTestFile(t, filepath.Join(skillRefsDir, "tool-selection.md"))
+
+	// Design structure guidance must route background fills through set_fills.
+	if strings.Contains(toolSelection, "Use fillColor for backgrounds") {
+		t.Fatal("tool-selection reference must not teach fillColor as the background fill mutator")
+	}
+	if !strings.Contains(toolSelection, "batch op set_fills for backgrounds") {
+		t.Fatal("tool-selection reference must route background fills through set_fills batch ops")
 	}
 }
 
