@@ -12,6 +12,7 @@ Use the compact core surface first. In default `core` profile, low-level write p
 1. Figma Desktop must be open with **Plugins -> Development -> Figma MCP Express** running.
 2. Start with `get_metadata`; if multiple files are open, call `list_channels` and pass `channel` on every file-specific top-level tool call. For `batch`, put `channel` on the outer call, not inside `ops[*].params`.
 3. If the plugin is not connected, ask the user to open the file and run the plugin. Do not retry in a loop.
+4. **Check for enabled (subscribed) libraries before concluding a file has no design system.** `get_variable_defs` returns only the file's **local** variables — it comes back empty in a file that subscribes to an external library, even though that library's tokens are fully available. To see what a file can actually bind, call `list_library_variable_collections` (subscribed collections + keys), then `get_library_variables` per collection key for the variable keys, and `import_variable_by_key` / `import_component_by_key` to bring tokens and components in. Treat an empty `get_variable_defs` as "no *local* tokens," not "no tokens" — confirm with `list_library_variable_collections` first.
 
 ## Tool Surface
 
