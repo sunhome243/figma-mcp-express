@@ -208,6 +208,102 @@ Server caps fail fast before plugin execution: `FIGMA_MCP_BATCH_MAX_OPS` default
 
 ---
 
+### Recipe 7: Bulk rename nodes to a naming convention
+
+Scope first, then scan and rename flagged nodes. Show a preview table before applying.
+
+**Same pattern for N nodes** (e.g. prefix + counter):
+```json
+{
+  "ops": [
+    { "type": "scan_nodes_by_types", "params": { "nodeId": "<frame-id>", "types": ["FRAME","GROUP","INSTANCE","TEXT","RECTANGLE","ELLIPSE","VECTOR"] } },
+    { "type": "batch_rename_nodes", "nodeIds": ["$0.matchingNodes[*].id"], "params": { "pattern": "<Prefix>$n" } }
+  ],
+  "continueOnError": true
+}
+```
+
+**Per-node different names** — use `map` (Recipe 5) with a `rename_node` do-op instead.
+
+**Flow:** determine scope (page/frame/selection via `get_metadata`/`get_node`/`get_selection`) → `scan_nodes_by_types` → flag auto-generated names ("Frame \d+", "Group \d+", "Rectangle \d+") → derive new names from node type, text content, and hierarchy position → show preview → apply after user confirmation.
+
+**Rules:** never rename COMPONENT master nodes (only instances and frames). Preserve "/" hierarchy separators — do not flatten. When unsure, leave the node and flag it.
+
+**Naming convention:** screens = PascalCase; section frames = "Section/Name"; instances = match mainComponent name; containers = "ComponentName/Container"; text nodes = "Label" / "Title" / "Body" / "Caption"; icons = "Icon/Name".
+
+---
+
+### Recipe 8: Chunked text replacement with visual verification
+
+Replace copy across a large design by processing logical chunks with screenshot verification between each chunk.
+
+1. **Scan:** `scan_text_nodes(nodeId)` — identify structure (tables, lists, card groups, forms, nav).
+2. **Safe copy:** `batch(ops:[{type:"clone_node", nodeIds:["<root-id>"], params:{x:newX,y:newY}}])`.
+3. **Replace per chunk** via validated `set_text` ops.
+4. **Verify chunk:** `save_screenshots(items:[{nodeId:"<chunk-id>",outputPath:".figma-mcp-cache/chunk-N.png"}],scale:0.5)` — fix before moving to next chunk.
+5. **Final pass:** export full design at `scale:0.2`.
+
+**Scale guide:** 1–5 elements → 1.0; 6–20 → 0.7; 21–50 → 0.5; 50+ → 0.3; full design → 0.2.
+
+For varying text per node, use the `map` op (Recipe 5) instead of a single-node loop.
+
+---
+
+### Recipe 9: Annotation analysis — map manual annotations to target nodes
+
+Read-only. The server reads native annotations via `get_annotations`; no annotation-write op exists.
+
+```json
+{
+  "ops": [
+    { "type": "get_annotations",    "nodeIds": ["<frame-id>"] },
+    { "type": "scan_text_nodes",    "params": { "nodeId": "<frame-id>" } },
+    { "type": "scan_nodes_by_types","params": { "nodeId": "<frame-id>", "types": ["COMPONENT","INSTANCE","FRAME"] } }
+  ]
+}
+```
+
+**Matching priority:** (1) path-based — parent container name in the layer hierarchy; (2) name-based — key terms from the annotation description; (3) proximity — closest UI element by center-point distance (fallback).
+
+Report as a table: Marker · Description · Target Node ID · Target Name · Confidence · Evidence. Verify visually with `save_screenshots`. Do not claim annotations were written unless a future annotation-write op exists and succeeds.
+
+---
+
+### Recipe 10: Prototype reaction flow map
+
+Parse `get_reactions` output to produce a structured interaction flow between screens.
+
+```json
+{
+  "ops": [
+    { "type": "get_design_context", "params": { "depth": 2, "detail": "minimal" } },
+    { "type": "get_reactions",      "nodeIds": ["<screen-a-id>", "<screen-b-id>"] }
+  ]
+}
+```
+
+**Process:** iterate each reaction's `actions[]` array and keep only destination-bearing actions where `destinationId` is present (types: NAVIGATE, OPEN_OVERLAY, SWAP_OVERLAY); ignore CHANGE_TO / CLOSE_OVERLAY and any entry without a `destinationId`. Call `get_nodes_info` on all source + destination IDs to resolve names. Emit a flow map: `[ScreenA] --ON_CLICK/NAVIGATE--> [ScreenB]`. Verify key screens with `save_screenshots`. Node IDs use colon format: `4029:12345` — never hyphens.
+
+---
+
+### Recipe 11: Transfer overrides between component instances
+
+Copy content and property overrides from a source instance to one or more target instances.
+
+```json
+{
+  "ops": [
+    { "type": "scan_nodes_by_types", "params": { "nodeId": "<parent-id>", "types": ["INSTANCE"] } },
+    { "type": "get_node",            "nodeIds": ["<source-instance-id>"], "params": { "depth": 4 } },
+    { "type": "set_text",            "nodeIds": ["<target-text-id>"],     "params": { "text": "<content>" } }
+  ]
+}
+```
+
+**Flow:** `get_selection()` to identify parent and instance slots → `get_node(source, depth:4)` + `scan_text_nodes(source)` to capture all overrides → apply to targets via `set_text` / `set_fills` / `set_strokes` batch ops → verify with `get_node()` or `get_design_context()`. Use `map` (Recipe 5) when the override pattern is consistent across all targets. `save_screenshots()` for final visual confirmation.
+
+---
+
 ## Part 2 — Catalog + validation rules
 
 Do not copy op-specific schemas into skills, prompts, or hooks. `BatchOpCatalog` is the SSOT.

@@ -217,6 +217,15 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeIDs[0])
 		}
 
+	case "get_prototype":
+		// Scope is optional: with no nodeIds the whole current page is read; with
+		// nodeIds, each must be a valid node id (subtree scope).
+		for _, id := range nodeIDs {
+			if !ValidNodeID(id) {
+				return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", id)
+			}
+		}
+
 	case "scan_text_nodes", "scan_nodes_by_types":
 		nodeID, _ := params["nodeId"].(string)
 		if nodeID == "" {
@@ -857,6 +866,29 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			}
 		}
 
+	case "set_prototype_start":
+		// One or more frame nodeIds become the page's flow starting points.
+		// Exception: mode "clear" empties the page's start points and needs no nodeId.
+		mode, _ := params["mode"].(string)
+		if mode != "clear" && len(nodeIDs) == 0 {
+			return "at least one nodeId is required (unless mode is 'clear')"
+		}
+		for _, id := range nodeIDs {
+			if !ValidNodeID(id) {
+				return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", id)
+			}
+		}
+		if names, ok := params["names"].([]any); ok {
+			for i, v := range names {
+				if _, ok := v.(string); !ok {
+					return fmt.Sprintf("names[%d] must be a string", i)
+				}
+			}
+		}
+		if mode != "" && mode != "replace" && mode != "append" && mode != "remove" && mode != "clear" {
+			return fmt.Sprintf("mode must be 'replace', 'append', 'remove', or 'clear', got: %s", mode)
+		}
+
 	// ── Node Control ────────────────────────────────────────────────
 
 	case "set_visible":
@@ -1088,13 +1120,7 @@ var validTriggerTypes = map[string]bool{
 	"ON_CLICK": true, "ON_HOVER": true, "ON_PRESS": true, "ON_DRAG": true,
 	"AFTER_TIMEOUT": true, "MOUSE_ENTER": true, "MOUSE_LEAVE": true,
 	"MOUSE_UP": true, "MOUSE_DOWN": true,
-}
-
-var validActionTypes = map[string]bool{
-	// Current Figma plugin API action types (plugin-api >= 1.0.0)
-	"NODE": true, "BACK": true, "CLOSE": true, "URL": true,
-	"CONDITIONAL": true, "SET_VARIABLE": true, "SET_VARIABLE_MODE": true,
-	"UPDATE_MEDIA_RUNTIME": true,
+	"ON_KEY_DOWN": true, "ON_MEDIA_HIT": true, "ON_MEDIA_END": true,
 }
 
 func validateReaction(idx int, r map[string]any) string {
@@ -1103,7 +1129,18 @@ func validateReaction(idx int, r map[string]any) string {
 			return msg
 		}
 	}
-	if action, ok := r["action"].(map[string]any); ok {
+	// The current API uses an `actions` array (plural); `action` (singular) is the
+	// deprecated form. Validate whichever is present, mirroring the plugin's
+	// buildReaction (`actions ?? [action]`) so the real path is actually checked.
+	if actions, ok := r["actions"].([]any); ok {
+		for _, raw := range actions {
+			if action, ok := raw.(map[string]any); ok {
+				if msg := validateActionType(idx, action); msg != "" {
+					return msg
+				}
+			}
+		}
+	} else if action, ok := r["action"].(map[string]any); ok {
 		if msg := validateActionType(idx, action); msg != "" {
 			return msg
 		}
@@ -1124,19 +1161,36 @@ func validateTriggerType(idx int, trigger map[string]any) string {
 	return ""
 }
 
+// validateActionType checks the required field(s) of each well-known action type,
+// mirroring the plugin's normalizeAction. NODE requires destinationId (navigation is
+// optional — the plugin defaults it to NAVIGATE). BACK/CLOSE need no fields. Unknown
+// or future action types pass through: the plugin forwards them to setReactionsAsync
+// for forward-compatibility, so the pre-flight check stays lenient to match.
 func validateActionType(idx int, action map[string]any) string {
-	t, _ := action["type"].(string)
-	if t != "" && !validActionTypes[t] {
-		return fmt.Sprintf("reactions[%d].action.type is invalid: %s", idx, t)
-	}
-	switch t {
+	switch t, _ := action["type"].(string); t {
 	case "NODE":
-		if nav, _ := action["navigation"].(string); nav == "" {
-			return fmt.Sprintf("reactions[%d].action.navigation is required for NODE (e.g. NAVIGATE, OVERLAY, SCROLL_TO, SWAP, CHANGE_TO)", idx)
+		if action["destinationId"] == nil {
+			return fmt.Sprintf("reactions[%d] NODE action requires destinationId", idx)
 		}
 	case "URL":
 		if url, _ := action["url"].(string); url == "" {
-			return fmt.Sprintf("reactions[%d].action.url is required for URL", idx)
+			return fmt.Sprintf("reactions[%d] URL action requires url", idx)
+		}
+	case "SET_VARIABLE":
+		if action["variableId"] == nil {
+			return fmt.Sprintf("reactions[%d] SET_VARIABLE action requires variableId", idx)
+		}
+	case "SET_VARIABLE_MODE":
+		if action["variableCollectionId"] == nil || action["variableModeId"] == nil {
+			return fmt.Sprintf("reactions[%d] SET_VARIABLE_MODE action requires variableCollectionId and variableModeId", idx)
+		}
+	case "CONDITIONAL":
+		if _, ok := action["conditionalBlocks"].([]any); !ok {
+			return fmt.Sprintf("reactions[%d] CONDITIONAL action requires a conditionalBlocks array", idx)
+		}
+	case "UPDATE_MEDIA_RUNTIME":
+		if action["mediaAction"] == nil {
+			return fmt.Sprintf("reactions[%d] UPDATE_MEDIA_RUNTIME action requires mediaAction", idx)
 		}
 	}
 	return ""

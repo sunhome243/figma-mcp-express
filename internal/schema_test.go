@@ -1040,18 +1040,30 @@ func TestValidateRPC_SetReactions(t *testing.T) {
 	}); msg != "" {
 		t.Errorf("unexpected error for valid AFTER_TIMEOUT: %s", msg)
 	}
-	// invalid action type
+	// unknown action type passes (forward-compat — mirrors the plugin, which forwards
+	// unknown types to setReactionsAsync rather than rejecting them)
 	if msg := ValidateRPC("set_reactions", []string{"1:2"}, map[string]interface{}{
 		"reactions": []interface{}{
 			map[string]interface{}{
 				"trigger": map[string]interface{}{"type": "ON_CLICK"},
-				"action":  map[string]interface{}{"type": "INVALID_ACTION"},
+				"action":  map[string]interface{}{"type": "FUTURE_ACTION", "someField": "x"},
+			},
+		},
+	}); msg != "" {
+		t.Errorf("unexpected error for unknown (forward-compat) action type: %s", msg)
+	}
+	// NODE missing destinationId (navigation is optional — plugin defaults it)
+	if msg := ValidateRPC("set_reactions", []string{"1:2"}, map[string]interface{}{
+		"reactions": []interface{}{
+			map[string]interface{}{
+				"trigger": map[string]interface{}{"type": "ON_CLICK"},
+				"action":  map[string]interface{}{"type": "NODE", "navigation": "NAVIGATE"},
 			},
 		},
 	}); msg == "" {
-		t.Error("expected error for invalid action type")
+		t.Error("expected error for NODE without destinationId")
 	}
-	// NODE missing navigation field
+	// NODE with only destinationId is valid (navigation defaulted by the plugin)
 	if msg := ValidateRPC("set_reactions", []string{"1:2"}, map[string]interface{}{
 		"reactions": []interface{}{
 			map[string]interface{}{
@@ -1059,8 +1071,8 @@ func TestValidateRPC_SetReactions(t *testing.T) {
 				"action":  map[string]interface{}{"type": "NODE", "destinationId": "1:3"},
 			},
 		},
-	}); msg == "" {
-		t.Error("expected error for NODE without navigation")
+	}); msg != "" {
+		t.Errorf("unexpected error for minimal NODE action: %s", msg)
 	}
 	// URL missing url
 	if msg := ValidateRPC("set_reactions", []string{"1:2"}, map[string]interface{}{
@@ -1073,6 +1085,33 @@ func TestValidateRPC_SetReactions(t *testing.T) {
 	}); msg == "" {
 		t.Error("expected error for URL without url")
 	}
+	// plural `actions` array IS validated (the real API path) — SET_VARIABLE_MODE
+	// missing variableModeId must error
+	if msg := ValidateRPC("set_reactions", []string{"1:2"}, map[string]interface{}{
+		"reactions": []interface{}{
+			map[string]interface{}{
+				"trigger": map[string]interface{}{"type": "ON_CLICK"},
+				"actions": []interface{}{
+					map[string]interface{}{"type": "SET_VARIABLE_MODE", "variableCollectionId": "VC:1"},
+				},
+			},
+		},
+	}); msg == "" {
+		t.Error("expected error for SET_VARIABLE_MODE without variableModeId in plural actions array")
+	}
+	// valid plural actions array passes
+	if msg := ValidateRPC("set_reactions", []string{"1:2"}, map[string]interface{}{
+		"reactions": []interface{}{
+			map[string]interface{}{
+				"trigger": map[string]interface{}{"type": "ON_CLICK"},
+				"actions": []interface{}{
+					map[string]interface{}{"type": "NODE", "destinationId": "1:3", "navigation": "NAVIGATE"},
+				},
+			},
+		},
+	}); msg != "" {
+		t.Errorf("unexpected error for valid plural actions array: %s", msg)
+	}
 	// empty reactions array is valid (clear all)
 	if msg := ValidateRPC("set_reactions", []string{"1:2"}, map[string]interface{}{
 		"reactions": []interface{}{},
@@ -1084,6 +1123,66 @@ func TestValidateRPC_SetReactions(t *testing.T) {
 		"reactions": []interface{}{validReaction},
 	}); msg != "" {
 		t.Errorf("unexpected error for valid reaction: %s", msg)
+	}
+}
+
+// ── get_prototype ─────────────────────────────────────────────────────────────
+
+func TestValidateRPC_GetPrototype(t *testing.T) {
+	// Optional scope: no nodeIds reads the whole current page — valid.
+	if msg := ValidateRPC("get_prototype", nil, map[string]interface{}{}); msg != "" {
+		t.Errorf("unscoped get_prototype should be valid, got: %s", msg)
+	}
+	// Scoped to a valid node id — valid.
+	if msg := ValidateRPC("get_prototype", []string{"1:2"}, map[string]interface{}{}); msg != "" {
+		t.Errorf("scoped get_prototype should be valid, got: %s", msg)
+	}
+	// Bad node-id format — must error.
+	if msg := ValidateRPC("get_prototype", []string{"1-2"}, map[string]interface{}{}); msg == "" {
+		t.Error("expected error for bad nodeId format")
+	}
+}
+
+// ── set_prototype_start ───────────────────────────────────────────────────────
+
+func TestValidateRPC_SetPrototypeStart(t *testing.T) {
+	// missing nodeId in a non-clear mode
+	if msg := ValidateRPC("set_prototype_start", nil, map[string]interface{}{}); msg == "" {
+		t.Error("expected error for missing nodeId without clear mode")
+	}
+	// valid single starting point
+	if msg := ValidateRPC("set_prototype_start", []string{"1:2"}, map[string]interface{}{}); msg != "" {
+		t.Errorf("unexpected error for a valid starting point: %s", msg)
+	}
+	// bad nodeId format
+	if msg := ValidateRPC("set_prototype_start", []string{"1-2"}, map[string]interface{}{}); msg == "" {
+		t.Error("expected error for bad nodeId format")
+	}
+	// bad mode
+	if msg := ValidateRPC("set_prototype_start", []string{"1:2"}, map[string]interface{}{"mode": "overwrite"}); msg == "" {
+		t.Error("expected error for bad mode")
+	}
+	// remove mode is valid with a nodeId (targeted removal)
+	if msg := ValidateRPC("set_prototype_start", []string{"1:2"}, map[string]interface{}{"mode": "remove"}); msg != "" {
+		t.Errorf("remove mode with a nodeId should be valid, got: %s", msg)
+	}
+	// remove mode still requires a nodeId (only clear may omit it)
+	if msg := ValidateRPC("set_prototype_start", nil, map[string]interface{}{"mode": "remove"}); msg == "" {
+		t.Error("remove mode without a nodeId should error")
+	}
+	// clear mode is valid WITHOUT any nodeId (the only way to remove all start points)
+	if msg := ValidateRPC("set_prototype_start", nil, map[string]interface{}{"mode": "clear"}); msg != "" {
+		t.Errorf("clear mode must not require a nodeId, got: %s", msg)
+	}
+	// clear mode still accepts a nodeId (to target a specific page)
+	if msg := ValidateRPC("set_prototype_start", []string{"1:2"}, map[string]interface{}{"mode": "clear"}); msg != "" {
+		t.Errorf("clear mode with a nodeId should be valid, got: %s", msg)
+	}
+	// names entries must be strings
+	if msg := ValidateRPC("set_prototype_start", []string{"1:2"}, map[string]interface{}{
+		"names": []any{42},
+	}); msg == "" {
+		t.Error("expected error for non-string names entry")
 	}
 }
 

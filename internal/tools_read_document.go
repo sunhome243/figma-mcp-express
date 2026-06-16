@@ -113,8 +113,9 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		if d, ok := req.GetArguments()["depth"].(float64); ok && d > 0 {
 			params["depth"] = d
 		}
-		if det, ok := req.GetArguments()["detail"].(string); ok && det != "" {
-			params["detail"] = det
+		detail, _ := req.GetArguments()["detail"].(string)
+		if detail != "" {
+			params["detail"] = detail
 		}
 		if dd, ok := req.GetArguments()["dedupe_components"].(bool); ok && dd {
 			params["dedupeComponents"] = true
@@ -124,6 +125,21 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 			params["codeConnectMap"] = cc
 		}
 		resp, err := node.Send(ctx, "get_design_context", nil, withChannel(req, params))
+		// Attach a just-in-time hint on successful reads at detail levels that omit
+		// typography, color, and autoLayout — nudging toward detail:full or detail:codegen
+		// without requiring the user to know about the dormant prompt.
+		if err == nil && resp.Error == "" {
+			if hint := hintForDesignContextDetail(detail); hint != "" {
+				if data, ok := resp.Data.(map[string]interface{}); ok {
+					m2 := make(map[string]interface{}, len(data)+1)
+					for k, v := range data {
+						m2[k] = v
+					}
+					m2["hint"] = hint
+					resp.Data = m2
+				}
+			}
+		}
 		return renderResponse(resp, err)
 	})
 
@@ -223,6 +239,27 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nodeID, _ := req.GetArguments()["nodeId"].(string)
 		resp, err := node.Send(ctx, "get_reactions", []string{nodeID}, withChannel(req, nil))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("get_prototype",
+		mcp.WithDescription(`Read the prototype FLOW GRAPH for a whole page (or a scoped subtree). Unlike get_reactions (one node's raw reactions), this walks every reaction-bearing node — buttons and instances included, not just top-level frames — and returns the connections between them.
+
+Returns: { pageId, pageName, flowStartingPoints:[{nodeId,name}], prototypeStartNodeId, reactionNodeCount, edgeCount, edges:[...], overlays:[...] }.
+  edges[]: { sourceId, sourceName, sourceType, trigger, actionType, navigation?, destinationId?, destinationName?, transition?, url? } — one entry per (source node, reaction, action).
+  overlays[]: read-only overlay config of OVERLAY destinations { nodeId, name, overlayPositionType, overlayBackground, overlayBackgroundInteraction }. These cannot be set via the plugin API — use them to detect a dropdown/sheet still at the default CENTER position.
+
+Pass nodeId(s) to scope to subtrees on one page; omit to read the current page. Use this to audit a prototype (dead-ends, unwired buttons, missing back, overlay placement) before or after wiring with set_reactions / set_prototype_start.`),
+		mcp.WithString("nodeId",
+			mcp.Description("Optional. Scope the read to this node's subtree. Omit to read the whole current page. Colon format e.g. '4029:12345'."),
+		),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var nodeIDs []string
+		if nodeID, ok := req.GetArguments()["nodeId"].(string); ok && nodeID != "" {
+			nodeIDs = []string{NormalizeNodeID(nodeID)}
+		}
+		resp, err := node.Send(ctx, "get_prototype", nodeIDs, withChannel(req, nil))
 		return renderResponse(resp, err)
 	})
 

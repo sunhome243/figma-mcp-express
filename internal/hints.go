@@ -1,6 +1,13 @@
 package internal
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+// unknownBatchOpRe extracts the op name from an "unknown op type \"X\"" error
+// (emitted both by batch validation and ValidateRPC, both via %q).
+var unknownBatchOpRe = regexp.MustCompile(`unknown op type "([^"]+)"`)
 
 // hintFor returns an actionable, self-correction hint to append to a failed
 // request's error, or "" when no hint applies. requestType is the plugin op
@@ -10,6 +17,20 @@ import "strings"
 // "use REST instead", "the id is stale" — turning a dead-end error into a
 // next step.
 func hintFor(requestType, errText string) string {
+	// A "unknown op type X" for an op THIS binary's catalog knows means the request
+	// was forwarded to a leader running a DIFFERENT figma-mcp-express version (the
+	// follower→leader RPC path executes at the leader, which validates against its
+	// own, older catalog). The raw error tells the LLM to "call get_batch_op_spec" —
+	// misleading, since the op is perfectly valid here. Name the real cause.
+	if m := unknownBatchOpRe.FindStringSubmatch(errText); m != nil {
+		if _, known := batchOpCatalog[m[1]]; known {
+			return "op \"" + m[1] + "\" exists in THIS binary but the process holding port 1994 " +
+				"(the leader that executes ops) rejected it as unknown — the leader is a different, " +
+				"likely older figma-mcp-express version. Restart so the current binary leads, or align " +
+				"all running instances to one version (compare `figma-mcp-express --version`)."
+		}
+	}
+
 	e := strings.ToLower(errText)
 
 	timedOut := strings.Contains(e, "timed out") || strings.Contains(e, "timeout") ||
@@ -62,4 +83,17 @@ func isCatalogRead(requestType string) bool {
 		return true
 	}
 	return false
+}
+
+// hintForDesignContextDetail returns a just-in-time guidance hint for a
+// successful get_design_context response when the requested detail level omits
+// typography, color, and autoLayout data. Returns "" when no hint is needed
+// (full, codegen, or unspecified detail levels already include that data).
+func hintForDesignContextDetail(detail string) string {
+	switch detail {
+	case "minimal", "compact":
+		return "typography/color/autoLayout omitted at this detail — " +
+			"for code/style fidelity use detail:full or detail:codegen."
+	}
+	return ""
 }

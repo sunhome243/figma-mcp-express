@@ -45,6 +45,51 @@ Do not mirror operation schemas in this file. `BatchOpCatalog` is the source of 
 
 Screenshots are not mutation proof. They are the final visual review.
 
+## Detail Levels — Token Cost Guide
+
+| `detail` | Includes | Approx tokens vs `full` |
+|---|---|---|
+| `minimal` | id / name / type / bounds | ~5 % |
+| `compact` | + fills / strokes / opacity | ~30 % |
+| `full` | everything (characters, typography, cornerRadius, padding, visible) | 100 % |
+| `codegen` | full + autoLayout + resolved token names + INSTANCE componentRef / Code-Connect | 100 %+ |
+
+Start at `minimal` for orientation; escalate to `codegen` only when generating code or conducting a fidelity audit that requires token names.
+
+**Deduplicate repeated instances** — for screens with many identical component instances (card lists, table rows, nav items), pass `dedupe_components:true`. INSTANCE nodes collapse to compact stubs (mainComponentId + componentProperties overrides); unique structures land once in a top-level `componentDefs` map. Typical savings: 5–10×. Flow: `get_design_context detail:"minimal" dedupe_components:true` → inspect `componentDefs` → read `componentProperties` on each stub → `get_node` only for instances with unique overrides.
+
+## Style Audit Flow
+
+Find nodes using raw (unlinked) values instead of design-system styles:
+
+1. `get_styles()` + `get_variable_defs()` — collect all named paint, text, and effect styles and COLOR variables.
+2. `get_design_context detail:"compact"` — scan fills/strokes/textStyle fields across the node tree.
+3. Flag nodes with raw fill colors or raw fontFamily/fontSize **without** a named style reference; skip nodes already linked to a named style.
+4. Match each raw hex to an existing paint style. Match → compose `apply_style_to_node` batch ops. No match → flag as a design-system gap.
+5. `batch(validateOnly:true)` before any fix; group nodes by `styleId/target` to minimize round-trips.
+
+**Rules:** never change visual appearance — only link to a style that already matches. Skip INSTANCE nodes with intentional overrides. Process in chunks of ≤ 20 nodes on large trees.
+
+## Subscribed Libraries (empty `get_variable_defs` ≠ no design system)
+
+`get_variable_defs` returns only a file's **local** variables — it comes back empty in a file that *subscribes* to an external library, even though that library's tokens are fully available. Before concluding a file has no design system:
+
+1. `list_library_variable_collections` — subscribed collections + their keys.
+2. `get_library_variables` per collection key — the variable keys.
+3. `import_variable_by_key` / `import_component_by_key` — bring tokens and components into the file to bind them.
+
+Treat an empty `get_variable_defs` as "no *local* tokens," not "no tokens."
+
+## Design Structure Notes
+
+When creating a new screen or section, orient first: `get_metadata()` → `get_pages()` → plan the layout hierarchy before creating elements.
+
+**Naming conventions:** screens in PascalCase ("LoginScreen"); sections as "Section/Name"; component instances match the mainComponent name; containers as "ComponentName/Container"; interactive elements as "ComponentName/ActionName"; text nodes as "Label" / "Title" / "Body" / "Caption"; icons as "Icon/Name". Avoid Figma auto-generated names ("Frame 123", "Group 6").
+
+**Hierarchy:** create parent frames first, then child elements in reading order (top → bottom). Group inputs together, place action buttons after inputs, secondary elements last. Verify each create with `get_node()`; all writes are undoable via Ctrl/Cmd+Z.
+
+**Element creation:** use `batch op set_fills for backgrounds` (inspect `get_batch_op_spec` and prefer `variableId` for token-bound fills); `set_strokes` for borders; `set_text` / `create_text` for labels and button copy. Do not use `fillColor` as the fill mutator — that is a discrete-tool param used only on `create_text`, not a general background fill op.
+
 ## Common Errors
 
 | Symptom | Fix |

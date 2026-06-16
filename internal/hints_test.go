@@ -50,11 +50,49 @@ func TestHintFor_StaleId(t *testing.T) {
 	}
 }
 
+func TestHintFor_VersionMismatchForKnownOp(t *testing.T) {
+	// An op the local catalog knows, rejected as unknown by a forwarded-to leader,
+	// means a version mismatch — the hint must name that, not echo "get_batch_op_spec".
+	err := `ops[0]: unknown op type "get_prototype"; call search_batch_ops/get_batch_op_spec first`
+	h := hintFor("batch", err)
+	if !strings.Contains(h, "version") || !strings.Contains(h, "1994") {
+		t.Errorf("known-op unknown-type hint should flag a leader version mismatch: %q", h)
+	}
+}
+
+func TestHintFor_NoVersionHintForTrulyUnknownOp(t *testing.T) {
+	// A genuinely unknown op (typo) is NOT in the catalog → no version hint.
+	err := `ops[0]: unknown op type "frobnicate_node"; call search_batch_ops/get_batch_op_spec first`
+	if h := hintFor("batch", err); strings.Contains(h, "version") {
+		t.Errorf("a truly unknown op must not get a version-mismatch hint, got %q", h)
+	}
+}
+
 func TestHintFor_NoHintForOrdinary(t *testing.T) {
 	if h := hintFor("set_fills", ""); h != "" {
 		t.Errorf("no error text should yield no hint, got %q", h)
 	}
 	if h := hintFor("create_frame", "some unrecognised failure"); h != "" {
 		t.Errorf("unmatched error should yield no hint, got %q", h)
+	}
+}
+
+func TestHintForDesignContextDetail_MinimalAndCompact(t *testing.T) {
+	for _, detail := range []string{"minimal", "compact"} {
+		h := hintForDesignContextDetail(detail)
+		if !strings.Contains(h, "typography") {
+			t.Errorf("detail %q hint should mention typography, got %q", detail, h)
+		}
+		if !strings.Contains(h, "codegen") {
+			t.Errorf("detail %q hint should mention codegen, got %q", detail, h)
+		}
+	}
+}
+
+func TestHintForDesignContextDetail_NoHintForFullOrCodegen(t *testing.T) {
+	for _, detail := range []string{"full", "codegen", ""} {
+		if h := hintForDesignContextDetail(detail); h != "" {
+			t.Errorf("detail %q should yield no hint, got %q", detail, h)
+		}
 	}
 }

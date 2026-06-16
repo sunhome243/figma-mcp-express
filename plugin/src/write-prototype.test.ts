@@ -274,6 +274,262 @@ describe("set_reactions input validation", () => {
   });
 });
 
+// ── set_reactions — extended action types (Plugin API gap coverage) ───────────
+
+describe("set_reactions — extended action types", () => {
+  let captured: any[] = [];
+
+  beforeEach(() => {
+    captured = [];
+    let stored: any[] = [];
+    mockNodes["1:2"] = {
+      id: "1:2", name: "Button", reactions: stored,
+      setReactionsAsync: async (r: any[]) => { captured = r; stored = r; mockNodes["1:2"].reactions = r; },
+    };
+  });
+
+  it("accepts SET_VARIABLE_MODE with collection + mode (dark-mode toggle)", async () => {
+    const res = await handleWritePrototypeRequest(
+      makeRequest("set_reactions", ["1:2"], {
+        reactions: [{
+          trigger: { type: "ON_CLICK" },
+          actions: [{ type: "SET_VARIABLE_MODE", variableCollectionId: "VC:1", variableModeId: "M:dark" }],
+        }],
+      })
+    );
+    expect(res?.data.reactionCount).toBe(1);
+    expect(captured[0].actions[0].type).toBe("SET_VARIABLE_MODE");
+  });
+
+  it("throws when SET_VARIABLE_MODE is missing variableModeId", async () => {
+    await expect(
+      handleWritePrototypeRequest(
+        makeRequest("set_reactions", ["1:2"], {
+          reactions: [{
+            trigger: { type: "ON_CLICK" },
+            actions: [{ type: "SET_VARIABLE_MODE", variableCollectionId: "VC:1" }],
+          }],
+        })
+      )
+    ).rejects.toThrow(/variableModeId/i);
+  });
+
+  it("throws when SET_VARIABLE is missing variableId", async () => {
+    await expect(
+      handleWritePrototypeRequest(
+        makeRequest("set_reactions", ["1:2"], {
+          reactions: [{ trigger: { type: "ON_CLICK" }, actions: [{ type: "SET_VARIABLE" }] }],
+        })
+      )
+    ).rejects.toThrow(/variableId/i);
+  });
+
+  it("throws when CONDITIONAL is missing conditionalBlocks array", async () => {
+    await expect(
+      handleWritePrototypeRequest(
+        makeRequest("set_reactions", ["1:2"], {
+          reactions: [{ trigger: { type: "ON_CLICK" }, actions: [{ type: "CONDITIONAL" }] }],
+        })
+      )
+    ).rejects.toThrow(/conditionalBlocks/i);
+  });
+
+  it("preserves OVERLAY navigation extra fields (overlayRelativePosition, resetScrollPosition)", async () => {
+    await handleWritePrototypeRequest(
+      makeRequest("set_reactions", ["1:2"], {
+        reactions: [{
+          trigger: { type: "ON_CLICK" },
+          actions: [{
+            type: "NODE", destinationId: "9:9", navigation: "OVERLAY",
+            overlayRelativePosition: { x: 10, y: 20 }, resetScrollPosition: true,
+          }],
+        }],
+      })
+    );
+    const action = captured[0].actions[0];
+    expect(action.navigation).toBe("OVERLAY");
+    expect(action.overlayRelativePosition).toEqual({ x: 10, y: 20 });
+    expect(action.resetScrollPosition).toBe(true);
+  });
+
+  it("preserves URL openInNewTab and ON_KEY_DOWN trigger pass-through", async () => {
+    await handleWritePrototypeRequest(
+      makeRequest("set_reactions", ["1:2"], {
+        reactions: [{
+          trigger: { type: "ON_KEY_DOWN", device: "KEYBOARD", keyCodes: [13] },
+          actions: [{ type: "URL", url: "https://example.com", openInNewTab: true }],
+        }],
+      })
+    );
+    expect(captured[0].trigger.type).toBe("ON_KEY_DOWN");
+    expect(captured[0].actions[0].openInNewTab).toBe(true);
+  });
+});
+
+// ── set_prototype_start ───────────────────────────────────────────────────────
+
+describe("set_prototype_start", () => {
+  let page: any;
+
+  beforeEach(() => {
+    page = {
+      id: "0:1", name: "Page 1", type: "PAGE", parent: null, flowStartingPoints: [],
+    };
+    const frameA = { id: "1:2", name: "Login", type: "FRAME", parent: page };
+    const frameB = { id: "1:3", name: "Home", type: "FRAME", parent: page };
+    mockNodes = { "0:1": page, "1:2": frameA, "1:3": frameB };
+    (globalThis as any).figma = {
+      getNodeByIdAsync: async (id: string) => mockNodes[id] ?? null,
+      commitUndo: () => { commitUndoCalled = true; },
+    };
+  });
+
+  it("sets a single flow starting point with explicit name", async () => {
+    const res = await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", ["1:2"], { names: ["Onboarding"] })
+    );
+    expect(page.flowStartingPoints).toEqual([{ nodeId: "1:2", name: "Onboarding" }]);
+    expect(res?.data.pageId).toBe("0:1");
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("defaults the flow name to the frame name when names omitted", async () => {
+    await handleWritePrototypeRequest(makeRequest("set_prototype_start", ["1:2"], {}));
+    expect(page.flowStartingPoints).toEqual([{ nodeId: "1:2", name: "Login" }]);
+  });
+
+  it("replaces existing starting points by default", async () => {
+    page.flowStartingPoints = [{ nodeId: "9:9", name: "Old" }];
+    await handleWritePrototypeRequest(makeRequest("set_prototype_start", ["1:2"], {}));
+    expect(page.flowStartingPoints).toEqual([{ nodeId: "1:2", name: "Login" }]);
+  });
+
+  it("append mode adds without duplicating existing nodeIds", async () => {
+    page.flowStartingPoints = [{ nodeId: "1:2", name: "Login" }];
+    await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", ["1:2", "1:3"], { mode: "append" })
+    );
+    expect(page.flowStartingPoints).toEqual([
+      { nodeId: "1:2", name: "Login" },
+      { nodeId: "1:3", name: "Home" },
+    ]);
+  });
+
+  it("remove mode drops only the given start point and keeps the rest", async () => {
+    page.flowStartingPoints = [
+      { nodeId: "1:2", name: "Login" },
+      { nodeId: "1:3", name: "Home" },
+    ];
+    const res = await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", ["1:2"], { mode: "remove" })
+    );
+    expect(page.flowStartingPoints).toEqual([{ nodeId: "1:3", name: "Home" }]);
+    expect(res?.data.flowStartingPoints).toEqual([{ nodeId: "1:3", name: "Home" }]);
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("remove mode drops several start points at once", async () => {
+    page.flowStartingPoints = [
+      { nodeId: "1:2", name: "Login" },
+      { nodeId: "1:3", name: "Home" },
+      { nodeId: "9:9", name: "Other" },
+    ];
+    await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", ["1:2", "1:3"], { mode: "remove" })
+    );
+    expect(page.flowStartingPoints).toEqual([{ nodeId: "9:9", name: "Other" }]);
+  });
+
+  it("remove mode can empty the list by removing the last start point", async () => {
+    page.flowStartingPoints = [{ nodeId: "1:2", name: "Login" }];
+    await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", ["1:2"], { mode: "remove" })
+    );
+    expect(page.flowStartingPoints).toEqual([]);
+  });
+
+  it("remove mode is a no-op when the nodeId is not a current start point", async () => {
+    page.flowStartingPoints = [{ nodeId: "1:3", name: "Home" }];
+    await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", ["1:2"], { mode: "remove" })
+    );
+    expect(page.flowStartingPoints).toEqual([{ nodeId: "1:3", name: "Home" }]);
+  });
+
+  it("remove mode tolerates a deleted frame (removes its dangling start point)", async () => {
+    // "7:7" is NOT in mockNodes — the frame was deleted, but its start point lingers.
+    // The strict replace/append path would throw "Node not found"; remove must clean it.
+    page.flowStartingPoints = [
+      { nodeId: "7:7", name: "Dangling" },
+      { nodeId: "1:3", name: "Home" },
+    ];
+    (globalThis as any).figma.currentPage = page;
+    await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", ["7:7"], { mode: "remove" })
+    );
+    expect(page.flowStartingPoints).toEqual([{ nodeId: "1:3", name: "Home" }]);
+  });
+
+  it("clear mode empties the current page's starting points with no nodeId", async () => {
+    page.flowStartingPoints = [{ nodeId: "1:2", name: "Login" }];
+    (globalThis as any).figma.currentPage = page;
+    const res = await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", [], { mode: "clear" })
+    );
+    expect(page.flowStartingPoints).toEqual([]);
+    expect(res?.data.flowStartingPoints).toEqual([]);
+    expect(res?.data.pageId).toBe("0:1");
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("clear mode resolves the page from the first nodeId when given", async () => {
+    page.flowStartingPoints = [{ nodeId: "1:2", name: "Login" }];
+    (globalThis as any).figma.currentPage = { id: "9:9", name: "Wrong", flowStartingPoints: [] };
+    await handleWritePrototypeRequest(
+      makeRequest("set_prototype_start", ["1:3"], { mode: "clear" })
+    );
+    expect(page.flowStartingPoints).toEqual([]);
+  });
+
+  it("clear mode throws when nodeIds span different pages (no silent single-page clear)", async () => {
+    page.flowStartingPoints = [{ nodeId: "1:2", name: "Login" }];
+    const otherPage = { id: "0:2", name: "Page 2", type: "PAGE", parent: null, flowStartingPoints: [] };
+    mockNodes["2:2"] = { id: "2:2", name: "Settings", type: "FRAME", parent: otherPage };
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_prototype_start", ["1:2", "2:2"], { mode: "clear" }))
+    ).rejects.toThrow(/same page/i);
+    // The ambiguity error must fire BEFORE any page is cleared.
+    expect(page.flowStartingPoints).toEqual([{ nodeId: "1:2", name: "Login" }]);
+  });
+
+  it("throws when a node is on a different page", async () => {
+    const otherPage = { id: "0:2", name: "Page 2", type: "PAGE", parent: null };
+    mockNodes["2:2"] = { id: "2:2", name: "Settings", type: "FRAME", parent: otherPage };
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_prototype_start", ["1:2", "2:2"], {}))
+    ).rejects.toThrow(/same page/i);
+  });
+
+  it("throws when no nodeId is provided (non-clear mode)", async () => {
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_prototype_start", [], {}))
+    ).rejects.toThrow(/nodeId/i);
+  });
+
+  it("throws when node not found", async () => {
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_prototype_start", ["7:7"], {}))
+    ).rejects.toThrow(/not found/i);
+  });
+
+  it("throws when a node has no owning page (detached)", async () => {
+    mockNodes["3:3"] = { id: "3:3", name: "Detached", type: "FRAME", parent: null };
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_prototype_start", ["3:3"], {}))
+    ).rejects.toThrow(/not on a page/i);
+  });
+});
+
 // ── unknown type ──────────────────────────────────────────────────────────────
 
 describe("unknown type", () => {

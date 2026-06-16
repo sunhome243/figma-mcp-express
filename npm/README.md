@@ -109,6 +109,7 @@ Open the product file and the source library at the same time. Compare their com
 | Access    | Direct Figma editing           | The agent works on the open Figma file itself, not a disconnected copy or a limited export.                              |
 | Access    | Uses your real design system   | It can work with your actual components, variables, and styles instead of rebuilding everything from raw shapes.         |
 | Access    | Can inspect shared libraries   | It can still look up published library assets when the plugin cannot run inside that file.                               |
+| Access    | Wire interactive prototypes    | The agent can read, audit, and wire prototype flows — clicks, navigation, overlays, transitions, and flow starting points — directly on the open file. |
 | Stability | Multiple files stay separate   | Working on one file does not knock another file offline or mix their state together.                                     |
 | Stability | Safe under parallel agent work | Multiple agents can share the same session without stepping on each other as easily.                                     |
 | Stability | Better recovery from drops     | If the connection breaks or the MCP client restarts, the system is designed to recover without forcing a full restart.   |
