@@ -101,3 +101,6 @@ When creating a new screen or section, orient first: `get_metadata()` → `get_p
 | Node id not found | Convert hyphen ids to colon ids when needed |
 | Text op rejects params | Use server param names from `get_batch_op_spec`; `text`, not stale Plugin API aliases |
 | FILL sizing did not apply | Place the node under its parent before setting FILL sizing in the batch sequence |
+| `find_replace_text` mutated wrong nodes | **BUG #33** — scope is ignored; use `scan_text_nodes` + `set_text` per node instead |
+| `get_design_context` returns wrong node | **BUG #34** — nodeId param ignored; use `get_node(nodeId)` directly |
+| `get_batch_op_spec` returns empty | **BUG #36** — use `search_batch_ops` + `batch(validateOnly:true)` to discover params |

@@ -34,6 +34,16 @@ Load this before composing any `batch` call. Part 1 = ready-to-use recipes (incl
 
 ### Recipe 1: Create frame → bind token fills → set auto layout → verify
 
+> ⚠️ **`layoutSizingHorizontal/Vertical: "FILL"` must be set AFTER the node has a parent.**
+> If you create a frame and set FILL sizing in the same batch before `appendChild`, the sizing is
+> silently accepted and silently ignored — the node renders at content size. Always append first,
+> then set sizing. The `$N.id` ref chain in a single batch guarantees correct ordering.
+>
+> ⚠️ **Auto-layout children: `move_nodes` is silently ignored.** If a frame has `layoutMode` set,
+> its children's positions are owned by the parent. To apply safe area or reposition content in a
+> mobile screen frame, adjust the **parent's padding** instead:
+> `set_auto_layout(screenFrameId, paddingTop: 59, paddingBottom: 34)`.
+
 ```json
 {
   "ops": [
@@ -252,6 +262,10 @@ Scope first, then scan and rename flagged nodes. Show a preview table before app
 ---
 
 ### Recipe 8: Chunked text replacement with visual verification
+
+> ⚠️ **Do NOT use `find_replace_text` — it has a known scope bug (#33) that traverses the entire
+> page and all component masters, corrupting unintended instances.** Use `scan_text_nodes` + per-node
+> `set_text` as shown below.
 
 Replace copy across a large design by processing logical chunks with screenshot verification between each chunk.
 

@@ -1,63 +1,46 @@
 # gotchas.md — figma-mcp-express failure modes
 
-Deep reference. Load when SKILL.md's error table doesn't cover the symptom.
-Each entry: **symptom → cause → fix** (prevention folded into the fix).
+Remaining failure modes not covered by the structured references.
+For permanent Figma Plugin API constraints (instance children, clone IDs, auto-layout children, etc.)
+→ read `platform-constraints.md`.
+For server bugs with workarounds (find_replace_text scope, get_design_context nodeId, etc.)
+→ read `mcp-known-bugs.md`.
 
 ---
 
 ## Write tool "not found" / "unknown tool" as a top-level call
 
-**Symptom:** Calling `create_frame`, `set_fills`, `set_auto_layout`, `import_component_by_key`, `create_instance`, etc. as a top-level MCP tool returns "method/tool not found".
-**Cause:** The default `core` profile does NOT expose low-level write primitives as top-level tools — they are `batch` op TYPES. (Pre-2.0.0 habit / training-data assumes they're top-level.)
-**Fix:** Invoke them inside `batch(ops:[{ "type": "create_frame", "params": {…} }])`. Discover the exact op + params via `search_batch_ops` → `get_batch_op_spec`, validate with `batch(validateOnly:true)`. Only if a legacy client genuinely needs the old top-level surface, set `FIGMA_MCP_TOOL_PROFILE=full`.
-
-## "There's no op for X" / "this param doesn't work" — discover BEFORE concluding
-
-**Symptom:** an agent declares an op missing (e.g. "no `clone_node` batch op exists") or a param broken, then invents a workaround or reports a blocker — without ever querying the catalog.
-**Cause:** guessing the op surface from memory/training data instead of asking the server. The catalog is large and exact; assumptions are stale. This is the single most common wasted-loop.
-**Fix:** the op almost certainly **exists** — `search_batch_ops("<intent words>")` → `get_batch_op_spec(op:"<name>")` FIRST, every time, before concluding anything is absent. Confirmed-present ops people wrongly assume are missing: **`clone_node`** (clone an existing node, optional `x`/`y`/`parentId` reposition — the clone-and-adapt path), **`reparent_nodes`**, and nearly every write primitive. Two recurring shape mistakes the spec settles instantly: (1) the **node target goes in the op-level `nodeIds` array**, not `params.nodeId` (singular `params.nodeId` is only a read/scan subtree root); (2) `get_batch_op_spec` takes `op:"<name>"`, not a `nodeId`. If a call errors, read the spec + the error's suggested param name and resend — do not theorize about JSON marshalling or build a substitute.
-
-## Slow import delays the queue (bounded, self-clears — not a jam)
-
-**Symptom:** a call sits "in progress" a long time while `save_screenshots` / `list_channels` still respond.
-**Cause:** malformed/truncated/node-id keys now fail fast in the Go server, but valid-looking unpublished, wrong-library, or permission-blocked keys can still reach the Plugin API and wait for its import timeout; calls queued behind it wait, then the queue drains on its own. NOT a permanent jam — the queue + timeout clear it.
-**Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; pass `assetType:"COMPONENT_SET"` for set keys or fetch the catalog first so the server injects the component-set route hint. Don't loop-retry — each try queues another timeout window. Calls behind it complete once it clears — no reopen needed unless the WebSocket actually dropped.
-
-## save_screenshots can silently return `{succeeded:0,total:0}` — retry once, then fall back to get_screenshot
-> ⏳ TRACKED: figma-mcp-express#28 — when the server surfaces a per-item error reason, simplify this.
-`save_screenshots` occasionally returns `{succeeded:0,total:0}` with no error and no indication of which node failed (a transient write/contention issue, not a bad request). Do NOT treat `succeeded:0` as a hard failure and do NOT abandon the self-eval. Recover deterministically: **retry the same `save_screenshots` once** after the prior call settles; if it's still `0`, **fall back to `get_screenshot`** (the in-memory base64 export — it's the documented alternative and doesn't touch the filesystem). The visual you need for self-eval/review is still obtainable. Only escalate if BOTH the retry and the `get_screenshot` fallback return nothing — that indicates a real node/selection problem, not the transient zero.
+**Symptom:** Calling `create_frame`, `set_fills`, `import_component_by_key`, etc. as a top-level MCP tool returns "method/tool not found".
+**Cause:** The default `core` profile does NOT expose low-level write primitives as top-level tools — they are `batch` op TYPES.
+**Fix:** Invoke them inside `batch(ops:[{ "type": "create_frame", "params": {…} }])`. Discover via `search_batch_ops` → `get_batch_op_spec`, validate with `batch(validateOnly:true)`. Only if a legacy client genuinely needs the old surface, set `FIGMA_MCP_TOOL_PROFILE=full`.
 
 ---
 
-## COMPONENT_SET vs COMPONENT key
+## "There's no op for X" — discover BEFORE concluding
 
-**Symptom:** `import_component_by_key` returns "not found" for a seemingly-correct key.
-**Cause:** The key may be a COMPONENT_SET without a type hint, or the library may be unpublished/not available to the target file.
-**Fix:** `get_local_components(pageId)` or `fetch_library_catalog` → confirm the entry type. For sets, pass `assetType:"COMPONENT_SET"` or use a child variant's `key`; cached REST catalog results let the server inject the component-set route hint automatically.
+**Symptom:** An agent declares an op missing or a param broken without querying the catalog, then invents a workaround.
+**Cause:** Guessing the op surface from memory instead of asking the server. This is the single most common wasted-loop.
+**Fix:** `search_batch_ops("<intent words>")` → `get_batch_op_spec(op:"<name>")` FIRST, every time, before concluding anything is absent. Confirmed-present ops people wrongly assume are missing: **`clone_node`**, **`reparent_nodes`**, and nearly every write primitive.
 
----
+Two recurring shape mistakes: (1) the **node target goes in the op-level `nodeIds` array**, not `params.nodeId` (singular `params.nodeId` is only a read/scan subtree root); (2) `get_batch_op_spec` takes `op:"<name>"`, not a `nodeId`.
 
-## FILL sizing silently ignored
-
-**Symptom:** `layoutSizingHorizontal:"FILL"` set, node still renders at content size, no error.
-**Cause:** FILL only applies once the node is a child of an auto-layout parent; on a parentless node it's accepted and ignored.
-**Fix:** append to the auto-layout parent FIRST, then set sizing — use `batch` with `$N.id` refs so order is guaranteed. Existing already-parented node: batch op `resize_nodes` with `layoutSizingHorizontal:"FILL"`.
+Note: `get_batch_op_spec` may return 0 results for some valid ops (known bug #36) — fall back to `search_batch_ops` + `batch(validateOnly:true)` with a best-guess payload.
 
 ---
 
 ## Node IDs and placement coordinates — live-resolve, never trust cached values
 
-**Symptom:** "node not found", silent off-canvas placement, or a write that hits the wrong node — even when the ID "looks right" from a brief, summary, or memory.
+**Symptom:** "node not found", silent off-canvas placement, or a write hitting the wrong node — even when the ID "looks right" from a brief, summary, or memory.
 
 **Three compounding causes — all fixed by the same discipline:**
 
-1. **Stale IDs and coords from briefs/summaries.** A session summary may record a frame at x≈22000 when it actually lives at x≈1814. Any brief using a remembered coordinate targets empty space. **Never trust a node id or x/y from a brief/summary/memory — `search_nodes` on the live channel and read real `absoluteBoundingBox` from `get_node` before touching anything.** A brief's ids are hints to verify, not ground truth.
+1. **Stale IDs and coords from briefs/summaries.** A session summary may record a frame at x≈22000 when it actually lives at x≈1814. **Never trust a node id or x/y from a brief/summary/memory — `search_nodes` on the live channel and read real `absoluteBoundingBox` from `get_node` before touching anything.**
 
-2. **`move_nodes`/placement is parent-relative, NOT absolute canvas coords.** Child x/y are relative to the parent frame's top-left — not the canvas. Feeding a large "absolute" value (e.g. 22000) flings a child thousands of px off-canvas when the parent is at x=1814. To place a new sibling screen: live-read an existing sibling's `absoluteBoundingBox.x` via `get_node`, then offset (`signup.x = login.realX + frameWidth + gap`). Never hardcode an absolute coordinate from memory.
+2. **`move_nodes`/placement is parent-relative, NOT absolute canvas coords.** Child x/y are relative to the parent frame's top-left. Feeding a large "absolute" value flings a child off-canvas. To place a new sibling screen: live-read an existing sibling's `absoluteBoundingBox.x` via `get_node`, then offset.
 
-3. **Duplicate same-named frames.** After a fresh rebuild, the old frame stays — creating two frames at the same coords with identical names. Subsequent `search_nodes` or screenshots become ambiguous. **After any rebuild: `delete_nodes` the superseded frame, then `search_nodes` to confirm exactly ONE frame with that name remains.**
+3. **Duplicate same-named frames.** After a fresh rebuild, the old frame stays — creating two frames at the same coords. **After any rebuild: `delete_nodes` the superseded frame, then `search_nodes` to confirm exactly ONE frame with that name remains.**
 
-**Fix:** Before any edit or placement: `search_nodes` by name → `get_node` on the live id → read real `absoluteBoundingBox` → use those values. A cache miss or summary gap ≠ "not there"; a live read is ground truth. (See also: **clone_node** in the "There's no op for X" entry — it IS a real op; past failures were stale-ID briefs, not a missing op.)
+**Fix:** Before any edit or placement: `search_nodes` by name → `get_node` on the live id → read real `absoluteBoundingBox` → use those values.
 
 ---
 
@@ -72,24 +55,8 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 ## Spilled response — query the right sidecar
 
 **Symptom:** `jq` on a spilled `.json` returns empty though the data's there.
-**Cause:** `.json` = nested payload; `.ndjson` = flat one-record-per-line. Nested paths on NDJSON (or flat grep on JSON) match nothing.
-**Fix:** field lookup → grep `.ndjson` (`grep '"type":"INSTANCE"' …ndjson | jq -c '{id,name}'`); subtree → `jq` the `.json` (`jq '.children[]|select(.id=="2:34")'`).
-
----
-
-## Multi-file: wrong file modified
-
-**Symptom:** a write hits the wrong Figma file.
-**Cause:** no `channel:` param → the server defaults to the first connected channel.
-**Fix:** `list_channels` → map id↔file → pass `channel:"…"` on every call. With >1 file open, do this at session start before any read/write.
-
----
-
-## Dark mode not cascading
-
-**Symptom:** `set_variable_mode` applied but children still show light fills.
-**Cause:** mode cascades DOWN from the node it's set on; it was set on a child, not the wrapper.
-**Fix:** set `set_variable_mode` once on the outermost wrapper frame; tokens cascade to all children.
+**Cause:** `.json` = nested payload; `.ndjson` = flat one-record-per-line.
+**Fix:** field lookup → grep `.ndjson` (`grep '"type":"INSTANCE"' …ndjson | jq -c '{id,name}'`); subtree → `jq` the `.json`.
 
 ---
 
@@ -97,47 +64,23 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** `set_text` errors or silently no-ops.
 **Cause:** the node/style references a font absent from the sandbox (licensed/embedded brand font).
-**Fix:** create with a script-appropriate fallback family (CJK family for CJK, not a Latin-only font) → `set_text` the characters → `apply_style_to_node` (the style renders the intended font) → flag it. Call `get_fonts` at session start to plan fallbacks.
-
----
-
-## Discrete tools REJECT unknown params — use their OWN names
-
-**Symptom:** errors like `create_text: unknown param "characters" — use text`.
-**Cause:** params are validated against each tool's registered schema (direct path AND inside `batch`); discrete tools don't use raw Plugin-API names. (Previously such params were silently dropped → empty/default invisible nodes.)
-
-| Plugin-API name you'd reach for | Discrete tool's param |
-| --- | --- |
-| `characters` | `text` (create_text / set_text) |
-| `fills` / `fill` | `fillColor` (hex, e.g. `#FFFFFF`) |
-| `lineHeight` | `lineHeightValue` + `lineHeightUnit` |
-| `width` on create_text | none — `textAutoResize:"HEIGHT"` then `resize_nodes` for wrap width |
-
-**Fix:** read the error's suggested name (or the MCP schema) and resend. Glance at an unfamiliar tool's schema before assuming Plugin-API names carry over.
-
----
-
-## Editing text inside an instance — compound id
-
-**Symptom:** `set_text` on the instance id does nothing / you can't find the text node.
-**Cause:** instance children have compound ids `I{instanceId};{innerId}` (e.g. `I2167:9091;186:1579`).
-**Fix:** prefer `set_instance_properties` when the text is an exposed `Label#…` property (survives swaps). Else `get_node(instanceId, depth:6)` → `set_text` on the compound id (load its font first if brand/locked). Probe an unfamiliar component once before building N.
+**Fix:** create with a script-appropriate fallback family → `set_text` the characters → `apply_style_to_node` (the style renders the intended font). Call `get_fonts` at session start to plan fallbacks.
 
 ---
 
 ## Connection drop resolves as an error (not a hang)
 
 **Symptom:** a call returns "connection closed" / "channel disconnected".
-**Cause:** the WS dropped in-flight; the bridge drains pending requests with an error immediately (no hang) and the plugin auto-reconnects with backoff. Only that socket's requests are affected.
-**Fix:** confirm the plugin is still open in Figma → wait a few seconds for reconnect (don't retry in a loop) → reopen if gone, then retry once. Call `list_channels` every ~15–20 writes on long sessions.
+**Cause:** the WS dropped in-flight; the bridge drains pending requests with an error immediately and the plugin auto-reconnects with backoff.
+**Fix:** confirm the plugin is still open in Figma → wait a few seconds for reconnect → reopen if gone, then retry once. Call `list_channels` every ~15–20 writes on long sessions.
 
 ---
 
 ## `set_text` restyles too — and `text` is optional
 
-**Symptom:** you hack alignment/wrap (e.g. leading spaces to fake-center) thinking `set_text` only swaps characters.
+**Symptom:** you hack alignment (e.g. leading spaces to fake-center) thinking `set_text` only swaps characters.
 **Cause:** `set_text` carries the full text-style set; `text` is optional (pass a styling param alone to restyle in place).
-**Fix:** use its params — `textAlignHorizontal/Vertical`, `textAutoResize`, `letterSpacing*`, `lineHeight*`, `textCase`, `textDecoration`, `fontSize/Family/Style` (auto-loads). Wrap/grow: `textAutoResize:"HEIGHT"` + batch op `resize_nodes` with width. Center: `textAlignHorizontal:"CENTER"` — never fake with spaces.
+**Fix:** use its params — `textAlignHorizontal/Vertical`, `textAutoResize`, `letterSpacing*`, `lineHeight*`, `textCase`, `fontSize/Family/Style`. Center: `textAlignHorizontal:"CENTER"` — never fake with spaces. Wrap/grow: `textAutoResize:"HEIGHT"` + `resize_nodes` with width.
 
 ---
 
@@ -145,79 +88,53 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 **Symptom:** clearing overrides by setting an empty/transparent fill — which ADDS an override instead.
 **Cause:** blanking a property is itself an override layered on top, not a reset.
-**Fix:** batch op `set_instance_properties` with `resetOverrides:true` resets to defaults before applying `properties` (omit `properties` to reset only). Status/variant color lives in the variant — set `properties:{"Variant":"Success"}`, never hand-write a fill.
+**Fix:** `set_instance_properties` with `resetOverrides:true` resets to defaults before applying `properties`.
+
+---
+
+## Discrete tools REJECT unknown params — use their OWN names
+
+**Symptom:** errors like `create_text: unknown param "characters" — use text`.
+**Cause:** params are validated against each tool's registered schema; discrete tools don't use raw Plugin-API names.
+
+| Plugin-API name | Discrete tool's param |
+|---|---|
+| `characters` | `text` |
+| `fills` / `fill` | `fillColor` (hex, create_text only) |
+| `lineHeight` | `lineHeightValue` + `lineHeightUnit` |
+| `width` on create_text | none — `textAutoResize:"HEIGHT"` then `resize_nodes` |
 
 ---
 
 ## Remote (library) variable collection — `get_remote_variable_collection`
 
 **Symptom:** you need a remote collection's mode ids (e.g. to pin dark mode) but local-collection reads miss them.
-**Cause:** local reads don't surface remote library collections.
-**Fix:** use the batch op `get_remote_variable_collection` with `collectionId` from a node's `boundVariables[].variableCollectionId`; it returns the modes to pass to `set_variable_mode`.
+**Fix:** batch op `get_remote_variable_collection` with `collectionId` from a node's `boundVariables[].variableCollectionId`; it returns the modes to pass to `set_variable_mode`.
 
 ---
 
-## Community UI kit components are unpublished — probe, don't trust REST
+## Fill/paint variable bindings are NOT READABLE
+> ⏳ TRACKED: figma-mcp-express#27
 
-**Symptom:** `import_component_by_key` on a community kit returns `Cannot import component … since it is unpublished`; `fetch_library_catalog` returns `components: 0` / REST `404`.
-**Cause:** "Published to **Community**" (file is duplicatable) ≠ "published as a **library**" (components importable by key). Community kits are only the former → **unpublished local components**, and the Plugin API has no cross-file copy (the multi-channel server moves *data*, not component *links*). Two states only: published/enabled library → linked instances; else → detached copies.
-**REST is NOT the arbiter — the live probe is.** REST `404`/`components:0` reflects token access + REST-publish state, not the import path. Proven: after the user published a `shadcn (Copy)` as a library, `fetch_library_catalog` *still* returned 404, yet its `get_local_components` keys imported into another file as real `remote:true` instances (publishing doesn't change keys). Material/iOS kits failed only because never published.
-**Fix:** catalog keys via `get_local_components` (any publish state) → ONE live `import_component_by_key` probe into the *target* channel decides it. `remote:true` → `create_instance`. `unpublished` → fall back: **Publish as library** (Assets panel, paid) for real links, or one-time Cmd+C/V into the target (detached local copies). Never loop retries on an unpublished key; each attempt can wait for the bounded import timeout.
-
----
-
-## Per-instance icons/content where instances share one master → edit master + nested-swap
-
-**Constraint:** you can't add/remove/reparent a child *inside* an INSTANCE (or a frame nested in one) — only override existing children (text, fills, visibility, instance-swap). To give N instances of one master *different* nested icons:
-
-1. **Edit the MASTER once:** in its target sub-frame, remove the placeholder and `create_instance` a default icon → propagates to all instances as `I<instance>;<masterIconId>`.
-2. **Differ per instance:** `swap_component` the nested path (e.g. `I3:244;13:49`) — works through the MCP (instance-swap override). Leave one on default, swap the rest.
-3. **Recolor LAST** (after swaps): `scan_nodes_by_types(<container>, ["VECTOR"])` → bulk `set_strokes` on `["$0.matchingNodes[*].id"]`. Survives swaps, no hand-built paths, covers multi-path icons. **Lucide/shadcn icons are STROKED** → `set_strokes`, not `set_fills`.
-
-**`"Removing this node is not allowed"` (native Figma, not a handler guard):** deletion is blocked when the layer **backs a component property** (text prop, exposed instance-swap, ...) — adding a nested instance to a master can auto-expose one, so even a just-added node may resist deletion; plain non-property layers delete fine. **Pick by intent, don't reflexively hide:** to truly delete it, remove the component-property binding first, or `detach_instance` and delete on the plain frame; to suppress it in specific instances, `set_visible:false` is the correct override. Hidden auto-layout children drop from flow, but hiding only hides; it is not a stand-in for deletion. `delete_nodes` reports this per-node with the same hint instead of aborting the batch.
-
-**`batch` quirks:** `swap_component` takes `nodeIds[]` (not `nodeId`); reads like `scan_nodes_by_types` take `nodeId` **inside `params`**.
-
-**Fallbacks:** nested swap fails → detach the few instances, place icons directly (don't thrash). Multi-file channels reassign their id on every reconnect (node ids stay stable) → re-run `list_channels` before each op group.
-
-
-## COMPONENT nodes DO support auto-layout
-A frequent false belief: "`set_auto_layout` doesn't work on COMPONENT nodes, so I positioned the children absolutely." Wrong — a COMPONENT (and COMPONENT_SET) supports `layoutMode`/auto-layout exactly like a FRAME. Set auto-layout on the component master so its children flow and its instances reflow; never fall back to absolute x/y inside a component because you assumed the op is unsupported. If a layout op seems to fail on a component, check the params (it uses the op's OWN names), don't conclude the node type is the blocker.
-
-## Fill/paint variable bindings are NOT READABLE — do not gate on them
-> ⏳ TRACKED: figma-mcp-express#27 — when reads surface fill bindings, REVISE this section to restore binding verification.
-No read tool surfaces a fill's variable binding. `get_node`/`get_nodes_info` flatten every fill to a resolved hex (`["#ffffff"]`). `get_design_context` at EVERY detail (compact/full/codegen) serializes fills only as resolved-hex dedup aliases in `globalVars.styles` (`s1=#ffffff`, `s2=#c2410c`, …) — a fill bound to a variable and a hand-typed raw hex of the same value are byte-identical in the output (verified with a positive control: a `set_fills variableId`-bound frame reads identically to an untouched one). Only EFFECT bindings (shadows) emit `boundVariables`; fills never do. Therefore: you CANNOT confirm or deny that a fill is variable-bound by reading, and `globalVars` showing `sN`/hex is NOT evidence of "raw/unbound" — treating it so produces FALSE-NEGATIVE D3 failures. Binding evidence is the WRITE op: `bind_variable_to_node`/`set_fills variableId` return success (bind_variable_to_node echoes the bound `variableId`). The only readable, real D3 fill violation is an OFF-PALETTE hex — a color value not in the project's token spine — which signals a hand-picked non-token color. Palette-matching values are presumed bound (trust the write path); do not fail them.
-
-To bind a fill: `set_fills` with `variableId` (= `setBoundVariableForPaint`) or `bind_variable_to_node` field `fillColor`. Both apply the binding in the file; neither is verifiable by a later read.
+See `mcp-known-bugs.md` #27 for the full explanation. Short version: `get_node` flattens
+every fill to resolved hex — a bound fill and a raw hex of the same value look identical.
+The only readable D3 violation is an off-palette hex. Trust the write path; don't fail on
+palette-matching values.
 
 ---
 
 ## Bringing external assets into Figma (verified ingestion recipes)
 
-The orchestrator should pre-fetch assets (brand logos, icons, photos, avatars, Lottie — sourced
-keyless from Iconify / SimpleIcons / Picsum / DiceBear / LottieFiles, with a web-search `--url`
-fallback) and hand builders **local file paths**. The Figma ingestion path then depends on the
-asset type:
-
-### PNG / JPEG → `import_image` batch op (no plugin required)
-Use `figma-mcp-express`'s `import_image` batch op with `imagePath` (absolute local path). This is
-the direct, no-plugin path for raster images. Hand the builder the file path; it batches the import.
-
-### SVG → `figma.createNodeFromSvg` via `use_figma`
-> ⏳ `figma-mcp-express` has NO svg batch op — there is no `import_svg` or `create_vector_from_svg`
-> in the `batch` op catalog. SVG ingestion requires the official Figma plugin runtime. Use `use_figma`
-> (the plugin code tool) with `figma.createNodeFromSvg(svgString)` inside a plugin script. This is a
-> genuine MCP capability gap, not a workaround.
-
-### Lottie .json → NOT MCP-ingestible as animation
-> ⏳ Lottie `.json` files cannot be imported as live animations through any MCP op or plugin script.
-> Workaround: export the Lottie's static poster frame as a PNG and ingest that with `import_image`.
-> Keep the `.json` path in the ledger for the developer handoff note. Do not block a build on this.
-
-**Summary:**
+The orchestrator should pre-fetch assets and hand builders **local file paths**.
 
 | Asset type | Ingestion method | MCP path |
 |---|---|---|
-| PNG / JPEG | `batch import_image` with `imagePath` | Direct batch op — no plugin |
+| PNG / JPEG | `batch import_image` with `imagePath` | Direct batch op |
 | SVG | `use_figma` + `figma.createNodeFromSvg` | Plugin runtime required ⏳ |
 | Lottie .json | Import poster PNG + note the .json path | Animation not ingestible ⏳ |
+
+SVG: figma-mcp-express has NO `import_svg` or `create_vector_from_svg` batch op. Requires
+official Figma plugin runtime via `use_figma`. This is a genuine MCP capability gap.
+
+Lottie: `.json` files cannot be imported as live animations through any MCP op or plugin script.
+Export the static poster frame as PNG. Keep the `.json` path for developer handoff.
