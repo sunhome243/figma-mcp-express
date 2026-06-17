@@ -64,7 +64,19 @@ func RegisterPrompts(s *server.MCPServer) {
 // universal optional `channel` routing param, injected into params when present).
 func makeHandler(node *Node, command string, nodeIDs []string, params map[string]interface{}) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		p := withChannel(req, params)
+		base := params
+		// Only when an origin is present do we need a fresh map to inject it into —
+		// otherwise pass the (possibly nil) base map through unchanged so cache/
+		// flight keys stay identical to the no-origin path.
+		if _, ok := pickOrigin(req.GetArguments()); ok {
+			fresh := make(map[string]interface{}, len(params)+1)
+			for k, v := range params {
+				fresh[k] = v
+			}
+			applyOrigin(req, fresh)
+			base = fresh
+		}
+		p := withChannel(req, base)
 		resp, err := node.Send(ctx, command, nodeIDs, p)
 		return renderResponse(resp, err)
 	}
@@ -89,6 +101,90 @@ func withChannel(req mcp.CallToolRequest, params map[string]interface{}) map[str
 // channelParam is the universal optional routing param every tool exposes.
 func channelParam() mcp.ToolOption {
 	return mcp.WithString("channel", mcp.Description("Optional. Target a specific connected file by its channel id (from list_channels). Omit when only one file is connected."))
+}
+
+// rosterOrigins is the fixed presence roster for the multi-agent live-highlight
+// panel. The acting agent passes its identity as the `origin` param so the Figma
+// plugin can attribute each call to a named agent (avatar + last action) when the
+// plugin's "Watch agent" toggle is on. `wolfgang` is the orchestrator/conductor
+// identity (👑) — distinct from the eight worker agents. Keep in sync with
+// plugin/src/presence-roster.ts.
+var rosterOrigins = []string{"grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick", "wolfgang"}
+
+// originParam is the presence label exposed on every plugin-reaching tool — the
+// acting agent's identity. Always REQUIRED so every call is attributed to a named
+// agent (incl. the orchestrator). Enum-constrained to rosterOrigins, which is the
+// single source of the roster (the names live in the enum, not the prose). The
+// plugin's "Watch agent" toggle shows/hides the panel independently of this param.
+func originParam() mcp.ToolOption {
+	return mcp.WithString("origin",
+		mcp.Required(),
+		mcp.Enum(rosterOrigins...),
+		mcp.Description("Presence label: the acting agent's identity (from the roster enum). Pass the SAME value on every call from one agent so the Figma plugin's Watch-agent panel shows who is working where."),
+	)
+}
+
+// pickOrigin returns the request's `origin` arg only when it is a known roster
+// member. Unknown/empty values are dropped so a stray label never reaches the
+// plugin as a phantom agent (the plugin also fails safe, but we sanitize at the
+// boundary). The enum schema already constrains MCP clients; this also guards
+// the follower /rpc path, which is not schema-validated.
+func pickOrigin(args map[string]interface{}) (string, bool) {
+	o, _ := args["origin"].(string)
+	if o == "" {
+		return "", false
+	}
+	for _, r := range rosterOrigins {
+		if r == o {
+			return o, true
+		}
+	}
+	return "", false
+}
+
+// rosterStatuses is the fixed set of presence workflow states an agent may
+// report via the `status` param. Unlike `origin` (the agent's identity), `status`
+// is the agent's current workflow state and is LLM-settable only (auto statuses
+// like building/scanning/queued are derived without this param). Keep in sync
+// with the plugin presence layer.
+var rosterStatuses = []string{"thinking", "waiting_review", "reviewing", "approved", "escalated", "done"}
+
+// statusParam is the optional presence status exposed on write/batch tools.
+// It mirrors originParam: enum-constrained to rosterStatuses so the model always
+// picks a known workflow state that the Figma plugin can render.
+func statusParam() mcp.ToolOption {
+	return mcp.WithString("status",
+		mcp.Enum(rosterStatuses...),
+		mcp.Description("Optional presence status — the acting agent's current workflow state, shown in the plugin's Watch-agent panel."),
+	)
+}
+
+// pickStatus returns the request's `status` arg only when it is a known roster
+// status. Unknown/empty values are dropped so a stray status never reaches the
+// plugin. Mirrors pickOrigin: the enum schema already constrains MCP clients;
+// this also guards the follower /rpc path, which is not schema-validated.
+func pickStatus(args map[string]interface{}) (string, bool) {
+	st, _ := args["status"].(string)
+	if st == "" {
+		return "", false
+	}
+	for _, r := range rosterStatuses {
+		if r == st {
+			return st, true
+		}
+	}
+	return "", false
+}
+
+// applyOrigin folds the optional presence `origin` arg into the plugin params
+// (only when it is a known roster member). Mirrors applySkipInvisible — the
+// passthrough half of originParam — so read tools can attribute the read to a
+// named agent (enabling a "scanning" status on the plugin side). The map must be
+// caller-owned (a fresh per-request params map), never a shared base map.
+func applyOrigin(req mcp.CallToolRequest, params map[string]interface{}) {
+	if origin, ok := pickOrigin(req.GetArguments()); ok {
+		params["origin"] = origin
+	}
 }
 
 // skipInvisibleChildrenParam is the optional per-op perf toggle exposed on

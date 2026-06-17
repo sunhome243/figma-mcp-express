@@ -2,6 +2,24 @@
 
 Load this before composing any `batch` call. Part 1 = ready-to-use recipes (including map and projection bulk). For exact op params, use the live catalog: `search_batch_ops` to find an op, then `get_batch_op_spec` to inspect it. Use `batch(validateOnly:true)` before sending generated or unfamiliar mutations.
 
+**Quick navigation:**
+
+| # | Recipe | Jump |
+|---|--------|------|
+| 1 | Create frame → bind fills → auto layout → verify | [→](#recipe-1-create-frame--bind-token-fills--set-auto-layout--verify) |
+| 2 | Library component — import → place → configure → pin mode | [→](#recipe-2-library-component--import--place--configure--pin-mode) |
+| 3 | Chain read — search → targeted deep read | [→](#recipe-3-chain-read--search--targeted-deep-read) |
+| 4 | `[*]` projection — scan → bulk-apply same param to N nodes | [→](#recipe-4--projection--scan--bulk-apply-same-param-to-n-nodes) |
+| 5 | `map` — per-item-varying params in one round-trip | [→](#recipe-5-map--per-item-varying-params-in-one-round-trip) |
+| 6 | Probe one instance — test → anatomy → screenshot → delete | [→](#recipe-6-probe-one-instance--test--anatomy--screenshot--delete) |
+| — | Batch failure semantics (not transactional) | [→](#batch-failure-semantics--not-transactional-resend-from-failedat) |
+| 7 | Bulk rename nodes | [→](#recipe-7-bulk-rename-nodes-to-a-naming-convention) |
+| 8 | Chunked text replacement with visual verification | [→](#recipe-8-chunked-text-replacement-with-visual-verification) |
+| 9 | Annotation analysis — map annotations to target nodes | [→](#recipe-9-annotation-analysis--map-manual-annotations-to-target-nodes) |
+| 10 | Prototype reaction flow map | [→](#recipe-10-prototype-reaction-flow-map) |
+| 11 | Transfer overrides between component instances | [→](#recipe-11-transfer-overrides-between-component-instances) |
+| — | **Part 2 — Catalog + validation rules** | [→](#part-2--catalog--validation-rules) |
+
 ---
 
 ## Part 1 — Canonical recipes
@@ -15,6 +33,16 @@ Load this before composing any `batch` call. Part 1 = ready-to-use recipes (incl
 ---
 
 ### Recipe 1: Create frame → bind token fills → set auto layout → verify
+
+> ⚠️ **`layoutSizingHorizontal/Vertical: "FILL"` must be set AFTER the node has a parent.**
+> If you create a frame and set FILL sizing in the same batch before `appendChild`, the sizing is
+> silently accepted and silently ignored — the node renders at content size. Always append first,
+> then set sizing. The `$N.id` ref chain in a single batch guarantees correct ordering.
+>
+> ⚠️ **Auto-layout children: `move_nodes` is silently ignored.** If a frame has `layoutMode` set,
+> its children's positions are owned by the parent. To apply safe area or reposition content in a
+> mobile screen frame, adjust the **parent's padding** instead:
+> the batch op `set_auto_layout` on `screenFrameId` with `paddingTop: 59, paddingBottom: 34`.
 
 ```json
 {
@@ -234,6 +262,10 @@ Scope first, then scan and rename flagged nodes. Show a preview table before app
 ---
 
 ### Recipe 8: Chunked text replacement with visual verification
+
+> ⚠️ **Do NOT use `find_replace_text` — it has a known scope bug (#33) that traverses the entire
+> page and all component masters, corrupting unintended instances.** Use `scan_text_nodes` + per-node
+> `set_text` as shown below.
 
 Replace copy across a large design by processing logical chunks with screenshot verification between each chunk.
 

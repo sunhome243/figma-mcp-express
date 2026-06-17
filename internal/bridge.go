@@ -138,6 +138,15 @@ type connEntry struct {
 	pageName    string
 	connectedAt time.Time
 
+	// waitingOrigins tracks WHICH presence origins are currently waiting on sem,
+	// keyed by a per-wait unique token (value = the roster origin string). Used to
+	// build the presence_queue frame pushed to the plugin. Guarded by waitingMu —
+	// a separate lock from b.mu so registering/clearing a waiter never contends
+	// with the bridge's main map lock. Only requests that carry a known roster
+	// `origin` register here; anonymous reads/writes do not.
+	waitingMu      sync.Mutex
+	waitingOrigins map[string]string
+
 	// importInFlight marks that an import_*_by_key is currently occupying the
 	// single-threaded plugin. It shares the slot's lifetime — both are held from
 	// dispatch until the import's pendingEntry actually RESOLVES (plugin response or
@@ -148,6 +157,42 @@ type connEntry struct {
 	// via onResolve at the same instant the slot is released.
 	inFlightMu     sync.Mutex
 	importInFlight bool
+}
+
+// addWaitingOrigin records that the wait identified by token is waiting on the
+// serial slot under the given roster origin.
+func (e *connEntry) addWaitingOrigin(token, origin string) {
+	e.waitingMu.Lock()
+	if e.waitingOrigins == nil {
+		e.waitingOrigins = make(map[string]string)
+	}
+	e.waitingOrigins[token] = origin
+	e.waitingMu.Unlock()
+}
+
+// removeWaitingOrigin clears the wait identified by token (acquired or cancelled).
+func (e *connEntry) removeWaitingOrigin(token string) {
+	e.waitingMu.Lock()
+	delete(e.waitingOrigins, token)
+	e.waitingMu.Unlock()
+}
+
+// snapshotWaitingOrigins returns the DISTINCT roster origins currently waiting on
+// the slot, sorted for deterministic frames. Always non-nil ([]string{} when
+// nobody waits) so the plugin clears its queued list on the empty frame.
+func (e *connEntry) snapshotWaitingOrigins() []string {
+	e.waitingMu.Lock()
+	seen := make(map[string]struct{}, len(e.waitingOrigins))
+	for _, o := range e.waitingOrigins {
+		seen[o] = struct{}{}
+	}
+	e.waitingMu.Unlock()
+	out := make([]string, 0, len(seen))
+	for o := range seen {
+		out = append(out, o)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (e *connEntry) setImportInFlight(v bool) {
@@ -237,7 +282,7 @@ func (b *Bridge) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 		channel = fmt.Sprintf("auto-%d", b.chanSeq.Add(1))
 	}
 
-	entry := &connEntry{conn: conn, connectedAt: time.Now(), sem: make(chan struct{}, 1)}
+	entry := &connEntry{conn: conn, connectedAt: time.Now(), sem: make(chan struct{}, 1), waitingOrigins: make(map[string]string)}
 
 	b.mu.Lock()
 	prev, replaced := b.conns[channel]
@@ -613,10 +658,28 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 	// exit branch (acquired OR ctx-cancelled) — a cancelled waiter must not be counted.
 	entry.waiters.Add(1)
 	enqueued := time.Now()
+	// Presence "queued" (E): if this request carries a known roster origin, record
+	// it as waiting on the slot under a per-wait unique token, and push the updated
+	// queue to the plugin. Cleared on BOTH exit branches (acquired and cancelled),
+	// each followed by another broadcast so the plugin's queued list stays accurate.
+	waitToken := ""
+	if origin, ok := params["origin"].(string); ok && origin != "" {
+		waitToken = b.nextID()
+		entry.addWaitingOrigin(waitToken, origin)
+		b.broadcastQueue(channel, entry)
+	}
 	select {
 	case entry.sem <- struct{}{}:
+		if waitToken != "" {
+			entry.removeWaitingOrigin(waitToken)
+			b.broadcastQueue(channel, entry)
+		}
 	case <-ctx.Done():
 		entry.waiters.Add(-1)
+		if waitToken != "" {
+			entry.removeWaitingOrigin(waitToken)
+			b.broadcastQueue(channel, entry)
+		}
 		return BridgeResponse{}, ctx.Err()
 	}
 	// queueDepth = OTHER requests still waiting at the moment we acquired (exclude
@@ -725,6 +788,47 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 	}
 }
 
+// broadcastQueue pushes the current distinct set of waiting roster origins to the
+// plugin as a presence_queue frame. It is best-effort and FULLY DROPPABLE: presence
+// is non-critical and must NEVER block the Send path nor risk the connection.
+//
+// Two hazards this guards against, both from coder/websocket semantics:
+//  1. A write whose ctx deadline fires CLOSES the whole connection (not a recoverable
+//     per-write error) — so too tight a deadline on a briefly-backpressured-but-alive
+//     socket could tear down the channel. But NO deadline is worse: sync.Mutex.Lock()
+//     is NOT ctx-aware, so a goroutine blocked forever in Write(context.Background())
+//     while holding wmu wedges EVERY subsequent op write at entry.wmu.Lock() — those
+//     op writes never reach their own ctx'd Write, so the conn-close-on-expiry that
+//     normally self-heals a dead socket never fires, and the channel wedges permanently.
+//     We therefore use a GENEROUS finite deadline: an ~80-byte frame writes effectively
+//     instantly on any live socket (10 s is never reached on real backpressure), while a
+//     genuinely dead socket is torn down so the channel can self-heal — matching the
+//     op-write path's bounded-write behavior.
+//  2. coder/websocket forbids concurrent writes (wmu). We TryLock and DROP the frame
+//     when an op write holds the lock, so presence never delays or interleaves with a
+//     real op write. A later waiter change (or the acquiring op's own presence_update)
+//     re-broadcasts, so the queue state self-heals.
+//
+// Runs async so the Send hot path is never blocked even by the tiny write.
+func (b *Bridge) broadcastQueue(channel string, entry *connEntry) {
+	frame := PresenceQueueFrame{
+		Type:    presenceQueueType,
+		Channel: channel,
+		Origins: entry.snapshotWaitingOrigins(),
+	}
+	go func() {
+		if !entry.wmu.TryLock() {
+			return // an op write holds the lock — drop; a later change re-broadcasts
+		}
+		defer entry.wmu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := wsjson.Write(ctx, entry.conn, frame); err != nil {
+			bridgeLogger.Printf("presence_queue write error (channel %q): %v", channel, err)
+		}
+	}()
+}
+
 // doSingleflight collapses identical concurrent read requests onto one in-flight
 // call. The first caller (leader) runs fn; later callers (followers) wait for
 // the leader's result or their own ctx, whichever comes first. The leader holds
@@ -790,10 +894,27 @@ func isCacheable(requestType string) bool {
 // (nodeIDs, params). This is the shared core used by both flightKey (singleflight)
 // and readCacheKey (read cache) so the key format has one definition.
 func hashReadKey(channel, requestType string, nodeIDs []string, params map[string]interface{}) (string, bool) {
+	// Presence-only params (origin/status) do NOT change the read RESULT, so they
+	// must be excluded from the key — otherwise two agents reading the same node
+	// under different origins would split the read cache / singleflight and each
+	// pay a separate serial plugin round-trip, defeating cross-agent coalescing
+	// (the cache-first discipline). Trade-off: a cache HIT / singleflight FOLLOWER
+	// never reaches the plugin, so the SERVED agent's "scanning" status won't fire
+	// for that read — acceptable (reads are the noisiest, least-important status).
+	keyParams := params
+	if _, hasOrigin := params["origin"]; hasOrigin {
+		keyParams = make(map[string]interface{}, len(params))
+		for k, v := range params {
+			if k == "origin" || k == "status" {
+				continue
+			}
+			keyParams[k] = v
+		}
+	}
 	payload, err := json.Marshal(struct {
 		N []string               `json:"n"`
 		P map[string]interface{} `json:"p"`
-	}{nodeIDs, params})
+	}{nodeIDs, keyParams})
 	if err != nil {
 		return "", false
 	}

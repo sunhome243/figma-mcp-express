@@ -51,6 +51,17 @@ Do not use a detached visual clone to fake a library component. Use these **`bat
 
 Cloning an existing in-file instance to repeat it elsewhere can preserve the instance link, but it is not a substitute for importing a missing library component.
 
+## Reusing a File-Local Component (no published key)
+
+A component you `create_component` in the current file has **no published library key** — so you cannot re-instance it with `create_instance {componentKey}` (that errors: `componentKey` alone does not satisfy the required `componentId`). But `create_instance`'s required `componentId` accepts **any COMPONENT node id**, including a file-local master's. So a local organism IS reusable — you just have to carry its master node id.
+
+**Ledger discipline (do this every time you create a shared local component):**
+1. When `create_component` returns, it gives you the new master's **node id**. Record it immediately in the build contract/ledger under a stable name, e.g. `localComponents: { "AppHeaderBack": "19:17384", "SkeletonCard": "19:15652" }`.
+2. Any later screen that reuses that organism reads the ledger and calls `create_instance {componentId: "<recorded-master-id>"}` — never rebuilds a look-alike, never copy-pastes the master's frames.
+3. The orchestrator passes the shared master ids into each builder's brief so partitioned builders don't double-create.
+
+Why this matters: there is **no live recovery path** for a local master id — `get_node`/`get_nodes_info` on an existing instance return `mainComponent:{key,name,remote:false}` but **not** `mainComponent.id`, and `get_local_components` can miss an orphaned/nested master. So if you don't ledger the id at creation time, a later agent literally cannot find the master to instance it, and ends up rebuilding (the look-alike-duplicate failure). Capture-at-creation is the whole fix. (⏳ TRACKED figma-mcp-express#29 — when instance reads expose `mainComponentId`, a recovery path becomes possible and this becomes a convenience rather than a hard requirement.)
+
 ## After Placing an Instance
 
 A fresh instance is not finished. Immediately configure real content, variants, visibility, and dimensions, then verify the node and screenshot the wrapper. Default content such as `Heading`, `Item 1`, or blank slots is a failure.

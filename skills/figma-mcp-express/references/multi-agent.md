@@ -155,9 +155,112 @@ Do NOT read or write outside your scope.
 Do NOT issue live plugin reads — use the cache data provided below.
 Do NOT use git stash, git reset --hard, git checkout --, or git clean.
 channel: "auto-N"  ← pass this on every tool call.
+origin: "<rosterName>"  ← pass this on every batch AND read call so the plugin's
+                          Watch-agent panel attributes your edits/reads.
+                          (`status` is set by the orchestrator, not per-builder — see § 7.)
 
 Shared resources already created by coordinator:
   wrapperId = <id>
   spacingVar = <variableId>
   ...
 ```
+
+---
+
+## 7. Agent presence — the `origin` label
+
+A live "who is working where" view for humans watching the file. When the plugin's
+**Watch agent** toggle is on, each labeled write lights up the canvas and a per-agent
+panel (avatar + last action + status). Shipped in **2.3.0** — available on the
+published/production server (`npx figma-mcp-express`, port 1994) and the plugin.
+
+> **Give every agent a name.** When you dispatch an agent to use these tools, assign it
+> one roster `origin` (the enum lists them) and pass it on every call — `origin` is
+> required so the Watch-agent panel attributes the work to a named agent. `status`
+> (optional) is the agent's current workflow state.
+
+### Why a label, not auto-detection
+
+The transport cannot tell agents apart on its own: parallel subagents in one Claude
+Code session share **one** MCP process (one WebSocket), and process identity is
+unstable across restarts. So the acting agent must self-identify. `origin` is an
+**enum** (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`) so each label
+maps deterministically to a name/color/avatar. It flows verbatim to the plugin (the
+bridge strips only `channel`); unknown/empty values are dropped server-side and the
+plugin fails safe.
+
+### Orchestrator convention
+
+Assign each subagent ONE roster name and bake it into the prompt, so the identity
+persists across all of that subagent's calls (each subagent is an independent
+context). Partition + presence compose cleanly: one agent per region, one `origin`
+per agent.
+
+```
+Agent 1 → owns frame A → origin: "grace"
+Agent 2 → owns frame B → origin: "theo"
+Agent 3 → owns frame C → origin: "sunho"
+```
+
+Each then stamps it on every batch call, e.g.
+`batch(channel:"auto-1", origin:"grace", ops:[create_frame…])`.
+
+### What presence does and does NOT do
+
+- **Panel (primary):** shows every active agent at once — avatar, name, last action,
+  relative time — with a `[→]` jump button. This is how you "follow many."
+- **Canvas (secondary):** selects the **union** of active agents' recent nodes
+  **without scrolling** — a single Figma viewport physically cannot chase N agents,
+  so it never auto-follows; the panel's `[→]` is the only camera move (one agent at a
+  time, on demand).
+- It is **display only** — `origin` changes nothing about execution, serialization,
+  or the op result. Unlabeled calls keep the legacy single-agent follow (select +
+  scroll). The panel tracks **one latest-activity entry per origin** (not an event log):
+  a row decays active → idle → away on a timer and auto-removes after ~150 s of silence;
+  an origin that acts again after removal replays the entrance animation.
+
+### Per-agent status — auto-derived vs LLM-set
+
+Each row also shows *what* the agent is doing. Statuses come from two tiers:
+
+| Tier | Cost | Statuses | How it's set |
+|---|---|---|---|
+| **Auto** | **0 LLM tokens** | `building` (Building…/Styling…/Moving…/Resizing…/Removing…), `importing` (⤵ Importing…), `screenshotting` (📸 Capturing…), `scanning` (🔍 Looking around…), `theming` (🎨 Theming…), `error`, `idle` (30–60 s), `away` (>60 s), `joined` (entrance anim) | Plugin/server derive it from the op the agent already sends — no extra call. `building`/`importing`/`theming` from write op type, `screenshotting` from `save_screenshots`, `scanning` from any `get_`/`scan_`/`search_`/`list_`/`fetch_` read. |
+| **Auto (server)** | **0 LLM tokens** | `queued` (Queued · #N) | The **server** pushes the per-channel serial-slot waiting list to the plugin as an unsolicited `presence_queue` WS frame. The agent is by definition not yet running, so only the server (which owns the FIFO) can report it. |
+| **LLM-set** | tiny | `thinking`, `waiting_review`, `reviewing`, `approved` (reviewer PASS), `escalated` (asset missing → STOP), `done` | The orchestrator/reviewer pings at **workflow transitions only**, never per op (see heartbeat below). |
+
+Auto statuses decay on a timer: active (≤30 s) → `idle` (30–60 s) → `away` (>60 s) →
+auto-removed (>150 s quiet). LLM-set statuses are **sticky** — no TTL, never auto-removed
+— so overwrite a stale `reviewing`/`done` explicitly (or re-announce on the next ping).
+
+### The orchestrator stamps non-editing statuses on behalf of an origin
+
+A `queued` or `waiting_review` agent **cannot self-report** — it's blocked in the
+serial slot or has already returned its result to the orchestrator. So the LLM-set
+transitions are stamped **by the orchestrator on behalf of a named `origin`**, not by
+the agent itself. The orchestrator knows the workflow shape (who's thinking, who's up
+for review, who passed), so it owns those pings. Per-op auto statuses still come from
+the acting agent's own calls.
+
+### Status-only pings — ride a real lightweight READ op (NOT `validateOnly`)
+
+To announce a transition **without mutating the canvas**, stamp `{origin, status}` on
+a **real, read-only** op that reaches the plugin — a scoped `get_node` (`depth:0`) on a
+node the agent owns is ideal — e.g.
+`batch(origin:"theo", status:"reviewing", ops:[{type:"get_node", nodeIds:["1:23"], params:{depth:0}}])`.
+
+> ⚠️ **Do NOT use `validateOnly:true` for status pings.** `validateOnly` is resolved
+> entirely **server-side** ("no plugin call was made") — it never forwards `{origin,
+> status}` to the plugin, so the presence panel never updates. The op must actually
+> reach the plugin. A read op mutates nothing, and the plugin treats an explicit
+> `status` as status-only (it ignores the carrier op's returned node ids, so the ping
+> never hijacks the selection or triggers a highlight).
+
+Use this for `thinking`, `waiting_review`, `reviewing`, `approved`, `escalated`, `done`.
+
+### `origin` works on read tools too
+
+`origin` is no longer batch-only — the read tools (`get_`/`scan_`/`search_`/`list_`/
+`fetch_`) accept it as well, so an agent's reads are attributed (this is what powers
+the `scanning` auto status). Pass `origin` on reads the same way you pass it on `batch`.
+(Same version gate: 2.3.0+ server only.)

@@ -12,9 +12,11 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		mcp.WithDescription("Get the full node tree of the current page (not the whole file — only the active page). Returns all nodes recursively and can be very large. Prefer get_design_context for exploration or when token efficiency matters. Large responses are saved to disk and returned as {spilled:true,path,bytes,preview} — read the file with jq/grep; do not expect the full payload inline. Timeouts are server-managed; a read that times out should be re-scoped narrower, never given a longer timeout."),
 		skipInvisibleChildrenParam(),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := map[string]interface{}{}
 		applySkipInvisible(req, params)
+		applyOrigin(req, params)
 		resp, err := node.Send(ctx, "get_document", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
@@ -22,6 +24,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 	s.AddTool(mcp.NewTool("get_pages",
 		mcp.WithDescription("List all pages in the document with their IDs and names. Lightweight alternative to get_document."),
 		channelParam(),
+		originParam(),
 	), makeHandler(node, "get_pages", nil, nil))
 
 	s.AddTool(mcp.NewTool("get_metadata",
@@ -30,11 +33,13 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 			"SCOPING: returns the map only — cheap and safe to call first. Large responses spill to disk as {spilled:true,path,bytes,preview} — read with jq/grep, don't expect the full payload inline. "+
 			"CHAIN: get_metadata first → then get_node/get_nodes_info/get_design_context on the specific nodes it surfaced. Also a `batch` op type."),
 		channelParam(),
+		originParam(),
 	), makeHandler(node, "get_metadata", nil, nil))
 
 	s.AddTool(mcp.NewTool("get_selection",
 		mcp.WithDescription("Get the nodes currently selected in Figma. Returns an empty array if nothing is selected. Use get_design_context or get_node to retrieve deeper detail about a specific node by ID."),
 		channelParam(),
+		originParam(),
 	), makeHandler(node, "get_selection", nil, nil))
 
 	s.AddTool(mcp.NewTool("get_node",
@@ -51,6 +56,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		),
 		skipInvisibleChildrenParam(),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nodeID, _ := req.GetArguments()["nodeId"].(string)
 		params := map[string]interface{}{}
@@ -58,6 +64,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 			params["depth"] = d
 		}
 		applySkipInvisible(req, params)
+		applyOrigin(req, params)
 		resp, err := node.Send(ctx, "get_node", []string{nodeID}, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
@@ -77,6 +84,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		),
 		skipInvisibleChildrenParam(),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		raw, _ := req.GetArguments()["nodeIds"].([]interface{})
 		nodeIDs := toStringSlice(raw)
@@ -85,6 +93,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 			params["depth"] = d
 		}
 		applySkipInvisible(req, params)
+		applyOrigin(req, params)
 		resp, err := node.Send(ctx, "get_nodes_info", nodeIDs, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
@@ -108,11 +117,13 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		),
 		skipInvisibleChildrenParam(),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := map[string]interface{}{}
 		if d, ok := req.GetArguments()["depth"].(float64); ok && d > 0 {
 			params["depth"] = d
 		}
+		applyOrigin(req, params)
 		detail, _ := req.GetArguments()["detail"].(string)
 		if detail != "" {
 			params["detail"] = detail
@@ -164,6 +175,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		),
 		skipInvisibleChildrenParam(),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := map[string]interface{}{
 			"query": req.GetArguments()["query"],
@@ -178,6 +190,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 			params["limit"] = limit
 		}
 		applySkipInvisible(req, params)
+		applyOrigin(req, params)
 		resp, err := node.Send(ctx, "search_nodes", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
@@ -193,10 +206,12 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		),
 		skipInvisibleChildrenParam(),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nodeID, _ := req.GetArguments()["nodeId"].(string)
 		params := map[string]interface{}{"nodeId": nodeID}
 		applySkipInvisible(req, params)
+		applyOrigin(req, params)
 		resp, err := node.Send(ctx, "scan_text_nodes", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
@@ -217,6 +232,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		),
 		skipInvisibleChildrenParam(),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nodeID, _ := req.GetArguments()["nodeId"].(string)
 		raw, _ := req.GetArguments()["types"].([]interface{})
@@ -225,6 +241,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 			"types":  raw,
 		}
 		applySkipInvisible(req, params)
+		applyOrigin(req, params)
 		resp, err := node.Send(ctx, "scan_nodes_by_types", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
@@ -236,9 +253,12 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 			mcp.Description("Node ID in colon format e.g. '4029:12345'"),
 		),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nodeID, _ := req.GetArguments()["nodeId"].(string)
-		resp, err := node.Send(ctx, "get_reactions", []string{nodeID}, withChannel(req, nil))
+		params := map[string]interface{}{}
+		applyOrigin(req, params)
+		resp, err := node.Send(ctx, "get_reactions", []string{nodeID}, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
 
@@ -254,22 +274,27 @@ Pass nodeId(s) to scope to subtrees on one page; omit to read the current page. 
 			mcp.Description("Optional. Scope the read to this node's subtree. Omit to read the whole current page. Colon format e.g. '4029:12345'."),
 		),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var nodeIDs []string
 		if nodeID, ok := req.GetArguments()["nodeId"].(string); ok && nodeID != "" {
 			nodeIDs = []string{NormalizeNodeID(nodeID)}
 		}
-		resp, err := node.Send(ctx, "get_prototype", nodeIDs, withChannel(req, nil))
+		params := map[string]interface{}{}
+		applyOrigin(req, params)
+		resp, err := node.Send(ctx, "get_prototype", nodeIDs, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
 
 	s.AddTool(mcp.NewTool("get_viewport",
 		mcp.WithDescription("Get the current Figma viewport: scroll center, zoom level, and visible bounds."),
 		channelParam(),
+		originParam(),
 	), makeHandler(node, "get_viewport", nil, nil))
 
 	s.AddTool(mcp.NewTool("get_fonts",
 		mcp.WithDescription("List all fonts used in the current page, sorted by usage frequency. Useful for understanding typography without scanning all text nodes."),
 		channelParam(),
+		originParam(),
 	), makeHandler(node, "get_fonts", nil, nil))
 }

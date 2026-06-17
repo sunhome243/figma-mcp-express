@@ -18,10 +18,9 @@ Use the compact core surface first. In default `core` profile, low-level write p
 
 ## Tool Surface
 
-- `core` (default) profile exposes read/high-value tools plus `batch`, `search_batch_ops`, and `get_batch_op_spec`. Low-level write primitives (`create_frame`, `set_fills`, `import_component_by_key`, …) are NOT top-level tools here — they are `batch` op types.
-- `full` profile is compatibility/debug mode for the legacy top-level surface. Set `FIGMA_MCP_TOOL_PROFILE=full` to restore the legacy top-level write tools; set `FIGMA_MCP_TOOL_SCHEMA_MODE=verbose` to restore full in-schema guidance (default is compact).
-- For unfamiliar writes: `search_batch_ops` -> `get_batch_op_spec` -> `batch(validateOnly:true)` -> `batch`.
-- Do not write raw Plugin API JS, `use_figma`-style scripts, `eval`, or code strings. Use declarative `FigmaPlan` batch ops only.
+- Default `core` profile = read/high-value tools + `batch`, `search_batch_ops`, `get_batch_op_spec`. (Legacy top-level write tools: `FIGMA_MCP_TOOL_PROFILE=full`.)
+- Unfamiliar writes: `search_batch_ops` -> `get_batch_op_spec` -> `batch(validateOnly:true)` -> `batch`.
+- Do not write raw Plugin API JS, `use_figma` scripts, `eval`, or code strings — declarative `batch` ops only.
 
 ## Working Rules
 
@@ -37,8 +36,10 @@ Read-tool choice, validation matrix, batch refs, import-key format, and gotchas 
 | Need | Read |
 |---|---|
 | Read-tool choice, detail levels, style audit, common errors | `references/tool-selection.md` |
-| Batch refs, projection, `map`, validation-first recipes, write-workflow recipes (rename/text-replace/annotations/reactions/swap-overrides) | `references/batch-recipes.md` |
-| Connection drops, cache spill files, text/image gotchas | `references/gotchas.md` |
+| Batch refs, projection, `map`, validation-first recipes, write-workflow recipes | `references/batch-recipes.md` |
+| Permanent Figma Plugin API constraints (instance children, clone IDs, auto-layout children, etc.) | `references/platform-constraints.md` |
+| Server bugs + workarounds with issue tracking (#33–#36, #27, #28) | `references/mcp-known-bugs.md` |
+| Remaining failure modes: stale IDs, node format, spilled cache, text/font/image | `references/gotchas.md` |
 | Parallel agents and channel partitioning | `references/multi-agent.md` |
 | Parameterized generators (type scale, color palette, component variants, design tokens) | MCP prompts: `generate_type_scale`, `generate_color_palette`, `generate_component_variants`, `design_token_generation_strategy` — invoke via the MCP prompts list |
 

@@ -31,6 +31,7 @@ func registerReadExportTools(s *server.MCPServer, node *Node) {
 			mcp.Description("Export scale for raster formats (default 2)"),
 		),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		raw, _ := req.GetArguments()["nodeIds"].([]interface{})
 		nodeIDs := toStringSlice(raw)
@@ -41,6 +42,7 @@ func registerReadExportTools(s *server.MCPServer, node *Node) {
 		if s, ok := req.GetArguments()["scale"].(float64); ok && s > 0 {
 			params["scale"] = s
 		}
+		applyOrigin(req, params)
 		resp, err := node.Send(ctx, "get_screenshot", nodeIDs, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
