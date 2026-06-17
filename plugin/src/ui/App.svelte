@@ -44,8 +44,8 @@
   // Configurable server address.
   // Persisted via figma.clientStorage (through plugin core) because localStorage
   // is unavailable inside Figma's data: URL sandbox.
-  // __DEFAULT_PORT__ is injected at build time (1994 prod / 1995 PoC) so the
-  // isolated PoC plugin auto-connects to its own server.
+  // __DEFAULT_PORT__ (1994) is injected at build time so the plugin auto-connects
+  // to the local figma-mcp-express server.
   let serverHost = "127.0.0.1";
   let serverPort = __DEFAULT_PORT__;
 
