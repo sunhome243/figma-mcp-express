@@ -174,15 +174,10 @@ A live "who is working where" view for humans watching the file. When the plugin
 panel (avatar + last action + status). Shipped in **2.3.0** — available on the
 published/production server (`npx figma-mcp-express`, port 1994) and the plugin.
 
-> ⚠️ **`origin`/`status` are version-gated (2.3.0+), and optional.** They are
-> back-compat optional params: a 2.3.0+ server accepts them and a call with neither
-> behaves exactly as before (single-agent follow). But `batch` and the read tools
-> reject *unknown* top-level params, so a binary **predating 2.3.0** errors with
-> `unknown top-level param "origin"` (likewise `"status"`). **Only send `origin`/
-> `status` to a server you know is ≥ 2.3.0** — check `figma-mcp-express --version` if
-> unsure. (During local development the isolated build — manifest `figma-mcp-express-poc`,
-> port 1995, `FIGMA_MCP_PRESENCE_REQUIRED=1` — makes `origin` *required* so every call
-> is attributed; production leaves it optional.)
+> **Give every agent a name.** When you dispatch an agent to use these tools, assign it
+> one roster `origin` (the enum lists them) and pass it on every call — `origin` is
+> required so the Watch-agent panel attributes the work to a named agent. `status`
+> (optional) is the agent's current workflow state.
 
 ### Why a label, not auto-detection
 

@@ -111,26 +111,17 @@ func channelParam() mcp.ToolOption {
 // plugin/src/presence-roster.ts.
 var rosterOrigins = []string{"grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick", "wolfgang"}
 
-// presenceRequired makes `origin` a REQUIRED param when the server is started with
-// FIGMA_MCP_PRESENCE_REQUIRED=1, so every call is attributed to an agent (incl. the
-// orchestrator). Default (unset) leaves `origin` OPTIONAL and fully back-compat — a
-// call without it behaves exactly as before. Kept as a startup opt-in for stability.
-var presenceRequired = os.Getenv("FIGMA_MCP_PRESENCE_REQUIRED") == "1"
-
-// originParam is the presence label exposed on every plugin-reaching tool. Enum-
-// constrained to rosterOrigins so the model always picks a known identity that maps
-// deterministically to an avatar/color in the plugin. OPTIONAL by default (back-compat);
-// REQUIRED only when presenceRequired is set. The panel is shown/hidden by the plugin's
-// "Watch agent" toggle, independent of this param.
+// originParam is the presence label exposed on every plugin-reaching tool — the
+// acting agent's identity. Always REQUIRED so every call is attributed to a named
+// agent (incl. the orchestrator). Enum-constrained to rosterOrigins, which is the
+// single source of the roster (the names live in the enum, not the prose). The
+// plugin's "Watch agent" toggle shows/hides the panel independently of this param.
 func originParam() mcp.ToolOption {
-	opts := []mcp.PropertyOption{
+	return mcp.WithString("origin",
+		mcp.Required(),
 		mcp.Enum(rosterOrigins...),
-		mcp.Description("Optional presence label — the acting agent's identity from the fixed roster (grace, theo, sunho, zoe, taewon, emma, alex, rick, wolfgang=orchestrator). Pass the SAME value on every call from one agent so the Figma plugin's Watch-agent panel shows who is working where. NOT routing metadata; harmlessly ignored when the panel is off. (Required when the server runs with FIGMA_MCP_PRESENCE_REQUIRED=1.)"),
-	}
-	if presenceRequired {
-		opts = append(opts, mcp.Required())
-	}
-	return mcp.WithString("origin", opts...)
+		mcp.Description("Presence label: the acting agent's identity (from the roster enum). Pass the SAME value on every call from one agent so the Figma plugin's Watch-agent panel shows who is working where."),
+	)
 }
 
 // pickOrigin returns the request's `origin` arg only when it is a known roster
