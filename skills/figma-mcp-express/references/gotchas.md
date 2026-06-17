@@ -45,6 +45,22 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 
 ---
 
+## Node IDs and placement coordinates — live-resolve, never trust cached values
+
+**Symptom:** "node not found", silent off-canvas placement, or a write that hits the wrong node — even when the ID "looks right" from a brief, summary, or memory.
+
+**Three compounding causes — all fixed by the same discipline:**
+
+1. **Stale IDs and coords from briefs/summaries.** A session summary may record a frame at x≈22000 when it actually lives at x≈1814. Any brief using a remembered coordinate targets empty space. **Never trust a node id or x/y from a brief/summary/memory — `search_nodes` on the live channel and read real `absoluteBoundingBox` from `get_node` before touching anything.** A brief's ids are hints to verify, not ground truth.
+
+2. **`move_nodes`/placement is parent-relative, NOT absolute canvas coords.** Child x/y are relative to the parent frame's top-left — not the canvas. Feeding a large "absolute" value (e.g. 22000) flings a child thousands of px off-canvas when the parent is at x=1814. To place a new sibling screen: live-read an existing sibling's `absoluteBoundingBox.x` via `get_node`, then offset (`signup.x = login.realX + frameWidth + gap`). Never hardcode an absolute coordinate from memory.
+
+3. **Duplicate same-named frames.** After a fresh rebuild, the old frame stays — creating two frames at the same coords with identical names. Subsequent `search_nodes` or screenshots become ambiguous. **After any rebuild: `delete_nodes` the superseded frame, then `search_nodes` to confirm exactly ONE frame with that name remains.**
+
+**Fix:** Before any edit or placement: `search_nodes` by name → `get_node` on the live id → read real `absoluteBoundingBox` → use those values. A cache miss or summary gap ≠ "not there"; a live read is ground truth. (See also: **clone_node** in the "There's no op for X" entry — it IS a real op; past failures were stale-ID briefs, not a missing op.)
+
+---
+
 ## Node ID format
 
 **Symptom:** "node not found" for a node that exists.

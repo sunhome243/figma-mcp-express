@@ -2,6 +2,8 @@
 
 Structural and semantic patterns for the most common UI regions. Use these as the starting model before consulting the library for exact component keys and dimensions.
 
+**Quick navigation:** [Reuse/DRY](#reuse) · [Typography](#typography) · [Navigation (nav/sidebar/tabs)](#navigation) · [Forms](#forms) · [Buttons](#buttons) · [Data display (tables/lists/stats)](#data-display) · [Modals](#modals) · [Fixed-height frames](#fixed-height) · [Color & fills / status encoding](#color) · [Empty states](#empty-states) · [Loading/skeletons](#loading)
+
 ---
 
 ## Reuse & componentization (applies everywhere)
