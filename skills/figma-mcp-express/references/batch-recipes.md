@@ -42,7 +42,7 @@ Load this before composing any `batch` call. Part 1 = ready-to-use recipes (incl
 > ⚠️ **Auto-layout children: `move_nodes` is silently ignored.** If a frame has `layoutMode` set,
 > its children's positions are owned by the parent. To apply safe area or reposition content in a
 > mobile screen frame, adjust the **parent's padding** instead:
-> `set_auto_layout(screenFrameId, paddingTop: 59, paddingBottom: 34)`.
+> the batch op `set_auto_layout` on `screenFrameId` with `paddingTop: 59, paddingBottom: 34`.
 
 ```json
 {

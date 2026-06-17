@@ -29,7 +29,7 @@ screen frame is auto-layout, the header's y is owned by the parent.
 
 **What to do:** adjust the **parent's** padding or gap instead:
 ```
-set_auto_layout(screenFrameId, paddingTop: 59, paddingBottom: 34)
+set_auto_layout  nodeIds: [screenFrameId]  params: { paddingTop: 59, paddingBottom: 34 }
 ```
 The children reflow automatically. To place something at an absolute position, it must either
 be in a non-auto-layout parent, or use `position: "ABSOLUTE"` within an auto-layout container
