@@ -1,6 +1,52 @@
 package internal
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+// Regression: validateBatchParamsAgainstSchema must NOT enforce origin/status/
+// nodeId/nodeIds as per-op required params. nodeId(s) are supplied out-of-band,
+// and origin/status are TOP-LEVEL presence params that an op catalog spec can
+// inherit as "required" when FIGMA_MCP_PRESENCE_REQUIRED=1 makes `origin`
+// required. Without the skip, required `origin` leaked into every inner batch op
+// and failed all status heartbeats with `missing required param "origin"`. A
+// genuinely-required op param must still be enforced.
+func TestValidateBatchParamsSkipsPresenceAndNodeIDRequireds(t *testing.T) {
+	const op = "__test_presence_required_op__"
+	batchOpCatalog[op] = BatchOpSpec{
+		Name: op,
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []any{"origin", "status", "nodeId", "nodeIds", "realField"},
+			"properties": map[string]any{
+				"origin":    map[string]any{"type": "string"},
+				"status":    map[string]any{"type": "string"},
+				"nodeId":    map[string]any{"type": "string"},
+				"nodeIds":   map[string]any{"type": "array"},
+				"realField": map[string]any{"type": "string"},
+			},
+		},
+	}
+	defer delete(batchOpCatalog, op)
+
+	t.Run("origin/status/nodeId/nodeIds are not required per-op", func(t *testing.T) {
+		// Only realField is supplied; the four skipped names are absent → must pass.
+		if err := validateBatchParamsAgainstSchema(op, map[string]interface{}{"realField": "x"}, nil); err != nil {
+			t.Fatalf("inner op must not require origin/status/nodeId/nodeIds; got: %v", err)
+		}
+	})
+
+	t.Run("a genuinely-required op param is still enforced", func(t *testing.T) {
+		err := validateBatchParamsAgainstSchema(op, map[string]interface{}{}, nil)
+		if err == nil {
+			t.Fatal("expected an error for the missing realField, got nil")
+		}
+		if !strings.Contains(err.Error(), "realField") {
+			t.Fatalf("error should name the missing realField, got: %v", err)
+		}
+	})
+}
 
 // ── status (presence workflow state) ──────────────────────────────────────────
 

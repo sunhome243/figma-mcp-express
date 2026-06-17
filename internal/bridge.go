@@ -794,10 +794,16 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 //
 // Two hazards this guards against, both from coder/websocket semantics:
 //  1. A write whose ctx deadline fires CLOSES the whole connection (not a recoverable
-//     per-write error) — so a presence frame on a briefly-backpressured-but-alive
-//     socket could tear down the channel and kill every agent on it. We therefore use
-//     NO deadline; an ~80-byte frame writes effectively instantly on any live socket,
-//     and a genuinely wedged socket is torn down by readLoop independently.
+//     per-write error) — so too tight a deadline on a briefly-backpressured-but-alive
+//     socket could tear down the channel. But NO deadline is worse: sync.Mutex.Lock()
+//     is NOT ctx-aware, so a goroutine blocked forever in Write(context.Background())
+//     while holding wmu wedges EVERY subsequent op write at entry.wmu.Lock() — those
+//     op writes never reach their own ctx'd Write, so the conn-close-on-expiry that
+//     normally self-heals a dead socket never fires, and the channel wedges permanently.
+//     We therefore use a GENEROUS finite deadline: an ~80-byte frame writes effectively
+//     instantly on any live socket (10 s is never reached on real backpressure), while a
+//     genuinely dead socket is torn down so the channel can self-heal — matching the
+//     op-write path's bounded-write behavior.
 //  2. coder/websocket forbids concurrent writes (wmu). We TryLock and DROP the frame
 //     when an op write holds the lock, so presence never delays or interleaves with a
 //     real op write. A later waiter change (or the acquiring op's own presence_update)
@@ -815,7 +821,9 @@ func (b *Bridge) broadcastQueue(channel string, entry *connEntry) {
 			return // an op write holds the lock — drop; a later change re-broadcasts
 		}
 		defer entry.wmu.Unlock()
-		if err := wsjson.Write(context.Background(), entry.conn, frame); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := wsjson.Write(ctx, entry.conn, frame); err != nil {
 			bridgeLogger.Printf("presence_queue write error (channel %q): %v", channel, err)
 		}
 	}()
