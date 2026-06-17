@@ -91,6 +91,40 @@ func channelParam() mcp.ToolOption {
 	return mcp.WithString("channel", mcp.Description("Optional. Target a specific connected file by its channel id (from list_channels). Omit when only one file is connected."))
 }
 
+// rosterOrigins is the fixed presence roster for the multi-agent live-highlight
+// PoC. The acting agent passes its identity as the `origin` param so the Figma
+// plugin can attribute each write to a named agent (avatar + last action).
+// Keep in sync with plugin/src/presence-roster.ts.
+var rosterOrigins = []string{"grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick"}
+
+// originParam is the optional presence label exposed on write/batch tools (PoC).
+// It is enum-constrained to rosterOrigins so the model always picks a known
+// identity that maps deterministically to an avatar/color in the plugin.
+func originParam() mcp.ToolOption {
+	return mcp.WithString("origin",
+		mcp.Enum(rosterOrigins...),
+		mcp.Description("Optional. Presence label for the multi-agent live-highlight PoC — the acting agent's identity from the fixed roster (grace, theo, sunho, zoe, taewon, emma, alex, rick). Pass the SAME value on every call from one agent so the Figma plugin can show who is working where. NOT routing metadata; harmlessly ignored when the presence plugin is not in use."),
+	)
+}
+
+// pickOrigin returns the request's `origin` arg only when it is a known roster
+// member. Unknown/empty values are dropped so a stray label never reaches the
+// plugin as a phantom agent (the plugin also fails safe, but we sanitize at the
+// boundary). The enum schema already constrains MCP clients; this also guards
+// the follower /rpc path, which is not schema-validated.
+func pickOrigin(args map[string]interface{}) (string, bool) {
+	o, _ := args["origin"].(string)
+	if o == "" {
+		return "", false
+	}
+	for _, r := range rosterOrigins {
+		if r == o {
+			return o, true
+		}
+	}
+	return "", false
+}
+
 // skipInvisibleChildrenParam is the optional per-op perf toggle exposed on
 // traversal reads. When true, the plugin sets figma.skipInvisibleInstanceChildren
 // so every .children walk + findAll* skips the subtree of hidden instances —

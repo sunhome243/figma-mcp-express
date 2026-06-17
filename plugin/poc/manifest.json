@@ -1,0 +1,16 @@
+{
+  "name": "Figma MCP Express (PoC)",
+  "id": "figma-mcp-express-poc",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "dist/index.html",
+  "permissions": ["teamlibrary"],
+  "enablePrivatePluginApi": true,
+  "networkAccess": {
+    "allowedDomains": ["*"],
+    "reasoning": "The server host and port are user-configurable (defaults to ws://127.0.0.1:1995), so any origin must be allowed to support custom addresses"
+  },
+  "documentAccess": "dynamic-page",
+  "editorType": ["figma", "dev"],
+  "capabilities": ["inspect"]
+}

@@ -47,7 +47,7 @@ func validateBatchOps(rawOps []interface{}) error {
 func batchOpsFromParams(params map[string]interface{}) ([]interface{}, error) {
 	for k := range params {
 		switch k {
-		case "ops", "continueOnError", "validateOnly", "channel":
+		case "ops", "continueOnError", "validateOnly", "channel", "origin":
 		default:
 			return nil, fmt.Errorf("batch: unknown top-level param %q", k)
 		}
@@ -89,6 +89,15 @@ func validateAndPrepareBatchParams(params map[string]interface{}) error {
 	}
 	normalizeBatchNodeIDs(rawOps)
 	prepareBatchImportParams(rawOps)
+	// Sanitize the presence label on the follower /rpc path (which is NOT MCP-
+	// schema-validated): keep `origin` only when it is a known roster member,
+	// drop it otherwise so a stray label never reaches the plugin. The leader-
+	// local path applies the same filter via pickOrigin in the batch handler.
+	if o, ok := pickOrigin(params); ok {
+		params["origin"] = o
+	} else {
+		delete(params, "origin")
+	}
 	return nil
 }
 

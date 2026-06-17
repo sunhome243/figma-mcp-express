@@ -47,6 +47,7 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 			mcp.Description("Validate the declarative batch/FigmaPlan payload and return a report without sending anything to the Figma plugin."),
 		),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		rawOps, err := batchOpsFromParams(req.GetArguments())
 		if err != nil {
@@ -71,6 +72,11 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 		params := map[string]interface{}{"ops": rawOps}
 		if v, ok := req.GetArguments()["continueOnError"].(bool); ok {
 			params["continueOnError"] = v
+		}
+		// Presence label (PoC): forwarded verbatim to the plugin (the bridge strips
+		// only `channel`), where it attributes this write to a named agent.
+		if origin, ok := pickOrigin(req.GetArguments()); ok {
+			params["origin"] = origin
 		}
 
 		resp, err := node.Send(ctx, "batch", nil, withChannel(req, params))

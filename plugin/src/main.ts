@@ -4,6 +4,19 @@ import { handleReadRequest } from "./read-handlers";
 import { handleWriteRequest } from "./write-handlers";
 import { handleBatchRequest } from "./batch";
 import { statusEquals, type PluginStatus } from "./status";
+import {
+  actionLabel,
+  activeAgents,
+  appendEvent,
+  collectAffectedNodeIds,
+  focusNodes,
+  highlightNodes,
+  highlightUnion,
+  isHighlightableRequest,
+  scrollToNodes,
+  unionActiveNodeIds,
+  type PresenceEvent,
+} from "./presence";
 
 // Per-session channel id — a short routing token so the server can multiplex
 // multiple files. Stable while this plugin instance is open; a different open
@@ -12,6 +25,20 @@ import { statusEquals, type PluginStatus } from "./status";
 // This plugin-supplied id is the routing key of record — the server only
 // auto-assigns an `auto-N` id when a client connects without one.
 const channel = Math.random().toString(36).slice(2, 8);
+
+// Presence ("watch the agent") toggle — when on, a completed write/batch selects
+// + scrolls to the affected nodes so a human sees the agent's edits land live.
+// Persisted per plugin id via clientStorage; hydrated on boot below.
+let presenceEnabled = false;
+
+// Multi-agent presence log — a tiny ring buffer of recent labeled ops, keyed by
+// the `origin` each agent stamps on its calls. Drives the panel's per-agent list
+// and the canvas union-highlight. Reset when presence is turned off.
+let presenceEvents: PresenceEvent[] = [];
+
+// "Follow" mode — when set to an origin, the viewport tracks that agent's every
+// subsequent op (camera-only; the union selection is unchanged). null = no follow.
+let followOrigin: string | null = null;
 
 // Idle-stutter guard: `selectionchange`/`currentpagechange` fire 10-100×/sec
 // during a pan/drag storm, and each raw send is 4 synchronous Figma reads + an
@@ -78,6 +105,18 @@ figma.showUI(__html__, { width: 320, height: 245 });
 // the high-frequency selection/page listeners below.
 flushStatus();
 
+// Hydrate the presence toggle from clientStorage (best-effort; defaults to off).
+// get_presence awaits this so a persisted ON state can't be reported as OFF when
+// the UI's mount-time query races the async read.
+const presenceHydrated = figma.clientStorage
+  .getAsync("presence_enabled")
+  .then((v) => {
+    presenceEnabled = v === true;
+  })
+  .catch((e) => {
+    console.warn("[presence] hydrate failed:", e);
+  });
+
 figma.on("selectionchange", () => {
   sendStatus();
 });
@@ -99,13 +138,64 @@ figma.ui.onmessage = async (message) => {
     figma.ui.postMessage({
       type: "ws_config",
       host: config?.host ?? "127.0.0.1",
-      port: config?.port ?? "1994",
+      port: config?.port ?? __DEFAULT_PORT__,
       channel,
     });
     return;
   }
   if (message.type === "resize") {
     figma.ui.resize(message.width, message.height);
+    return;
+  }
+  if (message.type === "get_presence") {
+    await presenceHydrated; // ensure clientStorage hydration finished first
+    figma.ui.postMessage({ type: "presence_state", enabled: presenceEnabled });
+    return;
+  }
+  if (message.type === "set_presence") {
+    presenceEnabled = message.enabled === true;
+    await figma.clientStorage.setAsync("presence_enabled", presenceEnabled);
+    // Turning it off clears the roster + follow so the panel resets immediately.
+    if (!presenceEnabled) {
+      presenceEvents = [];
+      followOrigin = null;
+      figma.ui.postMessage({ type: "presence_update", agents: [] });
+      figma.ui.postMessage({ type: "follow_state", origin: null });
+    }
+    return;
+  }
+  if (message.type === "jump_to_agent") {
+    // Panel "jump" click: move the viewport to one agent's most recent nodes.
+    const agent = activeAgents(presenceEvents, Date.now()).find(
+      (a) => a.origin === message.origin,
+    );
+    if (agent && agent.nodeIds.length) {
+      try {
+        await focusNodes(agent.nodeIds);
+      } catch (e) {
+        console.warn("[presence] jump failed:", e);
+      }
+    }
+    return;
+  }
+  if (message.type === "set_follow") {
+    // Toggle "follow this agent": clicking the followed agent again clears it.
+    const target = typeof message.origin === "string" ? message.origin : null;
+    followOrigin = followOrigin === target ? null : target;
+    figma.ui.postMessage({ type: "follow_state", origin: followOrigin });
+    // Jump to the followed agent's latest work right away (select + scroll).
+    if (followOrigin) {
+      const agent = activeAgents(presenceEvents, Date.now()).find(
+        (a) => a.origin === followOrigin,
+      );
+      if (agent && agent.nodeIds.length) {
+        try {
+          await focusNodes(agent.nodeIds);
+        } catch (e) {
+          console.warn("[presence] follow jump failed:", e);
+        }
+      }
+    }
     return;
   }
   if (message.type === "save_ws_config") {
@@ -125,6 +215,45 @@ figma.ui.onmessage = async (message) => {
         requestId: response.requestId,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+    // Presence highlight — strictly best-effort AFTER the response is posted, so it
+    // can never delay or break the op's reply. Only for successful, highlightable
+    // (write/batch) ops; read verbs and errors are skipped.
+    if (
+      presenceEnabled &&
+      response &&
+      !response.error &&
+      isHighlightableRequest(message.payload?.type)
+    ) {
+      try {
+        const ids = collectAffectedNodeIds(response);
+        const origin =
+          typeof message.payload?.params?.origin === "string"
+            ? message.payload.params.origin
+            : "";
+        if (origin && ids.length) {
+          // Labeled op → record presence, refresh the panel, highlight the union
+          // of active agents' nodes (no scroll — the viewport can't chase N agents).
+          presenceEvents = appendEvent(presenceEvents, {
+            origin,
+            nodeIds: ids,
+            action: actionLabel(message.payload?.type, ids.length),
+            ts: Date.now(),
+          });
+          const agents = activeAgents(presenceEvents, Date.now());
+          figma.ui.postMessage({ type: "presence_update", agents });
+          await highlightUnion(unionActiveNodeIds(agents));
+          // If following this agent, track its camera too (selection stays union).
+          if (followOrigin && origin === followOrigin) {
+            await scrollToNodes(ids);
+          }
+        } else if (ids.length) {
+          // Unlabeled op → legacy single-agent follow (select + scroll).
+          await highlightNodes(ids);
+        }
+      } catch (e) {
+        console.warn("[presence] highlight failed:", e);
+      }
     }
   }
 };

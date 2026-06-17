@@ -155,9 +155,61 @@ Do NOT read or write outside your scope.
 Do NOT issue live plugin reads — use the cache data provided below.
 Do NOT use git stash, git reset --hard, git checkout --, or git clean.
 channel: "auto-N"  ← pass this on every tool call.
+origin: "<rosterName>"  ← (PoC only) pass this on every batch call so the
+                          plugin's Watch-agent panel attributes your edits.
 
 Shared resources already created by coordinator:
   wrapperId = <id>
   spacingVar = <variableId>
   ...
 ```
+
+---
+
+## 7. Agent presence — the `origin` label (PoC)
+
+A live "who is working where" view for humans watching the file. When the plugin's
+**Watch agent** toggle is on, each labeled write lights up the canvas and a per-agent
+panel (avatar + last action). This is a PoC on the local-built binary (port 1995).
+**Pass `origin` ONLY to a binary that supports it:** `batch` rejects unknown
+top-level params, so a binary predating this change errors with
+`unknown top-level param "origin"`. Never send `origin` to the published/production
+server — only to the local PoC build.
+
+### Why a label, not auto-detection
+
+The transport cannot tell agents apart on its own: parallel subagents in one Claude
+Code session share **one** MCP process (one WebSocket), and process identity is
+unstable across restarts. So the acting agent must self-identify. `origin` is an
+**enum** (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`) so each label
+maps deterministically to a name/color/avatar. It flows verbatim to the plugin (the
+bridge strips only `channel`); unknown/empty values are dropped server-side and the
+plugin fails safe.
+
+### Orchestrator convention
+
+Assign each subagent ONE roster name and bake it into the prompt, so the identity
+persists across all of that subagent's calls (each subagent is an independent
+context). Partition + presence compose cleanly: one agent per region, one `origin`
+per agent.
+
+```
+Agent 1 → owns frame A → origin: "grace"
+Agent 2 → owns frame B → origin: "theo"
+Agent 3 → owns frame C → origin: "sunho"
+```
+
+Each then stamps it on every batch call, e.g.
+`batch(channel:"auto-1", origin:"grace", ops:[create_frame…])`.
+
+### What presence does and does NOT do
+
+- **Panel (primary):** shows every active agent at once — avatar, name, last action,
+  relative time — with a `[→]` jump button. This is how you "follow many."
+- **Canvas (secondary):** selects the **union** of active agents' recent nodes
+  **without scrolling** — a single Figma viewport physically cannot chase N agents,
+  so it never auto-follows; the panel's `[→]` is the only camera move (one agent at a
+  time, on demand).
+- It is **display only** — `origin` changes nothing about execution, serialization,
+  or the op result. Unlabeled calls keep the legacy single-agent follow (select +
+  scroll). History is a small ring buffer (last 10), not an audit log.

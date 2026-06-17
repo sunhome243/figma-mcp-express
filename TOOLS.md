@@ -1188,6 +1188,8 @@ Reads inside a batch are always live and bypass the singleflight cache. Do not u
 
 **Channel routing.** Put `channel` on the outer `batch` call only. Do not include `channel` in `ops[*].params`; per-op params are validated against `BatchOpCatalog` and `channel` is not part of any op schema.
 
+**Agent presence (PoC, optional).** `origin` is an optional enum label (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`) the acting agent stamps on the outer `batch` call so the plugin's multi-agent "Watch agent" panel can show who is working where (avatar + last action). Pass the SAME value on every call from one agent. It is NOT routing metadata and is harmlessly ignored when the presence plugin is not in use. See `references/multi-agent.md § 7`.
+
 **Stop policy.** If any op uses a `$N` ref, the batch stops at the first failure (dependent chain). With no refs, it continues past failures (independent bulk). Override with `continueOnError`.
 
 **`map` op (per-item-varying params).** Use `{type:"map", over, as, do}` to run an inner op once per item of a collection: `over` is a ref to an array (e.g. `$0.matchingNodes`) or a literal array, `as` names the loop binding, and `do` is the op template referencing `$item`/`$index`. Named bindings substitute only as whole-value refs (`"$item.name"`); `"Title $index"` is literal text. `map.do` cannot be another `map`. Capped at 500 items. Use this when each iteration needs _different_ params (vs `[*]` which applies the same value to all).
@@ -1225,5 +1227,6 @@ Reads inside a batch are always live and bypass the singleflight cache. Do not u
 | continueOnError | boolean  | No       | Override the default stop policy: `true` = run all ops and report failures; `false` = stop at first failure. Default: stop when ops use `$N` refs, continue otherwise. |
 | validateOnly    | boolean  | No       | Validate the plan and return a report without sending anything to the plugin.                                                                                          |
 | channel         | string   | No       | Target a specific connected file by channel id.                                                                                                                        |
+| origin          | string   | No       | (PoC) Presence label from the fixed roster (`grace`/`theo`/`sunho`/`zoe`/`taewon`/`emma`/`alex`/`rick`). Attributes this write to a named agent in the plugin's Watch-agent panel; ignored otherwise. Pass the same value on every call from one agent. |
 
 Returns `{results: [{i, type, data}|{i, type, error}], okCount, failCount, failedAt}`. Large aggregate results spill to disk via the response gate.

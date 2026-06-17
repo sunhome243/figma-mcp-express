@@ -6,6 +6,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-agent presence (PoC) — optional `origin` label + plugin "Watch agent" panel.** When several agents edit the same file, a human can see who is working where. The acting agent stamps an optional enum `origin` (`grace`/`theo`/`sunho`/`zoe`/`taewon`/`emma`/`alex`/`rick`) on its `batch` calls; the label flows verbatim to the plugin (the bridge already strips only `channel`), where the **Watch agent** panel shows each active agent as a row (avatar + name + last action + a `[→]` jump-to button). Why a label and not auto-detection: parallel subagents in one Claude Code session share a single MCP process/WebSocket, so the transport can't tell them apart — the agent must self-identify; the enum maps deterministically to a name/color/avatar, unknown values are dropped server-side, and the plugin fails safe. Because one Figma viewport can't follow N agents, the canvas highlights the **union** of active agents' recent nodes **without** auto-scrolling (the panel `[→]` is the only on-demand camera move); unlabeled calls keep the legacy single-agent select-and-scroll follow. Display-only — `origin` changes nothing about execution, serialization, or results. History is a 10-event ring buffer. Validated on the isolated PoC build (manifest id `figma-mcp-express-poc`, port 1995). **Pass `origin` only to a binary that supports it:** `batch` rejects unknown top-level params, so binaries predating this change error with `unknown top-level param "origin"` — do not send `origin` to the published/production server, only to the local PoC build. See `references/multi-agent.md § 7`.
+
 ## [2.2.0] — 2026-06-16
 
 ### Added

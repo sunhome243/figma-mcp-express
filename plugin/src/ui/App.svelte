@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { nextReconnectDelay } from "../status";
+  import { metaFor, initialOf } from "../presence-roster";
+  import { PRESENCE_ACTIVE_WINDOW_MS, type AgentActivity } from "../presence";
+
+  // One agent's live activity, as computed by the plugin core (activeAgents()).
+  // `active` from the core is a point-in-time snapshot; the UI re-derives it
+  // against its own 1 Hz clock (see isActive) so rows dim on schedule even when
+  // no new op arrives to push a fresh presence_update.
 
   let connected = false;
   let fileName = "—";
@@ -14,33 +21,146 @@
   // Configurable server address.
   // Persisted via figma.clientStorage (through plugin core) because localStorage
   // is unavailable inside Figma's data: URL sandbox.
+  // __DEFAULT_PORT__ is injected at build time (1994 prod / 1995 PoC) so the
+  // isolated PoC plugin auto-connects to its own server.
   let serverHost = "127.0.0.1";
-  let serverPort = "1994";
+  let serverPort = __DEFAULT_PORT__;
 
   let showSettings = false;
   let editHost = serverHost;
   let editPort = serverPort;
   let minimized = false;
 
-  const FULL_W = 320, FULL_H = 245;
+  // Presence ("watch the agent") toggle — mirrors plugin-core state, hydrated via
+  // get_presence on mount and persisted by the core on every change.
+  let watchAgent = false;
+  // Live per-agent activity (pushed by the core as presence_update), plus a
+  // 1 Hz clock for relative timestamps and a set of origins whose avatar 404'd.
+  let agents: AgentActivity[] = [];
+  let now = Date.now();
+  let avatarFailed = new Set<string>();
+  // Origin the viewport is currently following (camera tracks its ops), or null.
+  let followOrigin: string | null = null;
+
+  // Re-derive activity against the live clock so dimming tracks real time.
+  const isActive = (lastTs: number, ref: number): boolean =>
+    ref - lastTs <= PRESENCE_ACTIVE_WINDOW_MS;
+
+  const FULL_W = 320;
   const PILL_W = 210, PILL_H = 36;
+  const MIN_H = 120, HARD_MAX_H = 800;
+
+  // The window FITS ITS CONTENT: measured live from the .app element
+  // (bind:clientHeight) and pushed to figma.ui.resize. Empty state → compact (no
+  // wasted margin); each agent row grows the window until the list hits listMaxH,
+  // then the list scrolls. listMaxH is the only manual lever (drag handle), so
+  // sizing stays uniform — no separate "auto vs manual" layout modes.
+  let contentH = 0;
+  let listMaxH = 300; // px cap on the agent list before it scrolls (drag to change)
+  let lastSentH = 0;
+
+  function applyResize() {
+    if (minimized) {
+      postToPlugin({ type: "resize", width: PILL_W, height: PILL_H });
+      lastSentH = 0; // force a fresh send when restored
+      return;
+    }
+    if (contentH <= 0) return;
+    const h = Math.max(MIN_H, Math.min(Math.ceil(contentH), HARD_MAX_H));
+    if (h === lastSentH) return;
+    lastSentH = h;
+    postToPlugin({ type: "resize", width: FULL_W, height: h });
+  }
+  // Re-fit whenever measured content or minimized state changes.
+  $: contentH, minimized, applyResize();
+
+  $: liveCount = agents.filter((a) => isActive(a.lastTs, now)).length;
+
+  // ── Activity pulse: flash the row of whichever agent just acted. agents[0] is
+  // the most-recent actor (activeAgents sorts by lastTs desc), so each
+  // presence_update pulses that row in the agent's colour. No core change needed.
+  let pulse = new Set<string>();
+  const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  function triggerPulse(origin: string) {
+    // Drop then re-add next frame so the CSS animation restarts on rapid repeats.
+    pulse = new Set([...pulse].filter((o) => o !== origin));
+    requestAnimationFrame(() => {
+      pulse = new Set(pulse).add(origin);
+      const prev = pulseTimers.get(origin);
+      if (prev) clearTimeout(prev);
+      pulseTimers.set(
+        origin,
+        setTimeout(() => {
+          pulse = new Set([...pulse].filter((o) => o !== origin));
+          pulseTimers.delete(origin);
+        }, 650),
+      );
+    });
+  }
+
+  // ── Manual list resize: dragging the handle adjusts the list's max-height,
+  // which flows through contentH → window resize. Lets the user shrink a tall
+  // panel (or grow it). Pointer math is delta-based so the moving window is fine.
+  let resizing = false;
+  let resizeStartY = 0, resizeStartMax = 0;
+  function startResize(e: PointerEvent) {
+    resizing = true;
+    resizeStartY = e.clientY;
+    resizeStartMax = listMaxH;
+    window.addEventListener("pointermove", onResizeMove);
+    window.addEventListener("pointerup", endResize);
+    e.preventDefault();
+  }
+  function onResizeMove(e: PointerEvent) {
+    if (!resizing) return;
+    listMaxH = Math.max(56, Math.min(420, resizeStartMax + (e.clientY - resizeStartY)));
+  }
+  function endResize() {
+    resizing = false;
+    window.removeEventListener("pointermove", onResizeMove);
+    window.removeEventListener("pointerup", endResize);
+  }
+
+  // Clicking a row toggles "follow" — the viewport then tracks that agent's ops
+  // until it's clicked again (or another agent is followed). The core echoes the
+  // resulting state back via follow_state.
+  function toggleFollow(origin: string) {
+    postToPlugin({ type: "set_follow", origin });
+  }
+
+  function markAvatarFailed(origin: string) {
+    avatarFailed = new Set(avatarFailed).add(origin); // new ref → Svelte reactivity
+  }
+
+  function relTime(ts: number, ref: number): string {
+    const s = Math.max(0, Math.floor((ref - ts) / 1000));
+    if (s < 3) return "just now";
+    if (s < 60) return `${s}s ago`;
+    return `${Math.floor(s / 60)}m ago`;
+  }
 
   // Tag every UI→plugin message with our pluginId (the manifest id). Figma routes
   // pluginMessage to the plugin code only when pluginId matches, so another plugin
   // or a navigated iframe cannot intercept these messages (which carry the WS
   // host/port config). See developers.figma.com/docs/plugins/creating-ui.
-  const PLUGIN_ID = "figma-mcp-express";
+  const PLUGIN_ID = __PLUGIN_ID__;
   function postToPlugin(message: unknown) {
     parent.postMessage({ pluginMessage: message, pluginId: PLUGIN_ID }, "*");
   }
 
+  function toggleWatchAgent() {
+    watchAgent = !watchAgent;
+    postToPlugin({ type: "set_presence", enabled: watchAgent });
+    if (!watchAgent) {
+      agents = []; // clear immediately; core also resets its log
+      followOrigin = null;
+      pulse = new Set();
+    }
+    // The content-fit reactive resizes the window once the section mounts/unmounts.
+  }
+
   function toggleMinimize() {
-    minimized = !minimized;
-    postToPlugin({
-      type: "resize",
-      width: minimized ? PILL_W : FULL_W,
-      height: minimized ? PILL_H : FULL_H,
-    });
+    minimized = !minimized; // the $: reactive re-fits (pill vs content height)
   }
 
   let socket: WebSocket | null = null;
@@ -138,6 +258,23 @@
       return;
     }
 
+    if (msg.type === "presence_state") {
+      watchAgent = msg.enabled === true;
+      // content-fit reactive handles the resize once the section renders
+      return;
+    }
+
+    if (msg.type === "presence_update") {
+      agents = Array.isArray(msg.agents) ? msg.agents : [];
+      if (agents.length) triggerPulse(agents[0].origin); // pulse the just-acted row
+      return;
+    }
+
+    if (msg.type === "follow_state") {
+      followOrigin = typeof msg.origin === "string" ? msg.origin : null;
+      return;
+    }
+
     if (msg.type === "plugin-status") {
       fileName = msg.payload.fileName;
       fileKey = msg.payload.fileKey ?? "";
@@ -191,9 +328,15 @@
   onMount(() => {
     window.addEventListener("message", handleMessage);
 
+    // 1 Hz tick so relative timestamps ("2s ago") stay live.
+    const clock = setInterval(() => (now = Date.now()), 1000);
+
     // Request stored config from plugin core (responds with ws_config message).
     // connect() is called once we receive the response.
     postToPlugin({ type: "get_ws_config" });
+
+    // Hydrate the presence toggle from plugin-core state.
+    postToPlugin({ type: "get_presence" });
 
     // Fallback: if the plugin core doesn't respond within 500 ms (e.g. during
     // dev / hot-reload without a running core), connect with defaults.
@@ -206,6 +349,10 @@
 
     return () => {
       clearTimeout(fallback);
+      clearInterval(clock);
+      pulseTimers.forEach((t) => clearTimeout(t));
+      window.removeEventListener("pointermove", onResizeMove);
+      window.removeEventListener("pointerup", endResize);
       window.removeEventListener("message", handleMessage);
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
       if (socket) socket.close();
@@ -224,7 +371,7 @@
     </svg>
   </button>
 {:else}
-<div class="app">
+<div class="app" bind:clientHeight={contentH}>
 
   <!-- Header: status + minimize -->
   <header>
@@ -250,6 +397,85 @@
       <span class="field-label">Page</span>
       <span class="field-value muted" title={pageName}>{pageName}</span>
     </div>
+
+    <!-- Presence toggle: follow the agent's edits live on canvas -->
+    <button
+      class="watch-row"
+      class:on={watchAgent}
+      on:click={toggleWatchAgent}
+      title="Select + scroll to nodes the agent edits, live"
+    >
+      <span class="watch-label">👀 Watch agent</span>
+      <span class="switch" class:on={watchAgent}><span class="knob"></span></span>
+    </button>
+
+    <!-- Per-agent presence: who is working where (one viewport can't follow N
+         agents, so the canvas highlights the union and [→] jumps to one). -->
+    {#if watchAgent}
+      <div class="presence">
+        <div class="presence-head">
+          <span class="field-label">Agents</span>
+          {#if liveCount > 0}
+            <span class="live-badge"><span class="live-dot"></span>{liveCount} live</span>
+          {/if}
+        </div>
+        {#if agents.length === 0}
+          <div class="presence-empty"><span class="eyes">👀</span> waiting for an agent…</div>
+        {:else}
+          <div class="presence-list" style="max-height:{listMaxH}px">
+            {#each agents as a (a.origin)}
+              {@const meta = metaFor(a.origin)}
+              {@const following = a.origin === followOrigin}
+              {@const active = isActive(a.lastTs, now)}
+              <button
+                class="agent-row"
+                class:idle={!active}
+                class:following
+                class:pulse={pulse.has(a.origin)}
+                style="--c:{meta.color}"
+                on:click={() => toggleFollow(a.origin)}
+                title={following ? `Following ${meta.name} — click to stop` : `Follow ${meta.name}'s edits`}
+              >
+                <span class="avatar-wrap">
+                  {#if avatarFailed.has(a.origin)}
+                    <span class="avatar avatar-mono">{initialOf(a.origin)}</span>
+                  {:else}
+                    <img
+                      class="avatar"
+                      src={meta.avatar}
+                      alt={meta.name}
+                      on:error={() => markAvatarFailed(a.origin)}
+                    />
+                  {/if}
+                </span>
+                <span class="agent-text">
+                  <span class="agent-name">{meta.name}</span>
+                  <span class="agent-action">{a.action} · {relTime(a.lastTs, now)}</span>
+                </span>
+                <span class="agent-status">
+                  {#if following}
+                    <span class="follow-tag"><span class="fdot"></span>following</span>
+                  {:else}
+                    <span class="status-dot" class:breathing={active} class:dim={!active}></span>
+                  {/if}
+                </span>
+              </button>
+            {/each}
+          </div>
+          <!-- Drag to resize the list (and thus the window). -->
+          <div
+            class="resize-grip"
+            class:dragging={resizing}
+            role="separator"
+            aria-orientation="horizontal"
+            on:pointerdown={startResize}
+            title="Drag to resize"
+          >
+            <span class="grip-bar"></span>
+          </div>
+        {/if}
+      </div>
+    {/if}
   </main>
 
   <!-- Footer -->
@@ -290,7 +516,9 @@
     font-size: 12px;
     background: #fff;
     color: #1e1e1e;
-    height: 100vh;
+    /* height is content-driven: the plugin measures .app and resizes the window
+       to fit, so the empty state stays compact (no leftover margin). */
+    height: auto;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -334,10 +562,11 @@
   }
 
   /* ── full app ── */
+  /* height is intentionally auto (content-driven) — bind:clientHeight measures it
+     and the plugin resizes the window to match. */
   .app {
     display: flex;
     flex-direction: column;
-    height: 100%;
   }
 
   /* ── header ── */
@@ -442,6 +671,269 @@
     color: #777;
     font-size: 12px;
   }
+
+  /* ── watch-agent toggle ── */
+  .watch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    background: #f7f7f7;
+    border: 1px solid #ebebeb;
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .watch-row:hover { background: #f0f0f0; border-color: #ddd; }
+  .watch-row.on { background: #edfaf4; border-color: #bdecd3; }
+
+  .watch-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #555;
+  }
+
+  .watch-row.on .watch-label { color: #0d8f54; }
+
+  .switch {
+    width: 30px;
+    height: 18px;
+    border-radius: 100px;
+    background: #d8d8d8;
+    flex-shrink: 0;
+    position: relative;
+    transition: background 0.15s;
+  }
+
+  .switch.on { background: #0d8f54; }
+
+  .knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s;
+  }
+
+  .switch.on .knob { transform: translateX(12px); }
+
+  /* ── presence: per-agent activity console ──
+     Chrome stays quiet (monochrome); colour + motion live ONLY here. Each agent's
+     identity colour is carried on the row as --c and drives the avatar ring, the
+     live dot, the follow tag, and the activity pulse. */
+  .presence {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+  }
+
+  .presence-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #0d8f54;
+    letter-spacing: 0.02em;
+  }
+
+  .live-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: breathe 1.6s ease-in-out infinite;
+  }
+
+  .presence-empty {
+    font-size: 11px;
+    color: #b0b0b0;
+    padding: 12px 2px;
+    text-align: center;
+    letter-spacing: 0.01em;
+  }
+
+  .presence-empty .eyes {
+    display: inline-block;
+    animation: breathe 2s ease-in-out infinite;
+  }
+
+  .presence-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    /* max-height is set inline (listMaxH) so the drag handle can resize it. */
+  }
+
+  .agent-row {
+    --c: #9a9a9a;
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 9px;
+    padding: 6px 9px 6px 7px;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+    transition: background 0.15s, border-color 0.15s, opacity 0.25s, box-shadow 0.15s;
+  }
+
+  .agent-row:hover { background: #f3f3f3; border-color: #e2e2e2; }
+  .agent-row.idle { opacity: 0.45; }
+
+  .agent-row.following {
+    background: #fff;
+    border-color: var(--c);
+    box-shadow: inset 0 0 0 1px var(--c);
+    opacity: 1; /* never dim a followed agent */
+  }
+
+  /* Colour-wash pulse on each op — an overlay so it works over any row bg. */
+  .agent-row::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--c);
+    opacity: 0;
+    pointer-events: none;
+    border-radius: inherit;
+  }
+  .agent-row.pulse::before { animation: agentPulse 0.65s ease-out; }
+  @keyframes agentPulse {
+    from { opacity: 0.24; }
+    to { opacity: 0; }
+  }
+
+  .avatar-wrap {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    padding: 2px;
+    background: var(--c); /* the identity-colour ring */
+  }
+
+  .avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: #fff;
+    display: block;
+  }
+
+  .avatar-mono {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--c);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .agent-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .agent-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Monospace activity line — a "live log" character without an external font. */
+  .agent-action {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    color: #9a9a9a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+
+  .agent-status {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c);
+  }
+  .status-dot.breathing { animation: breathe 1.6s ease-in-out infinite; }
+  .status-dot.dim { background: #d2d2d2; }
+
+  .follow-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--c);
+    white-space: nowrap;
+  }
+  .follow-tag .fdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c);
+  }
+
+  @keyframes breathe {
+    0%, 100% { opacity: 0.4; transform: scale(0.82); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Drag handle to resize the list (and the window) ── */
+  .resize-grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 12px;
+    margin-top: -2px;
+    cursor: ns-resize;
+    touch-action: none;
+  }
+  .grip-bar {
+    width: 28px;
+    height: 3px;
+    border-radius: 3px;
+    background: #e0e0e0;
+    transition: background 0.15s, width 0.15s;
+  }
+  .resize-grip:hover .grip-bar { background: #c4c4c4; width: 36px; }
+  .resize-grip.dragging .grip-bar { background: #9a9a9a; width: 36px; }
 
   /* ── footer ── */
   footer {

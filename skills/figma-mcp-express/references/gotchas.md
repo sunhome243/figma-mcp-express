@@ -17,6 +17,10 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 **Cause:** malformed/truncated/node-id keys now fail fast in the Go server, but valid-looking unpublished, wrong-library, or permission-blocked keys can still reach the Plugin API and wait for its import timeout; calls queued behind it wait, then the queue drains on its own. NOT a permanent jam — the queue + timeout clear it.
 **Fix:** validate the key via `get_local_components`/`fetch_library_catalog` BEFORE importing; pass `assetType:"COMPONENT_SET"` for set keys or fetch the catalog first so the server injects the component-set route hint. Don't loop-retry — each try queues another timeout window. Calls behind it complete once it clears — no reopen needed unless the WebSocket actually dropped.
 
+## save_screenshots can silently return `{succeeded:0,total:0}` — retry once, then fall back to get_screenshot
+> ⏳ TRACKED: figma-mcp-express#28 — when the server surfaces a per-item error reason, simplify this.
+`save_screenshots` occasionally returns `{succeeded:0,total:0}` with no error and no indication of which node failed (a transient write/contention issue, not a bad request). Do NOT treat `succeeded:0` as a hard failure and do NOT abandon the self-eval. Recover deterministically: **retry the same `save_screenshots` once** after the prior call settles; if it's still `0`, **fall back to `get_screenshot`** (the in-memory base64 export — it's the documented alternative and doesn't touch the filesystem). The visual you need for self-eval/review is still obtainable. Only escalate if BOTH the retry and the `get_screenshot` fallback return nothing — that indicates a real node/selection problem, not the transient zero.
+
 ---
 
 ## COMPONENT_SET vs COMPONENT key
@@ -153,3 +157,45 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 **`batch` quirks:** `swap_component` takes `nodeIds[]` (not `nodeId`); reads like `scan_nodes_by_types` take `nodeId` **inside `params`**.
 
 **Fallbacks:** nested swap fails → detach the few instances, place icons directly (don't thrash). Multi-file channels reassign their id on every reconnect (node ids stay stable) → re-run `list_channels` before each op group.
+
+
+## COMPONENT nodes DO support auto-layout
+A frequent false belief: "`set_auto_layout` doesn't work on COMPONENT nodes, so I positioned the children absolutely." Wrong — a COMPONENT (and COMPONENT_SET) supports `layoutMode`/auto-layout exactly like a FRAME. Set auto-layout on the component master so its children flow and its instances reflow; never fall back to absolute x/y inside a component because you assumed the op is unsupported. If a layout op seems to fail on a component, check the params (it uses the op's OWN names), don't conclude the node type is the blocker.
+
+## Fill/paint variable bindings are NOT READABLE — do not gate on them
+> ⏳ TRACKED: figma-mcp-express#27 — when reads surface fill bindings, REVISE this section to restore binding verification.
+No read tool surfaces a fill's variable binding. `get_node`/`get_nodes_info` flatten every fill to a resolved hex (`["#ffffff"]`). `get_design_context` at EVERY detail (compact/full/codegen) serializes fills only as resolved-hex dedup aliases in `globalVars.styles` (`s1=#ffffff`, `s2=#c2410c`, …) — a fill bound to a variable and a hand-typed raw hex of the same value are byte-identical in the output (verified with a positive control: a `set_fills variableId`-bound frame reads identically to an untouched one). Only EFFECT bindings (shadows) emit `boundVariables`; fills never do. Therefore: you CANNOT confirm or deny that a fill is variable-bound by reading, and `globalVars` showing `sN`/hex is NOT evidence of "raw/unbound" — treating it so produces FALSE-NEGATIVE D3 failures. Binding evidence is the WRITE op: `bind_variable_to_node`/`set_fills variableId` return success (bind_variable_to_node echoes the bound `variableId`). The only readable, real D3 fill violation is an OFF-PALETTE hex — a color value not in the project's token spine — which signals a hand-picked non-token color. Palette-matching values are presumed bound (trust the write path); do not fail them.
+
+To bind a fill: `set_fills` with `variableId` (= `setBoundVariableForPaint`) or `bind_variable_to_node` field `fillColor`. Both apply the binding in the file; neither is verifiable by a later read.
+
+---
+
+## Bringing external assets into Figma (verified ingestion recipes)
+
+The orchestrator should pre-fetch assets (brand logos, icons, photos, avatars, Lottie — sourced
+keyless from Iconify / SimpleIcons / Picsum / DiceBear / LottieFiles, with a web-search `--url`
+fallback) and hand builders **local file paths**. The Figma ingestion path then depends on the
+asset type:
+
+### PNG / JPEG → `import_image` batch op (no plugin required)
+Use `figma-mcp-express`'s `import_image` batch op with `imagePath` (absolute local path). This is
+the direct, no-plugin path for raster images. Hand the builder the file path; it batches the import.
+
+### SVG → `figma.createNodeFromSvg` via `use_figma`
+> ⏳ `figma-mcp-express` has NO svg batch op — there is no `import_svg` or `create_vector_from_svg`
+> in the `batch` op catalog. SVG ingestion requires the official Figma plugin runtime. Use `use_figma`
+> (the plugin code tool) with `figma.createNodeFromSvg(svgString)` inside a plugin script. This is a
+> genuine MCP capability gap, not a workaround.
+
+### Lottie .json → NOT MCP-ingestible as animation
+> ⏳ Lottie `.json` files cannot be imported as live animations through any MCP op or plugin script.
+> Workaround: export the Lottie's static poster frame as a PNG and ingest that with `import_image`.
+> Keep the `.json` path in the ledger for the developer handoff note. Do not block a build on this.
+
+**Summary:**
+
+| Asset type | Ingestion method | MCP path |
+|---|---|---|
+| PNG / JPEG | `batch import_image` with `imagePath` | Direct batch op — no plugin |
+| SVG | `use_figma` + `figma.createNodeFromSvg` | Plugin runtime required ⏳ |
+| Lottie .json | Import poster PNG + note the .json path | Animation not ingestible ⏳ |
