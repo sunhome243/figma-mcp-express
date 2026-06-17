@@ -484,6 +484,11 @@ type saveResult struct {
 
 func executeSaveScreenshots(ctx context.Context, node *Node, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	rawItems, _ := req.GetArguments()["items"].([]interface{})
+	// Guard the silent {succeeded:0,total:0} case (issue #28): if items is missing,
+	// empty, or not an array, return an actionable error instead of a zero report.
+	if len(rawItems) == 0 {
+		return mcp.NewToolResultError("items is required and must be a non-empty array of {nodeId, outputPath}"), nil
+	}
 	defaultFormat, _ := req.GetArguments()["format"].(string)
 	defaultScale, _ := req.GetArguments()["scale"].(float64)
 

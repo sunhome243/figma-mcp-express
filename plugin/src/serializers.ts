@@ -23,13 +23,22 @@ export const serializePaints = (paints: any) => {
       if (paint.type === "SOLID" && "color" in paint) {
         const hex = toHex(paint.color);
         const opacity = paint.opacity != null ? paint.opacity : 1;
-        if (opacity === 1) return hex;
-        return (
-          hex +
-          Math.round(opacity * 255)
-            .toString(16)
-            .padStart(2, "0")
-        );
+        const value =
+          opacity === 1
+            ? hex
+            : hex +
+              Math.round(opacity * 255)
+                .toString(16)
+                .padStart(2, "0");
+        // Surface a color variable binding so token-binding is verifiable on reads
+        // (issue #27). Unbound fills stay bare hex strings; a bound fill becomes
+        // {color, variableId} — a raw hex and a bound token are no longer
+        // byte-identical. Resolve the token name via get_variable_defs if needed.
+        const variableId = paint.boundVariables?.color?.id;
+        if (typeof variableId === "string") {
+          return { color: value, variableId };
+        }
+        return value;
       }
       // Non-SOLID: emit at least {type}. For IMAGE also emit scaleMode+imageHash.
       if (paint.type === "IMAGE") {

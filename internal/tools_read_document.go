@@ -99,10 +99,7 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 	})
 
 	s.AddTool(mcp.NewTool("get_design_context",
-		mcp.WithDescription("Get a depth-limited, token-efficient tree of the current SELECTION or page (no nodeId param — it reads the active selection). The exploration default for a whole region and the codegen read path (detail='codegen'). "+
-			"PREFER A SIBLING WHEN: you have a specific node id → get_node / get_nodes_info (id-targeted, depth-aware); you want only the structure/id map → get_metadata; you need the full unfiltered page tree → get_document; you're locating nodes by name/type → search_nodes / scan_nodes_by_types. Use this over get_document whenever token efficiency matters on a large file. "+
-			"SCOPING: detail = minimal/compact/full/codegen; dedupe_components collapses repeated instances. Large responses spill to disk as {spilled:true,path,bytes,preview} — read with jq/grep, don't expect the full payload inline. Timeouts are server-managed; a slow read that ticks progress is progressing, not hung — fix a real timeout with a narrower read, not a longer timeout. "+
-			"CHAIN: official discipline is get_metadata first → then target nodes; select the region in Figma (or navigate) before calling. Also a `batch` op type."),
+		mcp.WithDescription("Depth-limited, token-efficient node tree. Pass nodeId to scope to a subtree, else reads the current selection/page. detail=minimal|compact|full|codegen; dedupe_components collapses repeated instances. Large results spill to disk."),
 		mcp.WithNumber("depth",
 			mcp.Description("How many levels deep to traverse (default 2)"),
 		),
@@ -115,6 +112,9 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		mcp.WithObject("codeConnectMap",
 			mcp.Description("Optional Code-Connect map keyed by published component key → an arbitrary mapping value (e.g. {\"abc123\": {\"component\": \"Button\", \"import\": \"@/ui/button\"}}). Only used with detail=codegen: any INSTANCE whose main-component key is present gets a codeConnect field attached. Pass-through only — the plugin does not read files."),
 		),
+		mcp.WithString("nodeId",
+			mcp.Description("Optional. Scope to this node's subtree (e.g. 4029:12345). Omit to read the current selection/page."),
+		),
 		skipInvisibleChildrenParam(),
 		channelParam(),
 		originParam(),
@@ -122,6 +122,9 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		params := map[string]interface{}{}
 		if d, ok := req.GetArguments()["depth"].(float64); ok && d > 0 {
 			params["depth"] = d
+		}
+		if id, ok := req.GetArguments()["nodeId"].(string); ok && id != "" {
+			params["nodeId"] = NormalizeNodeID(id)
 		}
 		applyOrigin(req, params)
 		detail, _ := req.GetArguments()["detail"].(string)

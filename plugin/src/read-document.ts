@@ -353,9 +353,20 @@ export const handleReadDocumentRequest = async (request: any) => {
         return Object.assign({}, serialized, { children: serializedChildren });
       };
 
+      // When a nodeId is supplied, scope to that subtree regardless of the current
+      // selection (issue #34). Otherwise fall back to the selection, or the whole
+      // page when nothing is selected.
+      const scopeNodeId = request.params && request.params.nodeId;
       const selection = figma.currentPage.selection;
-      const roots =
-        selection.length > 0 ? Array.from(selection) : [figma.currentPage];
+      let roots: any[];
+      if (scopeNodeId) {
+        const scoped = await figma.getNodeByIdAsync(scopeNodeId);
+        if (!scoped) throw new Error(`Node not found: ${scopeNodeId}`);
+        roots = [scoped];
+      } else {
+        roots =
+          selection.length > 0 ? Array.from(selection) : [figma.currentPage];
+      }
       // Prefetch the unique style / main-component / (codegen) token lookups across
       // all roots in parallel for the single-walk fast path (the dedupeComponents
       // and compact/minimal paths still resolve correctly inline — prewarm only

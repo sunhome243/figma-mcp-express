@@ -812,28 +812,48 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 //     instantly on any live socket (10 s is never reached on real backpressure), while a
 //     genuinely dead socket is torn down so the channel can self-heal — matching the
 //     op-write path's bounded-write behavior.
-//  2. coder/websocket forbids concurrent writes (wmu). We TryLock and DROP the frame
-//     when an op write holds the lock, so presence never delays or interleaves with a
-//     real op write. A later waiter change (or the acquiring op's own presence_update)
-//     re-broadcasts, so the queue state self-heals.
+//  2. coder/websocket forbids concurrent writes (wmu). We never block on Lock (which
+//     would let a tiny presence frame delay a real op write on a backpressured socket);
+//     instead we TryLock and, on contention, RETRY for a bounded window rather than
+//     dropping. Dropping was wrong: once the queue drains to EMPTY there is no "later
+//     change" to ride a re-broadcast on, so a single dropped clearing frame left the
+//     plugin's queued list stale forever (the agent showed "queued" permanently and its
+//     row re-stamped to "Just now" on every sweep, never decaying to away). Re-snapshot
+//     on each attempt so a delivered frame always reflects CURRENT truth — this makes
+//     delivery order-independent even when an add- and a remove-broadcast goroutine race.
 //
 // Runs async so the Send hot path is never blocked even by the tiny write.
 func (b *Bridge) broadcastQueue(channel string, entry *connEntry) {
-	frame := PresenceQueueFrame{
-		Type:    presenceQueueType,
-		Channel: channel,
-		Origins: entry.snapshotWaitingOrigins(),
-	}
 	go func() {
-		if !entry.wmu.TryLock() {
-			return // an op write holds the lock — drop; a later change re-broadcasts
+		// Bound the retry so a genuinely dead/saturated socket can't spin a goroutine
+		// forever; a single ~80-byte frame writes instantly between op writes, so this
+		// budget is reached only under pathological sustained contention (where a later
+		// waiter change re-broadcasts anyway). An idle channel has no contender to lose to.
+		const (
+			maxAttempts = 50
+			retryDelay  = 10 * time.Millisecond
+		)
+		for attempt := 0; attempt < maxAttempts; attempt++ {
+			if !entry.wmu.TryLock() {
+				time.Sleep(retryDelay) // an op write holds the lock — wait and retry
+				continue
+			}
+			// Re-snapshot under no concurrent op write: reflect the queue's current truth.
+			frame := PresenceQueueFrame{
+				Type:    presenceQueueType,
+				Channel: channel,
+				Origins: entry.snapshotWaitingOrigins(),
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err := wsjson.Write(ctx, entry.conn, frame)
+			cancel()
+			entry.wmu.Unlock()
+			if err != nil {
+				bridgeLogger.Printf("presence_queue write error (channel %q): %v", channel, err)
+			}
+			return
 		}
-		defer entry.wmu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := wsjson.Write(ctx, entry.conn, frame); err != nil {
-			bridgeLogger.Printf("presence_queue write error (channel %q): %v", channel, err)
-		}
+		bridgeLogger.Printf("presence_queue dropped after %d attempts (channel %q): write mutex stayed contended", maxAttempts, channel)
 	}()
 }
 

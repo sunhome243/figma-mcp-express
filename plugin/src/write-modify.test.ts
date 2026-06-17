@@ -842,6 +842,32 @@ describe("find_replace_text", () => {
     expect(res?.data.replaced).toBe(1);
   });
 
+  it("does NOT edit TEXT inside a component master, but edits instances (issue #33)", async () => {
+    const masterText = { id: "m:t", type: "TEXT", characters: "내 경기", fontName: { family: "Inter", style: "Regular" } };
+    const master = { id: "c:1", type: "COMPONENT", children: [masterText] };
+    const instanceText = { id: "i:t", type: "TEXT", characters: "내 경기", fontName: { family: "Inter", style: "Regular" } };
+    const instance = { id: "i:1", type: "INSTANCE", children: [instanceText] };
+    const frame = { id: "f:1", type: "FRAME", children: [instance] };
+    (globalThis as any).figma.currentPage = { type: "PAGE", children: [master, frame] };
+
+    const res = await handleWriteModifyRequest(makeRequest("find_replace_text", [], { find: "내 경기", replace: "내 경기 목록" }));
+
+    expect(masterText.characters).toBe("내 경기"); // master untouched — no global propagation
+    expect(instanceText.characters).toBe("내 경기 목록"); // instance override applied
+    expect(res?.data.replaced).toBe(1);
+  });
+
+  it("edits component master text when the root is explicitly scoped to it (issue #33)", async () => {
+    const masterText = { id: "m:t", type: "TEXT", characters: "Old", fontName: { family: "Inter", style: "Regular" } };
+    const master = { id: "c:1", type: "COMPONENT", children: [masterText] };
+    mockNodes["c:1"] = master;
+
+    const res = await handleWriteModifyRequest(makeRequest("find_replace_text", ["c:1"], { find: "Old", replace: "New" }));
+
+    expect(masterText.characters).toBe("New");
+    expect(res?.data.replaced).toBe(1);
+  });
+
   it("uses regex when useRegex is true", async () => {
     const textNode = { id: "1:1", name: "Label", type: "TEXT", characters: "Price: $99", fontName: { family: "Inter", style: "Regular" } };
     (globalThis as any).figma.currentPage = { type: "PAGE", children: [textNode] };
