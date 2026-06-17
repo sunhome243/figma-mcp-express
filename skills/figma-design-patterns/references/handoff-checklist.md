@@ -1,10 +1,10 @@
 # Handoff Checklist
 
-Run every check before marking any section or screen DONE. All seven must pass. A section that passes six of seven is not done.
+Run every check before marking any section or screen DONE. All eight must pass. A section that passes seven of eight is not done.
 
 ---
 
-## The seven gates
+## The eight gates
 
 ### 1. Resize test
 
@@ -21,7 +21,7 @@ If any answer is yes, fix the layout before continuing. Do not declare PASS base
 
 ---
 
-### 2. No placeholder text
+### 2. No placeholder *copy* (asset placeholders are fine)
 
 Scan every visible text node. Any of these strings is a FAIL:
 
@@ -35,6 +35,8 @@ Scan every visible text node. Any of these strings is a FAIL:
 | Empty / blank where content is expected | Slot hidden or not wired |
 
 Fix: use `set_instance_properties` for each slot hit. For chart legends showing `Item 1`, set the relevant visibility/property field to hide or replace the placeholder.
+
+**Copy vs. asset — different rules.** This gate is about *words*. An **image asset** you can't source (a photo, cover, map tile, brand logo) MAY use a neutral placeholder fill — that is expected and correct, and omitting the visual entirely is worse (it changes the layout). So: forbid placeholder *text*, allow placeholder *images*. A card that should have a thumbnail and simply has none is a gap; a card with a neutral placeholder image is fine.
 
 ---
 
@@ -125,16 +127,30 @@ Naming convention: `ComponentType/Variant/State` for instances; `SemanticRole` f
 
 ---
 
+### 8. Containment, shared chrome & encoding
+
+The craft checks that separate "structurally correct" from "actually shippable." Each is a FAIL on its own.
+
+- **Containment / no overflow** — no node's bounds spill past its parent's padded box. Walk the frame edges: a skeleton bar running off the right, a line of text clipped at the left margin, a card wider than its column. Fix with `FILL` or a width that respects padding — never by widening the frame.
+- **Shared chrome is identical across states/screens** — the header/app bar and bottom nav/tab bar are the *same component instance* in the default, loading, empty, and error frames: same alignment, height, padding, and contents (same title position, same icons present). Chrome that's left-aligned with a bell on one state and centered without it on another = FAIL. Differences belong in the body, not the chrome.
+- **Empty & loading states centered and contained** — icon + heading + body centered in a padded container; body text auto-height and wrapping, not clipped at an edge. A loading skeleton mirrors the real content's shape (card-shaped for a card list), not a generic avatar+lines list.
+- **Icon color is semantic and agrees with its label** — `muted` inactive, `foreground` default, `accent` active, status color for status; an icon at the kit's default fill, or full-contrast beside a muted label, is a FAIL.
+- **Status not by color alone** — every status reads via color **and** text/icon, and distinct statuses are visually distinct from each other (not two identical neutral chips).
+- **Active state uses a tint/indicator, not a flooded accent block** — unless the design system explicitly specifies a solid-accent fill.
+
+---
+
 ## Quick PASS/FAIL summary
 
 ```
 [ ] 1. Resize test — 1200px and 1920px both hold
-[ ] 2. No placeholder text — zero "Title"/"Item 1"/"Slot" visible
+[ ] 2. No placeholder copy — real strings everywhere (asset/image placeholders OK)
 [ ] 3. No hardcoded values — all spacing/color/stroke in boundVariables
 [ ] 4. Library coverage — nav/button/input/icon/modal are all INSTANCE nodes
 [ ] 5. State completeness — all interactive variants designed
 [ ] 6. Dark mode — screenshot shows no light-mode bleed
 [ ] 7. Layer naming — every layer has a semantic name
+[ ] 8. Containment, chrome & encoding — no overflow; chrome identical across states; empty/loading centered+contained; icons semantic; status not color-alone; active = tint not flood
 ```
 
-All seven checked = PASS. Anything unchecked = continue the fix loop. Do not write a completion note or move to the next section until all seven are checked.
+All eight checked = PASS. Anything unchecked = continue the fix loop. Do not write a completion note or move to the next section until all eight are checked.

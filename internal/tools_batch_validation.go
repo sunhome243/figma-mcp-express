@@ -47,7 +47,7 @@ func validateBatchOps(rawOps []interface{}) error {
 func batchOpsFromParams(params map[string]interface{}) ([]interface{}, error) {
 	for k := range params {
 		switch k {
-		case "ops", "continueOnError", "validateOnly", "channel", "origin":
+		case "ops", "continueOnError", "validateOnly", "channel", "origin", "status":
 		default:
 			return nil, fmt.Errorf("batch: unknown top-level param %q", k)
 		}
@@ -97,6 +97,13 @@ func validateAndPrepareBatchParams(params map[string]interface{}) error {
 		params["origin"] = o
 	} else {
 		delete(params, "origin")
+	}
+	// Same sanitize for the presence status on the follower /rpc path: keep a
+	// known roster status, drop everything else before it reaches the plugin.
+	if s, ok := pickStatus(params); ok {
+		params["status"] = s
+	} else {
+		delete(params, "status")
 	}
 	return nil
 }
@@ -473,7 +480,11 @@ func validateBatchParamsAgainstSchema(op string, params map[string]interface{}, 
 		return nil
 	}
 	for _, name := range schemaRequired(spec.InputSchema) {
-		if name == "nodeId" || name == "nodeIds" {
+		// nodeId(s) are supplied out-of-band; origin/status are TOP-LEVEL batch params
+		// (presence labels) that never appear on an inner op, so an op catalog spec that
+		// inherited their required-ness (when presence requires origin) must not enforce
+		// them per-op — the batch carries them once at the top level.
+		if name == "nodeId" || name == "nodeIds" || name == "origin" || name == "status" {
 			continue
 		}
 		if params == nil || params[name] == nil {

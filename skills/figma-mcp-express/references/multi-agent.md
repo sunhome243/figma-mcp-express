@@ -155,8 +155,9 @@ Do NOT read or write outside your scope.
 Do NOT issue live plugin reads — use the cache data provided below.
 Do NOT use git stash, git reset --hard, git checkout --, or git clean.
 channel: "auto-N"  ← pass this on every tool call.
-origin: "<rosterName>"  ← (PoC only) pass this on every batch call so the
-                          plugin's Watch-agent panel attributes your edits.
+origin: "<rosterName>"  ← pass this on every batch AND read call so the plugin's
+                          Watch-agent panel attributes your edits/reads.
+                          (`status` is set by the orchestrator, not per-builder — see § 7.)
 
 Shared resources already created by coordinator:
   wrapperId = <id>
@@ -166,15 +167,22 @@ Shared resources already created by coordinator:
 
 ---
 
-## 7. Agent presence — the `origin` label (PoC)
+## 7. Agent presence — the `origin` label
 
 A live "who is working where" view for humans watching the file. When the plugin's
 **Watch agent** toggle is on, each labeled write lights up the canvas and a per-agent
-panel (avatar + last action). This is a PoC on the local-built binary (port 1995).
-**Pass `origin` ONLY to a binary that supports it:** `batch` rejects unknown
-top-level params, so a binary predating this change errors with
-`unknown top-level param "origin"`. Never send `origin` to the published/production
-server — only to the local PoC build.
+panel (avatar + last action + status). Shipped in **2.3.0** — available on the
+published/production server (`npx figma-mcp-express`, port 1994) and the plugin.
+
+> ⚠️ **`origin`/`status` are version-gated (2.3.0+), and optional.** They are
+> back-compat optional params: a 2.3.0+ server accepts them and a call with neither
+> behaves exactly as before (single-agent follow). But `batch` and the read tools
+> reject *unknown* top-level params, so a binary **predating 2.3.0** errors with
+> `unknown top-level param "origin"` (likewise `"status"`). **Only send `origin`/
+> `status` to a server you know is ≥ 2.3.0** — check `figma-mcp-express --version` if
+> unsure. (During local development the isolated build — manifest `figma-mcp-express-poc`,
+> port 1995, `FIGMA_MCP_PRESENCE_REQUIRED=1` — makes `origin` *required* so every call
+> is attributed; production leaves it optional.)
 
 ### Why a label, not auto-detection
 
@@ -212,4 +220,52 @@ Each then stamps it on every batch call, e.g.
   time, on demand).
 - It is **display only** — `origin` changes nothing about execution, serialization,
   or the op result. Unlabeled calls keep the legacy single-agent follow (select +
-  scroll). History is a small ring buffer (last 10), not an audit log.
+  scroll). The panel tracks **one latest-activity entry per origin** (not an event log):
+  a row decays active → idle → away on a timer and auto-removes after ~150 s of silence;
+  an origin that acts again after removal replays the entrance animation.
+
+### Per-agent status — auto-derived vs LLM-set
+
+Each row also shows *what* the agent is doing. Statuses come from two tiers:
+
+| Tier | Cost | Statuses | How it's set |
+|---|---|---|---|
+| **Auto** | **0 LLM tokens** | `building` (Building…/Styling…/Moving…/Resizing…/Removing…), `importing` (⤵ Importing…), `screenshotting` (📸 Capturing…), `scanning` (🔍 Looking around…), `theming` (🎨 Theming…), `error`, `idle` (30–60 s), `away` (>60 s), `joined` (entrance anim) | Plugin/server derive it from the op the agent already sends — no extra call. `building`/`importing`/`theming` from write op type, `screenshotting` from `save_screenshots`, `scanning` from any `get_`/`scan_`/`search_`/`list_`/`fetch_` read. |
+| **Auto (server)** | **0 LLM tokens** | `queued` (Queued · #N) | The **server** pushes the per-channel serial-slot waiting list to the plugin as an unsolicited `presence_queue` WS frame. The agent is by definition not yet running, so only the server (which owns the FIFO) can report it. |
+| **LLM-set** | tiny | `thinking`, `waiting_review`, `reviewing`, `approved` (reviewer PASS), `escalated` (asset missing → STOP), `done` | The orchestrator/reviewer pings at **workflow transitions only**, never per op (see heartbeat below). |
+
+Auto statuses decay on a timer: active (≤30 s) → `idle` (30–60 s) → `away` (>60 s) →
+auto-removed (>150 s quiet). LLM-set statuses are **sticky** — no TTL, never auto-removed
+— so overwrite a stale `reviewing`/`done` explicitly (or re-announce on the next ping).
+
+### The orchestrator stamps non-editing statuses on behalf of an origin
+
+A `queued` or `waiting_review` agent **cannot self-report** — it's blocked in the
+serial slot or has already returned its result to the orchestrator. So the LLM-set
+transitions are stamped **by the orchestrator on behalf of a named `origin`**, not by
+the agent itself. The orchestrator knows the workflow shape (who's thinking, who's up
+for review, who passed), so it owns those pings. Per-op auto statuses still come from
+the acting agent's own calls.
+
+### Status-only pings — ride a real lightweight READ op (NOT `validateOnly`)
+
+To announce a transition **without mutating the canvas**, stamp `{origin, status}` on
+a **real, read-only** op that reaches the plugin — a scoped `get_node` (`depth:0`) on a
+node the agent owns is ideal — e.g.
+`batch(origin:"theo", status:"reviewing", ops:[{type:"get_node", nodeIds:["1:23"], params:{depth:0}}])`.
+
+> ⚠️ **Do NOT use `validateOnly:true` for status pings.** `validateOnly` is resolved
+> entirely **server-side** ("no plugin call was made") — it never forwards `{origin,
+> status}` to the plugin, so the presence panel never updates. The op must actually
+> reach the plugin. A read op mutates nothing, and the plugin treats an explicit
+> `status` as status-only (it ignores the carrier op's returned node ids, so the ping
+> never hijacks the selection or triggers a highlight).
+
+Use this for `thinking`, `waiting_review`, `reviewing`, `approved`, `escalated`, `done`.
+
+### `origin` works on read tools too
+
+`origin` is no longer batch-only — the read tools (`get_`/`scan_`/`search_`/`list_`/
+`fetch_`) accept it as well, so an agent's reads are attributed (this is what powers
+the `scanning` auto status). Pass `origin` on reads the same way you pass it on `batch`.
+(Same version gate: 2.3.0+ server only.)

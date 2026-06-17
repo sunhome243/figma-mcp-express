@@ -48,6 +48,7 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 		),
 		channelParam(),
 		originParam(),
+		statusParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		rawOps, err := batchOpsFromParams(req.GetArguments())
 		if err != nil {
@@ -77,6 +78,11 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 		// only `channel`), where it attributes this write to a named agent.
 		if origin, ok := pickOrigin(req.GetArguments()); ok {
 			params["origin"] = origin
+		}
+		// Presence status (PoC): the acting agent's workflow state, forwarded
+		// verbatim to the plugin alongside origin.
+		if status, ok := pickStatus(req.GetArguments()); ok {
+			params["status"] = status
 		}
 
 		resp, err := node.Send(ctx, "batch", nil, withChannel(req, params))

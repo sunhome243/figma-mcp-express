@@ -184,11 +184,13 @@ func registerLibraryTools(s *server.MCPServer, node *Node) {
 			mcp.Description("Variable collection ID to resolve"),
 		),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := map[string]interface{}{}
 		if v, ok := req.GetArguments()["collectionId"].(string); ok {
 			params["collectionId"] = v
 		}
+		applyOrigin(req, params)
 		resp, err := node.Send(ctx, "get_remote_variable_collection", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
@@ -196,6 +198,7 @@ func registerLibraryTools(s *server.MCPServer, node *Node) {
 	s.AddTool(mcp.NewTool("list_library_variable_collections",
 		mcp.WithDescription("List all variable collections available from subscribed libraries, including their IDs and modes."),
 		channelParam(),
+		originParam(),
 	), makeHandler(node, "list_library_variable_collections", nil, nil))
 
 	s.AddTool(mcp.NewTool("get_library_variables",
@@ -205,9 +208,12 @@ func registerLibraryTools(s *server.MCPServer, node *Node) {
 			mcp.Description("Variable collection key from list_library_variable_collections, e.g. '544ed2a7248b18a0cc0a3213fa3f7ae95e9f5a21'"),
 		),
 		channelParam(),
+		originParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		key, _ := req.GetArguments()["key"].(string)
-		resp, err := node.Send(ctx, "get_library_variables", nil, withChannel(req, map[string]interface{}{"key": key}))
+		params := map[string]interface{}{"key": key}
+		applyOrigin(req, params)
+		resp, err := node.Send(ctx, "get_library_variables", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
 

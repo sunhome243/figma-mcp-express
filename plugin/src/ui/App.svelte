@@ -3,6 +3,29 @@
   import { nextReconnectDelay } from "../status";
   import { metaFor, initialOf } from "../presence-roster";
   import { PRESENCE_ACTIVE_WINDOW_MS, type AgentActivity } from "../presence";
+  import Typewriter from "./Typewriter.svelte";
+
+  // Map a status to one of FOUR semantic colour GROUPS so colour actually carries
+  // meaning (vs a 14-colour rainbow): working (green, breathing) · waiting (amber) ·
+  // attention (red) · done/idle (grey). The STATUS colour is distinct from the AGENT
+  // identity colour (--c, on the avatar ring / follow tag).
+  function statusGroup(status: string): string {
+    switch (status) {
+      case "queued":
+      case "waiting_review":
+        return "grp-waiting";
+      case "escalated":
+      case "error":
+        return "grp-attention";
+      case "done":
+      case "approved":
+      case "idle":
+      case "away":
+        return "grp-done";
+      default:
+        return "grp-working"; // building/importing/screenshotting/scanning/theming/reviewing/thinking/joined
+    }
+  }
 
   // One agent's live activity, as computed by the plugin core (activeAgents()).
   // `active` from the core is a point-in-time snapshot; the UI re-derives it
@@ -42,6 +65,44 @@
   // Origin the viewport is currently following (camera tracks its ops), or null.
   let followOrigin: string | null = null;
 
+  // ── Followed agent pinned to the TOP. Guard undefined: the followed origin may
+  // not yet have a row (e.g. follow set before its first op). Pulse stays on the
+  // RAW agents array so it fires on whoever just acted, not the pinned row.
+  $: orderedAgents = (() => {
+    const f = agents.find((a) => a.origin === followOrigin);
+    return f ? [f, ...agents.filter((a) => a !== f)] : agents;
+  })();
+
+  // ── Join entrance: origins not yet `seen` get a one-shot entrance animation.
+  // `seen` resets when Watch is toggled off so re-enabling re-animates the joins.
+  let seen = new Set<string>();
+  let joining = new Set<string>();
+  const joinTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  function markJoins(list: AgentActivity[]) {
+    const fresh = list.map((a) => a.origin).filter((o) => !seen.has(o));
+    if (fresh.length) {
+      const nextJoining = new Set(joining);
+      for (const o of fresh) {
+        nextJoining.add(o);
+        const prev = joinTimers.get(o);
+        if (prev) clearTimeout(prev);
+        joinTimers.set(
+          o,
+          setTimeout(() => {
+            joining = new Set([...joining].filter((x) => x !== o));
+            joinTimers.delete(o);
+          }, 450),
+        );
+      }
+      joining = nextJoining;
+    }
+    // `seen` tracks origins CURRENTLY present. An agent that decayed/was pruned out
+    // of the roster drops from `seen`, so if it returns later it counts as fresh and
+    // re-animates (a genuine re-join) — while a still-shown away agent that merely
+    // wakes stays in `seen` and does NOT re-animate.
+    seen = new Set(list.map((a) => a.origin));
+  }
+
   // Re-derive activity against the live clock so dimming tracks real time.
   const isActive = (lastTs: number, ref: number): boolean =>
     ref - lastTs <= PRESENCE_ACTIVE_WINDOW_MS;
@@ -52,11 +113,10 @@
 
   // The window FITS ITS CONTENT: measured live from the .app element
   // (bind:clientHeight) and pushed to figma.ui.resize. Empty state → compact (no
-  // wasted margin); each agent row grows the window until the list hits listMaxH,
-  // then the list scrolls. listMaxH is the only manual lever (drag handle), so
-  // sizing stays uniform — no separate "auto vs manual" layout modes.
+  // wasted margin); each agent row grows the window until the list hits LIST_MAX_H,
+  // then the list scrolls. The cap is fixed (no manual resize handle).
   let contentH = 0;
-  let listMaxH = 300; // px cap on the agent list before it scrolls (drag to change)
+  const LIST_MAX_H = 300; // px cap on the agent list before it scrolls
   let lastSentH = 0;
 
   function applyResize() {
@@ -81,6 +141,9 @@
   // presence_update pulses that row in the agent's colour. No core change needed.
   let pulse = new Set<string>();
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Last lastTs we saw per origin — so a pulse fires only when activity genuinely
+  // advances, not on the periodic decay sweep's re-emit (which keeps timestamps).
+  let lastTsByOrigin = new Map<string, number>();
   function triggerPulse(origin: string) {
     // Drop then re-add next frame so the CSS animation restarts on rapid repeats.
     pulse = new Set([...pulse].filter((o) => o !== origin));
@@ -96,29 +159,6 @@
         }, 650),
       );
     });
-  }
-
-  // ── Manual list resize: dragging the handle adjusts the list's max-height,
-  // which flows through contentH → window resize. Lets the user shrink a tall
-  // panel (or grow it). Pointer math is delta-based so the moving window is fine.
-  let resizing = false;
-  let resizeStartY = 0, resizeStartMax = 0;
-  function startResize(e: PointerEvent) {
-    resizing = true;
-    resizeStartY = e.clientY;
-    resizeStartMax = listMaxH;
-    window.addEventListener("pointermove", onResizeMove);
-    window.addEventListener("pointerup", endResize);
-    e.preventDefault();
-  }
-  function onResizeMove(e: PointerEvent) {
-    if (!resizing) return;
-    listMaxH = Math.max(56, Math.min(420, resizeStartMax + (e.clientY - resizeStartY)));
-  }
-  function endResize() {
-    resizing = false;
-    window.removeEventListener("pointermove", onResizeMove);
-    window.removeEventListener("pointerup", endResize);
   }
 
   // Clicking a row toggles "follow" — the viewport then tracks that agent's ops
@@ -155,6 +195,9 @@
       agents = []; // clear immediately; core also resets its log
       followOrigin = null;
       pulse = new Set();
+      seen = new Set(); // re-enabling should re-animate joins
+      joining = new Set();
+      lastTsByOrigin = new Map();
     }
     // The content-fit reactive resizes the window once the section mounts/unmounts.
   }
@@ -232,7 +275,17 @@
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload.requestId) {
+        // Unsolicited presence_queue frame (no requestId): route it to the plugin
+        // core, which folds it into presence_update. Must branch BEFORE the
+        // generic server-request path or it'd be mistaken for a request.
+        if (payload?.type === "presence_queue") {
+          postToPlugin({
+            type: "presence_queue",
+            origins: Array.isArray(payload.origins) ? payload.origins : [],
+          });
+          return;
+        }
+        if (payload?.requestId) {
           activeRequests.add(payload.requestId);
           activeRequests = activeRequests;
         }
@@ -266,7 +319,17 @@
 
     if (msg.type === "presence_update") {
       agents = Array.isArray(msg.agents) ? msg.agents : [];
-      if (agents.length) triggerPulse(agents[0].origin); // pulse the just-acted row
+      markJoins(agents); // one-shot entrance for any origin we haven't seen yet
+      // Pulse a row ONLY on genuine new activity — i.e. its lastTs advanced since
+      // we last saw it. The 5s decay sweep re-emits with UNCHANGED timestamps, so
+      // it no longer makes the most-recent row flash while nothing is happening.
+      // Queued rows are synthetic (lastTs = now each emit) → excluded explicitly.
+      for (const a of agents) {
+        if (a.status !== "queued" && a.lastTs > (lastTsByOrigin.get(a.origin) ?? 0)) {
+          triggerPulse(a.origin);
+        }
+      }
+      lastTsByOrigin = new Map(agents.map((a) => [a.origin, a.lastTs]));
       return;
     }
 
@@ -351,8 +414,7 @@
       clearTimeout(fallback);
       clearInterval(clock);
       pulseTimers.forEach((t) => clearTimeout(t));
-      window.removeEventListener("pointermove", onResizeMove);
-      window.removeEventListener("pointerup", endResize);
+      joinTimers.forEach((t) => clearTimeout(t));
       window.removeEventListener("message", handleMessage);
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
       if (socket) socket.close();
@@ -422,8 +484,8 @@
         {#if agents.length === 0}
           <div class="presence-empty"><span class="eyes">👀</span> waiting for an agent…</div>
         {:else}
-          <div class="presence-list" style="max-height:{listMaxH}px">
-            {#each agents as a (a.origin)}
+          <div class="presence-list" style="max-height:{LIST_MAX_H}px">
+            {#each orderedAgents as a (a.origin)}
               {@const meta = metaFor(a.origin)}
               {@const following = a.origin === followOrigin}
               {@const active = isActive(a.lastTs, now)}
@@ -432,11 +494,12 @@
                 class:idle={!active}
                 class:following
                 class:pulse={pulse.has(a.origin)}
+                class:joining={joining.has(a.origin)}
                 style="--c:{meta.color}"
                 on:click={() => toggleFollow(a.origin)}
                 title={following ? `Following ${meta.name} — click to stop` : `Follow ${meta.name}'s edits`}
               >
-                <span class="avatar-wrap">
+                <span class="avatar-wrap" class:crowned={meta.crown}>
                   {#if avatarFailed.has(a.origin)}
                     <span class="avatar avatar-mono">{initialOf(a.origin)}</span>
                   {:else}
@@ -447,31 +510,21 @@
                       on:error={() => markAvatarFailed(a.origin)}
                     />
                   {/if}
+                  {#if meta.crown}<span class="crown" title="Orchestrator">👑</span>{/if}
                 </span>
                 <span class="agent-text">
                   <span class="agent-name">{meta.name}</span>
-                  <span class="agent-action">{a.action} · {relTime(a.lastTs, now)}</span>
+                  <span class="agent-action"><Typewriter text={a.label} /> <span class="agent-time">· {relTime(a.lastTs, now)}</span></span>
                 </span>
                 <span class="agent-status">
                   {#if following}
                     <span class="follow-tag"><span class="fdot"></span>following</span>
                   {:else}
-                    <span class="status-dot" class:breathing={active} class:dim={!active}></span>
+                    <span class="status-chip {statusGroup(a.status)}" title={a.status}></span>
                   {/if}
                 </span>
               </button>
             {/each}
-          </div>
-          <!-- Drag to resize the list (and thus the window). -->
-          <div
-            class="resize-grip"
-            class:dragging={resizing}
-            role="separator"
-            aria-orientation="horizontal"
-            on:pointerdown={startResize}
-            title="Drag to resize"
-          >
-            <span class="grip-bar"></span>
           </div>
         {/if}
       </div>
@@ -777,7 +830,7 @@
     flex-direction: column;
     gap: 6px;
     overflow-y: auto;
-    /* max-height is set inline (listMaxH) so the drag handle can resize it. */
+    /* max-height is set inline (LIST_MAX_H) — fixed cap, then the list scrolls. */
   }
 
   .agent-row {
@@ -789,6 +842,7 @@
     align-items: center;
     gap: 9px;
     width: 100%;
+    flex-shrink: 0; /* keep natural height so a tall list SCROLLS instead of cramping */
     background: #fafafa;
     border: 1px solid #eee;
     border-radius: 9px;
@@ -826,12 +880,29 @@
   }
 
   .avatar-wrap {
+    position: relative;
     flex-shrink: 0;
     width: 28px;
     height: 28px;
     border-radius: 50%;
     padding: 2px;
     background: var(--c); /* the identity-colour ring */
+  }
+
+  /* Orchestrator (Wolfgang 👑) — thicker gold ring + crown badge above the avatar. */
+  .avatar-wrap.crowned {
+    padding: 2.5px;
+    box-shadow: 0 0 0 1px var(--c);
+  }
+  .crown {
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    transform: translateX(-50%) rotate(8deg);
+    font-size: 11px;
+    line-height: 1;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
   }
 
   .avatar {
@@ -885,14 +956,22 @@
     align-items: center;
   }
 
-  .status-dot {
-    width: 6px;
-    height: 6px;
+  /* Status chip: a dot coloured by the agent's SEMANTIC status (distinct from the
+     --c identity colour on the avatar ring/follow tag). Active-work statuses
+     breathe; terminal/idle statuses are static. */
+  .status-chip {
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: var(--c);
+    background: #d2d2d2;
+    box-shadow: 0 0 0 0 transparent;
   }
-  .status-dot.breathing { animation: breathe 1.6s ease-in-out infinite; }
-  .status-dot.dim { background: #d2d2d2; }
+
+  /* Four semantic groups — colour = meaning, not identity. */
+  .grp-working   { background: #22c55e; animation: breathe 1.6s ease-in-out infinite; } /* green, breathing */
+  .grp-waiting   { background: #f59e0b; } /* amber, static */
+  .grp-attention { background: #ef4444; } /* red, static */
+  .grp-done      { background: #c8c8c8; } /* grey, static */
 
   .follow-tag {
     display: inline-flex;
@@ -915,25 +994,24 @@
     50% { opacity: 1; transform: scale(1); }
   }
 
-  /* Drag handle to resize the list (and the window) ── */
-  .resize-grip {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 12px;
-    margin-top: -2px;
-    cursor: ns-resize;
-    touch-action: none;
+  .agent-time { color: #c4c4c4; }
+
+  /* ── Join entrance: a subtle one-shot when an agent first appears. The row fades
+     in, settles up + scales 0.96→1, and its avatar ring sweeps in. */
+  .agent-row.joining { animation: agentJoin 0.44s ease-out both; }
+  .agent-row.joining .avatar-wrap { animation: ringJoin 0.44s ease-out both; }
+  @keyframes agentJoin {
+    from { opacity: 0; transform: translateY(6px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
   }
-  .grip-bar {
-    width: 28px;
-    height: 3px;
-    border-radius: 3px;
-    background: #e0e0e0;
-    transition: background 0.15s, width 0.15s;
+  @keyframes ringJoin {
+    from { opacity: 0; transform: scale(0.7); }
+    to   { opacity: 1; transform: scale(1); }
   }
-  .resize-grip:hover .grip-bar { background: #c4c4c4; width: 36px; }
-  .resize-grip.dragging .grip-bar { background: #9a9a9a; width: 36px; }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-row.joining,
+    .agent-row.joining .avatar-wrap { animation: none; }
+  }
 
   /* ── footer ── */
   footer {

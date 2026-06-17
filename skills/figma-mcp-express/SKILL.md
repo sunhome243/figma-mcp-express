@@ -9,6 +9,8 @@ description: Use when calling figma-mcp-express MCP tools for Figma reads, valid
 
 Use the compact core surface first. In default `core` profile, low-level write primitives are not top-level tools; full plugin capability is available through validated `batch` ops.
 
+> **SCOPE (skill ownership).** This skill owns **MCP MECHANICS** — how to call the tools: batch-op recipes, read mechanics, library imports, asset ingestion (PNG→`import_image`; SVG→official-plugin `createNodeFromSvg`; Lottie→poster PNG), token-binding writes, channels, and MCP gotchas (#27/#28/#31, COMPONENT-vs-INSTANCE). A new **tool-mechanics** rule belongs here. Design-craft rules → `figma-design-patterns`; workflow/gate → `figma-product-build`. See memory `figma-skill-ecosystem-map`.
+
 ## First Checks
 
 1. Figma Desktop must be open with **Plugins -> Development -> Figma MCP Express** running.

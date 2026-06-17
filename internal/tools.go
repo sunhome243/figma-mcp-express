@@ -64,7 +64,19 @@ func RegisterPrompts(s *server.MCPServer) {
 // universal optional `channel` routing param, injected into params when present).
 func makeHandler(node *Node, command string, nodeIDs []string, params map[string]interface{}) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		p := withChannel(req, params)
+		base := params
+		// Only when an origin is present do we need a fresh map to inject it into —
+		// otherwise pass the (possibly nil) base map through unchanged so cache/
+		// flight keys stay identical to the no-origin path.
+		if _, ok := pickOrigin(req.GetArguments()); ok {
+			fresh := make(map[string]interface{}, len(params)+1)
+			for k, v := range params {
+				fresh[k] = v
+			}
+			applyOrigin(req, fresh)
+			base = fresh
+		}
+		p := withChannel(req, base)
 		resp, err := node.Send(ctx, command, nodeIDs, p)
 		return renderResponse(resp, err)
 	}
@@ -93,18 +105,29 @@ func channelParam() mcp.ToolOption {
 
 // rosterOrigins is the fixed presence roster for the multi-agent live-highlight
 // PoC. The acting agent passes its identity as the `origin` param so the Figma
-// plugin can attribute each write to a named agent (avatar + last action).
-// Keep in sync with plugin/src/presence-roster.ts.
-var rosterOrigins = []string{"grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick"}
+// plugin can attribute each call to a named agent (avatar + last action).
+// `wolfgang` is the orchestrator/conductor identity (👑) — distinct from the eight
+// worker agents. Keep in sync with plugin/src/presence-roster.ts.
+var rosterOrigins = []string{"grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick", "wolfgang"}
 
-// originParam is the optional presence label exposed on write/batch tools (PoC).
-// It is enum-constrained to rosterOrigins so the model always picks a known
-// identity that maps deterministically to an avatar/color in the plugin.
+// presenceRequired makes `origin` a REQUIRED param when set, so every call is
+// attributed to an agent (incl. the orchestrator). Gated by an env var so ONLY the
+// PoC server (1995, which sets FIGMA_MCP_PRESENCE_REQUIRED=1 in .mcp.json) enforces
+// it — the production binary (1994) leaves origin OPTIONAL and is never broken.
+var presenceRequired = os.Getenv("FIGMA_MCP_PRESENCE_REQUIRED") == "1"
+
+// originParam is the presence label exposed on every plugin-reaching tool (PoC).
+// Enum-constrained to rosterOrigins so the model always picks a known identity that
+// maps deterministically to an avatar/color in the plugin. Required iff presenceRequired.
 func originParam() mcp.ToolOption {
-	return mcp.WithString("origin",
+	opts := []mcp.PropertyOption{
 		mcp.Enum(rosterOrigins...),
-		mcp.Description("Optional. Presence label for the multi-agent live-highlight PoC — the acting agent's identity from the fixed roster (grace, theo, sunho, zoe, taewon, emma, alex, rick). Pass the SAME value on every call from one agent so the Figma plugin can show who is working where. NOT routing metadata; harmlessly ignored when the presence plugin is not in use."),
-	)
+		mcp.Description("Presence label for the multi-agent live-presence PoC — the acting agent's identity from the fixed roster (grace, theo, sunho, zoe, taewon, emma, alex, rick, wolfgang=orchestrator). Pass the SAME value on every call from one agent so the Figma plugin shows who is working where. NOT routing metadata. Required on the presence PoC server; optional (harmlessly ignored) otherwise."),
+	}
+	if presenceRequired {
+		opts = append(opts, mcp.Required())
+	}
+	return mcp.WithString("origin", opts...)
 }
 
 // pickOrigin returns the request's `origin` arg only when it is a known roster
@@ -123,6 +146,50 @@ func pickOrigin(args map[string]interface{}) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// rosterStatuses is the fixed set of presence workflow states an agent may
+// report via the `status` param for the multi-agent live-presence PoC. Unlike
+// `origin` (the agent's identity), `status` is the agent's current workflow
+// state and is LLM-settable only. Keep in sync with the plugin presence layer.
+var rosterStatuses = []string{"thinking", "waiting_review", "reviewing", "approved", "escalated", "done"}
+
+// statusParam is the optional presence status exposed on write/batch tools (PoC).
+// It mirrors originParam: enum-constrained to rosterStatuses so the model always
+// picks a known workflow state that the Figma plugin can render.
+func statusParam() mcp.ToolOption {
+	return mcp.WithString("status",
+		mcp.Enum(rosterStatuses...),
+		mcp.Description("Optional presence status for the multi-agent live-presence PoC; the acting agent's current workflow state."),
+	)
+}
+
+// pickStatus returns the request's `status` arg only when it is a known roster
+// status. Unknown/empty values are dropped so a stray status never reaches the
+// plugin. Mirrors pickOrigin: the enum schema already constrains MCP clients;
+// this also guards the follower /rpc path, which is not schema-validated.
+func pickStatus(args map[string]interface{}) (string, bool) {
+	st, _ := args["status"].(string)
+	if st == "" {
+		return "", false
+	}
+	for _, r := range rosterStatuses {
+		if r == st {
+			return st, true
+		}
+	}
+	return "", false
+}
+
+// applyOrigin folds the optional presence `origin` arg into the plugin params
+// (only when it is a known roster member). Mirrors applySkipInvisible — the
+// passthrough half of originParam — so read tools can attribute the read to a
+// named agent (enabling a "scanning" status on the plugin side). The map must be
+// caller-owned (a fresh per-request params map), never a shared base map.
+func applyOrigin(req mcp.CallToolRequest, params map[string]interface{}) {
+	if origin, ok := pickOrigin(req.GetArguments()); ok {
+		params["origin"] = origin
+	}
 }
 
 // skipInvisibleChildrenParam is the optional per-op perf toggle exposed on

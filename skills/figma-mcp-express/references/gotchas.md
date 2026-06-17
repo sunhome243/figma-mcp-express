@@ -11,6 +11,12 @@ Each entry: **symptom → cause → fix** (prevention folded into the fix).
 **Cause:** The default `core` profile does NOT expose low-level write primitives as top-level tools — they are `batch` op TYPES. (Pre-2.0.0 habit / training-data assumes they're top-level.)
 **Fix:** Invoke them inside `batch(ops:[{ "type": "create_frame", "params": {…} }])`. Discover the exact op + params via `search_batch_ops` → `get_batch_op_spec`, validate with `batch(validateOnly:true)`. Only if a legacy client genuinely needs the old top-level surface, set `FIGMA_MCP_TOOL_PROFILE=full`.
 
+## "There's no op for X" / "this param doesn't work" — discover BEFORE concluding
+
+**Symptom:** an agent declares an op missing (e.g. "no `clone_node` batch op exists") or a param broken, then invents a workaround or reports a blocker — without ever querying the catalog.
+**Cause:** guessing the op surface from memory/training data instead of asking the server. The catalog is large and exact; assumptions are stale. This is the single most common wasted-loop.
+**Fix:** the op almost certainly **exists** — `search_batch_ops("<intent words>")` → `get_batch_op_spec(op:"<name>")` FIRST, every time, before concluding anything is absent. Confirmed-present ops people wrongly assume are missing: **`clone_node`** (clone an existing node, optional `x`/`y`/`parentId` reposition — the clone-and-adapt path), **`reparent_nodes`**, and nearly every write primitive. Two recurring shape mistakes the spec settles instantly: (1) the **node target goes in the op-level `nodeIds` array**, not `params.nodeId` (singular `params.nodeId` is only a read/scan subtree root); (2) `get_batch_op_spec` takes `op:"<name>"`, not a `nodeId`. If a call errors, read the spec + the error's suggested param name and resend — do not theorize about JSON marshalling or build a substitute.
+
 ## Slow import delays the queue (bounded, self-clears — not a jam)
 
 **Symptom:** a call sits "in progress" a long time while `save_screenshots` / `list_channels` still respond.

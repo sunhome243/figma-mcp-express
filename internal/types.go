@@ -29,6 +29,22 @@ type BridgeResponse struct {
 	QueueDepth  int   `json:"queueDepth,omitempty"`
 }
 
+// presenceQueueType is the BridgeRequest-shaped frame Type the bridge pushes to
+// the plugin to report which roster origins are currently waiting on the per-
+// channel serial slot (the multi-agent live-presence PoC "queued" signal).
+const presenceQueueType = "presence_queue"
+
+// PresenceQueueFrame is pushed from the Go server to the Figma plugin to surface
+// which roster origins are currently QUEUED — waiting on a channel's serial slot
+// (connEntry.sem). HARD CONTRACT: the plugin matches these field names/casing
+// exactly. Origins is always a non-nil slice (empty when nobody waits) so the
+// plugin can clear its queued list on the empty frame.
+type PresenceQueueFrame struct {
+	Type    string   `json:"type"`    // always "presence_queue"
+	Channel string   `json:"channel"`
+	Origins []string `json:"origins"` // distinct roster origins currently waiting on sem
+}
+
 // RPCRequest is the wire format for follower → leader /rpc calls.
 type RPCRequest struct {
 	Tool    string                 `json:"tool"`

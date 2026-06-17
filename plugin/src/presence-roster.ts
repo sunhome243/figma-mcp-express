@@ -1,4 +1,4 @@
-// Presence roster (PoC) — maps an `origin` label to a display identity (name +
+// Presence roster — maps an `origin` label to a display identity (name +
 // color + avatar) for the multi-agent live-highlight panel.
 //
 // The keys here MUST stay in sync with `rosterOrigins` in internal/tools.go (the
@@ -15,10 +15,12 @@ export interface AgentMeta {
   name: string;
   color: string;
   avatar: string;
+  crown?: boolean; // the orchestrator/conductor — rendered with a 👑 badge
 }
 
+// Notionists — clean, friendly hand-drawn faces (deterministic per name seed).
 const seedAvatar = (seed: string): string =>
-  `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(seed)}&radius=50`;
+  `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(seed)}&radius=50`;
 
 export const ROSTER: Record<string, AgentMeta> = {
   grace: { name: "Grace", color: "#f43f5e", avatar: seedAvatar("Grace") },
@@ -29,6 +31,8 @@ export const ROSTER: Record<string, AgentMeta> = {
   emma: { name: "Emma", color: "#06b6d4", avatar: seedAvatar("Emma") },
   alex: { name: "Alex", color: "#22c55e", avatar: seedAvatar("Alex") },
   rick: { name: "Rick", color: "#f97316", avatar: seedAvatar("Rick") },
+  // Orchestrator/conductor — distinct gold ring + 👑, set apart from the workers.
+  wolfgang: { name: "Wolfgang", color: "#eab308", avatar: seedAvatar("Wolfgang"), crown: true },
 };
 
 const GENERIC: AgentMeta = {
