@@ -85,6 +85,7 @@ var pluginSupportedBatchOps = []string{
 	"lock_nodes",
 	"move_nodes",
 	"navigate_to_page",
+	"pin_child",
 	"remove_reactions",
 	"rename_node",
 	"rename_page",
@@ -101,8 +102,11 @@ var pluginSupportedBatchOps = []string{
 	"set_corner_radius",
 	"set_effects",
 	"set_fills",
+	"set_fixed_children",
 	"set_instance_properties",
 	"set_opacity",
+	"set_overflow",
+	"set_prototype_background",
 	"set_prototype_start",
 	"set_reactions",
 	"set_strokes",
@@ -168,25 +172,42 @@ var demotedBatchOnlyInputSchemas = map[string]map[string]any{
 	}),
 	"ungroup_nodes": schemaObject(nil, map[string]any{}),
 	"unlock_nodes":  schemaObject(nil, map[string]any{}),
+	"set_overflow": schemaObject([]string{"overflowDirection"}, map[string]any{
+		"overflowDirection": enumProp("NONE", "HORIZONTAL", "VERTICAL", "BOTH"),
+		"clipsContent":      boolProp(),
+	}),
+	"set_fixed_children": schemaObject([]string{"numberOfFixedChildren"}, map[string]any{
+		"numberOfFixedChildren": numberProp(),
+	}),
+	"pin_child": schemaObject(nil, map[string]any{}),
+	"set_prototype_background": schemaObject(nil, map[string]any{
+		"color":   stringProp(),
+		"opacity": numberProp(),
+		"mode":    enumProp("set", "clear"),
+	}),
 }
 
 var demotedBatchOpDescriptions = map[string]string{
-	"boolean_operation": "Combine or flatten vector shapes. Supports UNION, SUBTRACT, INTERSECT, EXCLUDE, and FLATTEN.",
-	"delete_page":       "Delete a page by pageId or exact pageName.",
-	"delete_variable":   "Delete a variable by variableId, or a collection by collectionId.",
-	"rename_page":       "Rename a page by pageId or exact pageName.",
-	"set_constraints":   "Set horizontal and/or vertical constraints on nodes.",
-	"set_corner_radius": "Set uniform or per-corner radius values on nodes.",
-	"set_blend_mode":    "Set Figma blend mode on nodes.",
-	"rename_node":       "Rename one node.",
-	"reorder_nodes":     "Change node z-order: bringToFront, sendToBack, bringForward, or sendBackward.",
-	"rotate_nodes":      "Set node rotation in degrees.",
-	"lock_nodes":        "Lock nodes.",
-	"unlock_nodes":      "Unlock nodes.",
-	"ungroup_nodes":     "Ungroup groups.",
-	"detach_instance":   "Detach component instances.",
-	"remove_reactions":  "Remove prototype reactions by index, or clear all when indices is omitted.",
-	"delete_style":      "Delete a local style by styleId.",
+	"boolean_operation":        "Combine or flatten vector shapes. Supports UNION, SUBTRACT, INTERSECT, EXCLUDE, and FLATTEN.",
+	"delete_page":              "Delete a page by pageId or exact pageName.",
+	"delete_variable":          "Delete a variable by variableId, or a collection by collectionId.",
+	"rename_page":              "Rename a page by pageId or exact pageName.",
+	"set_constraints":          "Set horizontal and/or vertical constraints on nodes.",
+	"set_corner_radius":        "Set uniform or per-corner radius values on nodes.",
+	"set_blend_mode":           "Set Figma blend mode on nodes.",
+	"rename_node":              "Rename one node.",
+	"reorder_nodes":            "Change node z-order: bringToFront, sendToBack, bringForward, or sendBackward.",
+	"rotate_nodes":             "Set node rotation in degrees.",
+	"lock_nodes":               "Lock nodes.",
+	"unlock_nodes":             "Unlock nodes.",
+	"ungroup_nodes":            "Ungroup groups.",
+	"detach_instance":          "Detach component instances.",
+	"remove_reactions":         "Remove prototype reactions by index, or clear all when indices is omitted.",
+	"delete_style":             "Delete a local style by styleId.",
+	"set_overflow":             "Set a frame's prototype scroll direction (NONE|HORIZONTAL|VERTICAL|BOTH). Optionally toggle clipsContent — a frame only scrolls when its content overflows and is clipped.",
+	"set_fixed_children":       "Set how many leading children of a frame stay fixed while the rest scroll. Fixed children must be ordered first.",
+	"pin_child":                "Pin a child so it stays fixed while its frame scrolls: sets it ABSOLUTE, moves it into the leading fixed band, and extends the parent's fixed-children count.",
+	"set_prototype_background": "Set the page's prototype presentation background to one solid color (color, opacity?), or clear it with mode \"clear\".",
 }
 
 var batchOpCatalog = newBatchOpCatalog()
@@ -259,9 +280,11 @@ func isReadOnlyBatchOp(name string) bool {
 
 func batchOpCategory(name string) string {
 	switch {
-	// Prototype ops are matched before the get_/set_ prefix rules so get_prototype and
-	// set_prototype_start group under "prototype" rather than "read"/"modify".
-	case strings.Contains(name, "reaction"), strings.Contains(name, "prototype"):
+	// Prototype ops are matched before the get_/set_ prefix rules so get_prototype,
+	// set_prototype_start, and the scroll/fixed-children ops group under "prototype"
+	// rather than "read"/"modify"/"write".
+	case strings.Contains(name, "reaction"), strings.Contains(name, "prototype"),
+		name == "set_overflow", name == "set_fixed_children", name == "pin_child":
 		return "prototype"
 	case strings.HasPrefix(name, "get_"), strings.HasPrefix(name, "scan_"), strings.HasPrefix(name, "search_"):
 		return "read"
@@ -447,6 +470,10 @@ func stringProp() map[string]any {
 
 func numberProp() map[string]any {
 	return map[string]any{"type": "number"}
+}
+
+func boolProp() map[string]any {
+	return map[string]any{"type": "boolean"}
 }
 
 func arrayProp(itemType string) map[string]any {

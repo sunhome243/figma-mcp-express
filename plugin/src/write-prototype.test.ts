@@ -641,3 +641,192 @@ describe("set_reactions — NODE action normalization (new feature)", () => {
     ).rejects.toThrow(/destinationId/i);
   });
 });
+
+// ── set_overflow ────────────────────────────────────────────────────────────────
+
+describe("set_overflow", () => {
+  beforeEach(() => {
+    mockNodes["1:2"] = { id: "1:2", name: "Body", overflowDirection: "NONE", clipsContent: false };
+  });
+
+  it("sets the scroll direction on a frame", async () => {
+    const res = await handleWritePrototypeRequest(
+      makeRequest("set_overflow", ["1:2"], { overflowDirection: "VERTICAL" })
+    );
+    expect(mockNodes["1:2"].overflowDirection).toBe("VERTICAL");
+    expect(res?.data.overflowDirection).toBe("VERTICAL");
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("toggles clipsContent alongside the direction", async () => {
+    await handleWritePrototypeRequest(
+      makeRequest("set_overflow", ["1:2"], { overflowDirection: "BOTH", clipsContent: true })
+    );
+    expect(mockNodes["1:2"].clipsContent).toBe(true);
+  });
+
+  it("rejects an invalid overflowDirection", async () => {
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_overflow", ["1:2"], { overflowDirection: "DIAGONAL" }))
+    ).rejects.toThrow(/overflowDirection/i);
+  });
+
+  it("throws when the node does not support overflowDirection", async () => {
+    mockNodes["3:3"] = { id: "3:3", name: "Vector" };
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_overflow", ["3:3"], { overflowDirection: "VERTICAL" }))
+    ).rejects.toThrow(/does not support overflowDirection/i);
+  });
+});
+
+// ── set_fixed_children ──────────────────────────────────────────────────────────
+
+describe("set_fixed_children", () => {
+  beforeEach(() => {
+    mockNodes["1:2"] = {
+      id: "1:2", name: "Screen", numberOfFixedChildren: 0,
+      children: [{ id: "c1" }, { id: "c2" }, { id: "c3" }],
+    };
+  });
+
+  it("sets the leading fixed-children count", async () => {
+    const res = await handleWritePrototypeRequest(
+      makeRequest("set_fixed_children", ["1:2"], { numberOfFixedChildren: 2 })
+    );
+    expect(mockNodes["1:2"].numberOfFixedChildren).toBe(2);
+    expect(res?.data.numberOfFixedChildren).toBe(2);
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("rejects a count larger than the child count", async () => {
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_fixed_children", ["1:2"], { numberOfFixedChildren: 5 }))
+    ).rejects.toThrow(/exceeds/i);
+  });
+
+  it("rejects a non-integer / negative count", async () => {
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_fixed_children", ["1:2"], { numberOfFixedChildren: -1 }))
+    ).rejects.toThrow(/non-negative integer/i);
+  });
+});
+
+// ── pin_child ───────────────────────────────────────────────────────────────────
+
+describe("pin_child", () => {
+  let parent: any;
+  let child: any;
+  // Model Figma's insertChild: remove the child from its current slot, then re-insert
+  // at the given index (so indices reindex, like the real API).
+  const makeParent = (id: string, fixed: number, kids: any[]) => {
+    const inserts: any[] = [];
+    const p: any = {
+      id, name: "Screen", numberOfFixedChildren: fixed, children: kids, inserts,
+      insertChild: (index: number, c: any) => {
+        const at = p.children.indexOf(c);
+        if (at > -1) p.children.splice(at, 1);
+        p.children.splice(index, 0, c);
+        inserts.push({ index, child: c });
+      },
+    };
+    kids.forEach((k) => { k.parent = p; });
+    return p;
+  };
+
+  beforeEach(() => {
+    child = { id: "c1", name: "BottomTabBar", layoutPositioning: "AUTO" };
+    const body = { id: "b", name: "Body" };
+    parent = makeParent("1:2", 0, [body, child]);
+    mockNodes["c1"] = child;
+  });
+
+  it("sets the child ABSOLUTE, moves it into the fixed band, and bumps the count", async () => {
+    const res = await handleWritePrototypeRequest(makeRequest("pin_child", ["c1"]));
+    expect(child.layoutPositioning).toBe("ABSOLUTE");
+    expect(parent.inserts[0].index).toBe(0);
+    expect(parent.children[0]).toBe(child);
+    expect(parent.numberOfFixedChildren).toBe(1);
+    expect(res?.data.parentId).toBe("1:2");
+    expect(res?.data.numberOfFixedChildren).toBe(1);
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("appends into the existing fixed band rather than overwriting it", async () => {
+    const header = { id: "h", name: "Header" };
+    parent = makeParent("1:2", 1, [header, { id: "b", name: "Body" }, child]);
+    await handleWritePrototypeRequest(makeRequest("pin_child", ["c1"]));
+    expect(parent.inserts[0].index).toBe(1);
+    expect(parent.numberOfFixedChildren).toBe(2);
+  });
+
+  it("is idempotent — re-pinning an already-fixed child does not over-count", async () => {
+    await handleWritePrototypeRequest(makeRequest("pin_child", ["c1"]));
+    expect(parent.numberOfFixedChildren).toBe(1);
+    parent.inserts.length = 0;
+    await handleWritePrototypeRequest(makeRequest("pin_child", ["c1"]));
+    expect(parent.numberOfFixedChildren).toBe(1); // not 2
+    expect(parent.inserts).toHaveLength(0); // no second insert
+  });
+
+  it("never lets the fixed count exceed the child count", async () => {
+    parent = makeParent("1:2", 1, [child]); // count already == child count
+    await handleWritePrototypeRequest(makeRequest("pin_child", ["c1"]));
+    expect(parent.numberOfFixedChildren).toBe(1);
+  });
+
+  it("throws when the parent does not support fixed children", async () => {
+    mockNodes["c2"] = { id: "c2", name: "Orphan", parent: { id: "g", type: "GROUP" } };
+    await expect(
+      handleWritePrototypeRequest(makeRequest("pin_child", ["c2"]))
+    ).rejects.toThrow(/does not support fixed children/i);
+  });
+});
+
+// ── set_prototype_background ──────────────────────────────────────────────────────
+
+describe("set_prototype_background", () => {
+  let page: any;
+  beforeEach(() => {
+    page = { id: "0:1", name: "Page 1", type: "PAGE", prototypeBackgrounds: [] };
+    (globalThis as any).figma.currentPage = page;
+  });
+
+  it("sets a single solid color on the current page", async () => {
+    const res = await handleWritePrototypeRequest(
+      makeRequest("set_prototype_background", [], { color: "#101014" })
+    );
+    expect(page.prototypeBackgrounds).toHaveLength(1);
+    expect(page.prototypeBackgrounds[0].type).toBe("SOLID");
+    expect(res?.data.pageId).toBe("0:1");
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("applies opacity to the solid color when given", async () => {
+    await handleWritePrototypeRequest(
+      makeRequest("set_prototype_background", [], { color: "#101014", opacity: 0.5 })
+    );
+    expect(page.prototypeBackgrounds[0].opacity).toBe(0.5);
+  });
+
+  it("clears the prototype background with mode clear", async () => {
+    page.prototypeBackgrounds = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+    await handleWritePrototypeRequest(makeRequest("set_prototype_background", [], { mode: "clear" }));
+    expect(page.prototypeBackgrounds).toHaveLength(0);
+  });
+
+  it("resolves the owning page of a passed node", async () => {
+    const otherPage: any = { id: "0:2", name: "Page 2", type: "PAGE", prototypeBackgrounds: [] };
+    mockNodes["9:9"] = { id: "9:9", name: "Frame", parent: otherPage };
+    await handleWritePrototypeRequest(
+      makeRequest("set_prototype_background", ["9:9"], { color: "#000000" })
+    );
+    expect(otherPage.prototypeBackgrounds).toHaveLength(1);
+    expect(page.prototypeBackgrounds).toHaveLength(0);
+  });
+
+  it("throws when neither color nor clear mode is given", async () => {
+    await expect(
+      handleWritePrototypeRequest(makeRequest("set_prototype_background", [], {}))
+    ).rejects.toThrow(/color/i);
+  });
+});
