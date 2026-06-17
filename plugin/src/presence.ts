@@ -67,7 +67,7 @@ export function collectAffectedNodeIds(result: unknown): string[] {
   return [...ids];
 }
 
-// ── Multi-agent presence (PoC v2) ─────────────────────────────────────────────
+// ── Multi-agent presence ──────────────────────────────────────────────────────
 // When an op carries an `origin` label (the acting agent's roster name), the
 // plugin records it as a PresenceEvent. The panel shows WHO is working WHERE
 // (avatar + last action), and the canvas highlights the UNION of active agents'

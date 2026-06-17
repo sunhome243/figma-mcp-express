@@ -74,12 +74,12 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 		if v, ok := req.GetArguments()["continueOnError"].(bool); ok {
 			params["continueOnError"] = v
 		}
-		// Presence label (PoC): forwarded verbatim to the plugin (the bridge strips
+		// Presence label: forwarded verbatim to the plugin (the bridge strips
 		// only `channel`), where it attributes this write to a named agent.
 		if origin, ok := pickOrigin(req.GetArguments()); ok {
 			params["origin"] = origin
 		}
-		// Presence status (PoC): the acting agent's workflow state, forwarded
+		// Presence status: the acting agent's workflow state, forwarded
 		// verbatim to the plugin alongside origin.
 		if status, ok := pickStatus(req.GetArguments()); ok {
 			params["status"] = status

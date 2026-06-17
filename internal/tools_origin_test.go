@@ -81,18 +81,18 @@ func TestPickStatus(t *testing.T) {
 
 // Guard: every roster status must round-trip through pickStatus so the Go enum
 // and the validation list never drift apart. The roster MUST be EXACTLY the 6
-// PoC workflow states.
+// LLM-set workflow states.
 func TestPickStatusAcceptsEveryRosterStatus(t *testing.T) {
 	want := map[string]bool{
 		"thinking": true, "waiting_review": true, "reviewing": true,
 		"approved": true, "escalated": true, "done": true,
 	}
 	if len(rosterStatuses) != len(want) {
-		t.Fatalf("rosterStatuses has %d entries, want %d (the 6 PoC states)", len(rosterStatuses), len(want))
+		t.Fatalf("rosterStatuses has %d entries, want %d (the 6 LLM-set states)", len(rosterStatuses), len(want))
 	}
 	for _, s := range rosterStatuses {
 		if !want[s] {
-			t.Errorf("unexpected roster status %q (not one of the 6 PoC states)", s)
+			t.Errorf("unexpected roster status %q (not one of the 6 LLM-set states)", s)
 		}
 		got, ok := pickStatus(map[string]interface{}{"status": s})
 		if !ok || got != s {

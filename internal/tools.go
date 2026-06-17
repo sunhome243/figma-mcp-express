@@ -104,25 +104,28 @@ func channelParam() mcp.ToolOption {
 }
 
 // rosterOrigins is the fixed presence roster for the multi-agent live-highlight
-// PoC. The acting agent passes its identity as the `origin` param so the Figma
-// plugin can attribute each call to a named agent (avatar + last action).
-// `wolfgang` is the orchestrator/conductor identity (👑) — distinct from the eight
-// worker agents. Keep in sync with plugin/src/presence-roster.ts.
+// panel. The acting agent passes its identity as the `origin` param so the Figma
+// plugin can attribute each call to a named agent (avatar + last action) when the
+// plugin's "Watch agent" toggle is on. `wolfgang` is the orchestrator/conductor
+// identity (👑) — distinct from the eight worker agents. Keep in sync with
+// plugin/src/presence-roster.ts.
 var rosterOrigins = []string{"grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick", "wolfgang"}
 
-// presenceRequired makes `origin` a REQUIRED param when set, so every call is
-// attributed to an agent (incl. the orchestrator). Gated by an env var so ONLY the
-// PoC server (1995, which sets FIGMA_MCP_PRESENCE_REQUIRED=1 in .mcp.json) enforces
-// it — the production binary (1994) leaves origin OPTIONAL and is never broken.
+// presenceRequired makes `origin` a REQUIRED param when the server is started with
+// FIGMA_MCP_PRESENCE_REQUIRED=1, so every call is attributed to an agent (incl. the
+// orchestrator). Default (unset) leaves `origin` OPTIONAL and fully back-compat — a
+// call without it behaves exactly as before. Kept as a startup opt-in for stability.
 var presenceRequired = os.Getenv("FIGMA_MCP_PRESENCE_REQUIRED") == "1"
 
-// originParam is the presence label exposed on every plugin-reaching tool (PoC).
-// Enum-constrained to rosterOrigins so the model always picks a known identity that
-// maps deterministically to an avatar/color in the plugin. Required iff presenceRequired.
+// originParam is the presence label exposed on every plugin-reaching tool. Enum-
+// constrained to rosterOrigins so the model always picks a known identity that maps
+// deterministically to an avatar/color in the plugin. OPTIONAL by default (back-compat);
+// REQUIRED only when presenceRequired is set. The panel is shown/hidden by the plugin's
+// "Watch agent" toggle, independent of this param.
 func originParam() mcp.ToolOption {
 	opts := []mcp.PropertyOption{
 		mcp.Enum(rosterOrigins...),
-		mcp.Description("Presence label for the multi-agent live-presence PoC — the acting agent's identity from the fixed roster (grace, theo, sunho, zoe, taewon, emma, alex, rick, wolfgang=orchestrator). Pass the SAME value on every call from one agent so the Figma plugin shows who is working where. NOT routing metadata. Required on the presence PoC server; optional (harmlessly ignored) otherwise."),
+		mcp.Description("Optional presence label — the acting agent's identity from the fixed roster (grace, theo, sunho, zoe, taewon, emma, alex, rick, wolfgang=orchestrator). Pass the SAME value on every call from one agent so the Figma plugin's Watch-agent panel shows who is working where. NOT routing metadata; harmlessly ignored when the panel is off. (Required when the server runs with FIGMA_MCP_PRESENCE_REQUIRED=1.)"),
 	}
 	if presenceRequired {
 		opts = append(opts, mcp.Required())
@@ -149,18 +152,19 @@ func pickOrigin(args map[string]interface{}) (string, bool) {
 }
 
 // rosterStatuses is the fixed set of presence workflow states an agent may
-// report via the `status` param for the multi-agent live-presence PoC. Unlike
-// `origin` (the agent's identity), `status` is the agent's current workflow
-// state and is LLM-settable only. Keep in sync with the plugin presence layer.
+// report via the `status` param. Unlike `origin` (the agent's identity), `status`
+// is the agent's current workflow state and is LLM-settable only (auto statuses
+// like building/scanning/queued are derived without this param). Keep in sync
+// with the plugin presence layer.
 var rosterStatuses = []string{"thinking", "waiting_review", "reviewing", "approved", "escalated", "done"}
 
-// statusParam is the optional presence status exposed on write/batch tools (PoC).
+// statusParam is the optional presence status exposed on write/batch tools.
 // It mirrors originParam: enum-constrained to rosterStatuses so the model always
 // picks a known workflow state that the Figma plugin can render.
 func statusParam() mcp.ToolOption {
 	return mcp.WithString("status",
 		mcp.Enum(rosterStatuses...),
-		mcp.Description("Optional presence status for the multi-agent live-presence PoC; the acting agent's current workflow state."),
+		mcp.Description("Optional presence status — the acting agent's current workflow state, shown in the plugin's Watch-agent panel."),
 	)
 }
 

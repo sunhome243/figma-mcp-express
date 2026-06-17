@@ -31,7 +31,7 @@ type BridgeResponse struct {
 
 // presenceQueueType is the BridgeRequest-shaped frame Type the bridge pushes to
 // the plugin to report which roster origins are currently waiting on the per-
-// channel serial slot (the multi-agent live-presence PoC "queued" signal).
+// channel serial slot (the multi-agent live-presence "queued" signal).
 const presenceQueueType = "presence_queue"
 
 // PresenceQueueFrame is pushed from the Go server to the Figma plugin to surface
