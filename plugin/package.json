@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "concurrently \"vite build --watch\" \"vite build --watch -c vite.config.main.ts\"",
     "build": "vite build && vite build -c vite.config.main.ts",
-    "build:poc": "POC=1 vite build && POC=1 vite build -c vite.config.main.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "lint": "eslint . --max-warnings 0"
