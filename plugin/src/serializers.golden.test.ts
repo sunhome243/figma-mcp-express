@@ -165,15 +165,16 @@ describe("serializeComponentRef — per-read component cache (7R-2)", () => {
     const r1 = await serializeComponentRef(inst, cache);
     const r2 = await serializeComponentRef(inst, cache);
     expect(mainComponentCalls).toBe(1);
-    // Includes remote field in componentRef (false when mc.remote is not set)
-    expect(r1).toEqual({ key: "key:MC", name: "comp:MC", remote: false });
-    expect(r2).toEqual({ key: "key:MC", name: "comp:MC", remote: false });
+    // Includes remote field + the master node id (issue #29); surfacing sites
+    // (mainComponent / componentRef) strip the id back out to {key,name,remote}.
+    expect(r1).toEqual({ key: "key:MC", name: "comp:MC", remote: false, id: "MC" });
+    expect(r2).toEqual({ key: "key:MC", name: "comp:MC", remote: false, id: "MC" });
   });
 
   it("default (no cache) preserves existing per-call behavior", async () => {
     const ref = await serializeComponentRef(makeInstance("x", "Z"));
-    // Includes remote field in componentRef output
-    expect(ref).toEqual({ key: "key:Z", name: "comp:Z", remote: false });
+    // Carries the master node id alongside remote (issue #29).
+    expect(ref).toEqual({ key: "key:Z", name: "comp:Z", remote: false, id: "Z" });
   });
 
   it("reflects remote:true when mc.remote is true", async () => {
