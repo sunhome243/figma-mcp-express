@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -337,7 +338,7 @@ func syncBatchCatalogFromRegisteredTools(s *server.MCPServer) {
 func registerBatchCatalogTools(s *server.MCPServer) {
 	s.AddTool(mcp.NewTool("search_batch_ops",
 		mcp.WithDescription("Search the validated batch/FigmaPlan operation catalog. Use this before get_batch_op_spec when you know the capability but not the exact op name."),
-		mcp.WithString("query", mcp.Description("Optional name/description substring to search.")),
+		mcp.WithString("query", mcp.Description("Optional capability/op/param words to search. Tolerates separators, camelCase, singular/plural, and filler words like op/tool.")),
 		mcp.WithString("category", mcp.Description("Optional category filter: read, create, modify, styles, variables, library, page, prototype, control, write.")),
 		mcp.WithBoolean("readOnly", mcp.Description("Optional. true returns read-only ops; false returns non-read-only ops.")),
 		mcp.WithBoolean("mutates", mcp.Description("Optional. true returns mutating ops; false returns non-mutating ops.")),
@@ -359,8 +360,7 @@ func registerBatchCatalogTools(s *server.MCPServer) {
 
 		matches := []batchOpSearchMatch{}
 		for _, spec := range allBatchOpSpecs() {
-			haystack := strings.ToLower(spec.Name + " " + spec.Description + " " + strings.Join(spec.ParamKeys, " ") + " " + catalogSchemaSearchText(spec.InputSchema))
-			if query != "" && !matchesBatchOpQuery(haystack, query) {
+			if query != "" && !matchesBatchOpQuery(batchOpHaystack(spec), query) {
 				continue
 			}
 			if category != "" && spec.Category != category {
@@ -384,11 +384,22 @@ func registerBatchCatalogTools(s *server.MCPServer) {
 		if len(matches) > limit {
 			matches = matches[:limit]
 		}
-		return mcp.NewToolResultStructuredOnly(map[string]any{
+		result := map[string]any{
 			"matches": matches,
 			"count":   len(matches),
 			"total":   total,
-		}), nil
+		}
+		// Zero exact matches is the moment an agent wrongly concludes "this
+		// capability doesn't exist." Surface the closest ops (ranked) + a hint so
+		// it verifies instead of giving up. Filtered-to-empty (category/readOnly)
+		// is deliberate, so only offer this for a plain query miss.
+		if total == 0 && query != "" && category == "" && !hasReadOnly && !hasMutates {
+			if suggestions := suggestedBatchOps(query, 5); len(suggestions) > 0 {
+				result["suggestions"] = suggestions
+				result["hint"] = "no exact match — closest ops by relevance; confirm with get_batch_op_spec before concluding the capability is absent"
+			}
+		}
+		return mcp.NewToolResultStructuredOnly(result), nil
 	})
 
 	s.AddTool(mcp.NewTool("get_batch_op_spec",
@@ -400,7 +411,12 @@ func registerBatchCatalogTools(s *server.MCPServer) {
 		op, _ := req.GetArguments()["op"].(string)
 		spec, ok := batchOpCatalog[op]
 		if !ok {
-			return mcp.NewToolResultError("unknown batch op: " + op), nil
+			msg := "unknown batch op: " + op
+			if suggestions := suggestedBatchOps(op, 5); len(suggestions) > 0 {
+				msg += ". Did you mean: " + strings.Join(suggestions, ", ") + "?"
+			}
+			msg += " Use search_batch_ops before concluding an op is absent."
+			return mcp.NewToolResultError(msg), nil
 		}
 		if include, _ := req.GetArguments()["includeExamples"].(bool); !include {
 			spec.Examples = nil
@@ -507,19 +523,258 @@ func cloneCatalogValue(v any) any {
 	}
 }
 
-// matchesBatchOpQuery reports whether every whitespace-separated token in query
-// appears as a substring of the (already-lowercased) haystack — AND semantics.
-// A single contiguous substring is no longer required, so natural multi-word
-// queries like "create frame", "auto layout", or "delete node" match ops named
-// create_frame / set_auto_layout / delete_nodes (whose names use underscores). A
-// whitespace-only query matches everything (no tokens → vacuously true).
+// matchesBatchOpQuery reports whether every meaningful token in query appears
+// in the catalog text — AND semantics. It deliberately accepts sloppy human
+// search phrases: separators are tokenized, camelCase is split, singular/plural
+// variants match each other, and filler words like "op" or "tool" are ignored.
+// This keeps "delete_node op" and "reorder tool" from being false negatives.
 func matchesBatchOpQuery(haystack, query string) bool {
-	for _, tok := range strings.Fields(strings.ToLower(query)) {
-		if !strings.Contains(haystack, tok) {
+	queryTerms := batchOpQueryTerms(query)
+	if len(queryTerms) == 0 {
+		return true
+	}
+	haystackTerms := batchOpHaystackTerms(haystack)
+	for _, term := range queryTerms {
+		found := false
+		for _, variant := range batchOpTermVariants(term) {
+			if batchOpHaystackContains(haystackTerms, variant) {
+				found = true
+				break
+			}
+		}
+		if !found {
 			return false
 		}
 	}
 	return true
+}
+
+// batchOpSearchAliases maps an op name to extra search-only synonyms. These are
+// folded into the SEARCH text (matchesBatchOpQuery / suggestions) but are NEVER
+// displayed — zero token cost on results/specs — so an agent searching "remove"
+// finds delete_nodes even though the op name and description say only "delete".
+// English only (the catalog is English; map foreign-language intent to English
+// search terms upstream). Slim by design: only ops whose common search words
+// diverge from the name. To extend, add the word here, not to the agent-facing
+// description.
+var batchOpSearchAliases = map[string][]string{
+	"delete_nodes":    {"remove", "erase"},
+	"clone_node":      {"duplicate", "copy"},
+	"reparent_nodes":  {"move into"},
+	"detach_instance": {"flatten"},
+	"swap_component":  {"replace"},
+	"group_nodes":     {"wrap"},
+}
+
+// batchOpHaystack builds the searchable text for one op: name + description +
+// param keys + schema vocabulary + any search-only aliases. Single source so the
+// search loop and the suggestion ranker stay in sync (and aliases apply to both).
+func batchOpHaystack(spec BatchOpSpec) string {
+	h := spec.Name + " " + spec.Description + " " + strings.Join(spec.ParamKeys, " ") + " " + catalogSchemaSearchText(spec.InputSchema)
+	if aliases := batchOpSearchAliases[spec.Name]; len(aliases) > 0 {
+		h += " " + strings.Join(aliases, " ")
+	}
+	return h
+}
+
+// batchOpNameHaystack is the NAME-only searchable text (name + aliases) used to
+// rank suggestions: a query term hitting the op NAME is a stronger signal than
+// one buried in a description, so it ranks higher.
+func batchOpNameHaystack(spec BatchOpSpec) string {
+	h := spec.Name
+	if aliases := batchOpSearchAliases[spec.Name]; len(aliases) > 0 {
+		h += " " + strings.Join(aliases, " ")
+	}
+	return h
+}
+
+func batchOpHaystackContains(haystackTerms map[string]bool, queryTerm string) bool {
+	if haystackTerms[queryTerm] {
+		return true
+	}
+	for haystackTerm := range haystackTerms {
+		if strings.Contains(haystackTerm, queryTerm) {
+			return true
+		}
+	}
+	return false
+}
+
+// suggestedBatchOps returns the closest ops to a query, RANKED by relevance —
+// for the "did you mean" on an unknown op and the zero-result search fallback.
+// Unlike the main search (strict AND), this is a partial/OR ranker: any op whose
+// text matches ≥1 query term is a candidate, ordered by how many query terms hit
+// the op NAME (the strongest signal), then how many hit anywhere, then name. So a
+// typo like "delete_node" surfaces "delete_nodes" first, and a query that the
+// strict AND search misses still gets the nearest ops instead of a dead end. A
+// query with no meaningful terms (empty/filler-only) returns nil — never a dump
+// of arbitrary ops.
+func suggestedBatchOps(query string, limit int) []string {
+	queryTerms := batchOpQueryTerms(query)
+	if limit <= 0 || len(queryTerms) == 0 {
+		return nil
+	}
+	type scored struct {
+		name              string
+		nameHits, anyHits int
+	}
+	cands := []scored{}
+	for _, spec := range allBatchOpSpecs() {
+		nameTerms := batchOpHaystackTerms(batchOpNameHaystack(spec))
+		allTerms := batchOpHaystackTerms(batchOpHaystack(spec))
+		nameHits, anyHits := 0, 0
+		for _, term := range queryTerms {
+			hitName, hitAny := false, false
+			for _, variant := range batchOpTermVariants(term) {
+				if batchOpHaystackContains(nameTerms, variant) {
+					hitName = true
+				}
+				if batchOpHaystackContains(allTerms, variant) {
+					hitAny = true
+				}
+			}
+			if hitName {
+				nameHits++
+			}
+			if hitAny {
+				anyHits++
+			}
+		}
+		if anyHits == 0 {
+			continue
+		}
+		cands = append(cands, scored{spec.Name, nameHits, anyHits})
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].nameHits != cands[j].nameHits {
+			return cands[i].nameHits > cands[j].nameHits
+		}
+		if cands[i].anyHits != cands[j].anyHits {
+			return cands[i].anyHits > cands[j].anyHits
+		}
+		return cands[i].name < cands[j].name
+	})
+	out := make([]string, 0, limit)
+	for _, c := range cands {
+		out = append(out, c.name)
+		if len(out) == limit {
+			break
+		}
+	}
+	return out
+}
+
+func batchOpQueryTerms(query string) []string {
+	terms := batchOpBaseTerms(query)
+	out := make([]string, 0, len(terms))
+	for _, term := range terms {
+		if isBatchOpQueryFiller(term) {
+			continue
+		}
+		out = append(out, term)
+	}
+	return out
+}
+
+func batchOpHaystackTerms(haystack string) map[string]bool {
+	out := map[string]bool{}
+	for _, term := range batchOpBaseTerms(haystack) {
+		for _, variant := range batchOpTermVariants(term) {
+			out[variant] = true
+		}
+	}
+	return out
+}
+
+func batchOpBaseTerms(s string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(term string) {
+		term = strings.ToLower(term)
+		if term == "" || seen[term] {
+			return
+		}
+		seen[term] = true
+		out = append(out, term)
+	}
+	for _, chunk := range batchOpAlnumChunks(s) {
+		add(chunk)
+		for _, part := range splitBatchOpCamelChunk(chunk) {
+			add(part)
+		}
+	}
+	return out
+}
+
+func batchOpAlnumChunks(s string) []string {
+	out := []string{}
+	var b strings.Builder
+	flush := func() {
+		if b.Len() == 0 {
+			return
+		}
+		out = append(out, b.String())
+		b.Reset()
+	}
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return out
+}
+
+func splitBatchOpCamelChunk(chunk string) []string {
+	out := []string{}
+	var b strings.Builder
+	var prev rune
+	flush := func() {
+		if b.Len() == 0 {
+			return
+		}
+		out = append(out, b.String())
+		b.Reset()
+	}
+	for i, r := range chunk {
+		if i > 0 && unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)) {
+			flush()
+		}
+		b.WriteRune(r)
+		prev = r
+	}
+	flush()
+	return out
+}
+
+func batchOpTermVariants(term string) []string {
+	singular := singularBatchOpTerm(term)
+	if singular == term {
+		return []string{term}
+	}
+	return []string{term, singular}
+}
+
+func singularBatchOpTerm(term string) string {
+	switch {
+	case len(term) > 4 && strings.HasSuffix(term, "ies"):
+		return strings.TrimSuffix(term, "ies") + "y"
+	case len(term) > 3 && strings.HasSuffix(term, "s") && !strings.HasSuffix(term, "ss"):
+		return strings.TrimSuffix(term, "s")
+	default:
+		return term
+	}
+}
+
+func isBatchOpQueryFiller(term string) bool {
+	switch singularBatchOpTerm(term) {
+	case "op", "operation", "tool", "function", "method", "command", "api", "mcp", "figma", "batch", "call":
+		return true
+	default:
+		return false
+	}
 }
 
 func catalogSchemaSearchText(v any) string {

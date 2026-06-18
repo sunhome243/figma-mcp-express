@@ -22,7 +22,7 @@ Avoid page-level deep reads. If a result spills to `.figma-mcp-cache/`, query th
 
 ## Batch Discovery
 
-1. Use `search_batch_ops` with a capability name, op name, or param key to find candidate ops. Examples: `fontSize`, `componentId`, `cornerRadius`.
+1. Use `search_batch_ops` with a capability name, op name, or param key to find candidate ops. It tolerates sloppy search text such as `delete_node op`, `reorder tool`, singular/plural drift, separators, and camelCase. Examples: `fontSize`, `componentId`, `cornerRadius`.
 2. Use `get_batch_op_spec` for exact params, read/write flags, examples, and output shape.
 3. Use `batch(validateOnly:true)` before generated or unfamiliar mutations.
 4. Execute the same plan with `batch` only after validation passes.

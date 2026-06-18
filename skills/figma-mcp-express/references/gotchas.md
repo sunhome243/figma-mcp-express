@@ -20,7 +20,9 @@ For server bugs with workarounds (find_replace_text scope, get_design_context no
 
 **Symptom:** An agent declares an op missing or a param broken without querying the catalog, then invents a workaround.
 **Cause:** Guessing the op surface from memory instead of asking the server. This is the single most common wasted-loop.
-**Fix:** `search_batch_ops("<intent words>")` → `get_batch_op_spec(op:"<name>")` FIRST, every time, before concluding anything is absent. Confirmed-present ops people wrongly assume are missing: **`clone_node`**, **`reparent_nodes`**, and nearly every write primitive.
+**Fix:** `search_batch_ops("<intent words>")` → `get_batch_op_spec(op:"<name>")` FIRST, every time, before concluding anything is absent. Confirmed-present ops people wrongly assume are missing: **`delete_nodes`** (not `delete_node`), **`reorder_nodes`** (not `reorder`), **`clone_node`**, **`reparent_nodes`**, and nearly every write primitive.
+
+`search_batch_ops` is intentionally forgiving: sloppy queries like `delete_node op`, `delete node`, `reorder tool`, `bring forward`, and common synonyms (`remove` → `delete_nodes`, `duplicate` → `clone_node`) should still surface the exact op. If a query finds **nothing**, the response carries `suggestions` (closest ops) + a hint — treat those as the lead, never as "the capability is absent." Final batch payloads must use the exact catalog name returned by `get_batch_op_spec`.
 
 Two recurring shape mistakes: (1) the **node target goes in the op-level `nodeIds` array**, not `params.nodeId` (singular `params.nodeId` is only a read/scan subtree root); (2) `get_batch_op_spec` takes `op:"<name>"`, not a `nodeId`.
 

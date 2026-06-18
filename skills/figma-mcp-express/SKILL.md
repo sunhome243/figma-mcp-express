@@ -19,7 +19,7 @@ Use the compact core surface first. In default `core` profile, low-level write p
 ## Tool Surface
 
 - Default `core` profile = read/high-value tools + `batch`, `search_batch_ops`, `get_batch_op_spec`. (Legacy top-level write tools: `FIGMA_MCP_TOOL_PROFILE=full`.)
-- Unfamiliar writes: `search_batch_ops` -> `get_batch_op_spec` -> `batch(validateOnly:true)` -> `batch`.
+- Unfamiliar writes: `search_batch_ops` (intent words; e.g. `delete_node op` -> `delete_nodes`) -> `get_batch_op_spec` -> `batch(validateOnly:true)` -> `batch`.
 - Do not write raw Plugin API JS, `use_figma` scripts, `eval`, or code strings — declarative `batch` ops only.
 
 ## Working Rules
