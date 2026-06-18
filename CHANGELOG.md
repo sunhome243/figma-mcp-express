@@ -6,6 +6,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Prototype scroll & fixed-children ops (`set_overflow`, `set_fixed_children`, `pin_child`).** Closes the "scroll / body-scroll / fix-position is not available" gap (issue #38) — these were always writable via the Plugin API (`FrameNode.overflowDirection`, `FrameNode.numberOfFixedChildren`), just unexposed. `set_overflow` sets a frame's prototype scroll direction (`NONE|HORIZONTAL|VERTICAL|BOTH`) and optionally toggles `clipsContent` (a nested frame only scrolls when its content overflows *and* is clipped — folding `clipsContent` in prevents the common "scroll doesn't work" mistake). Fixed children are modeled by Figma as the **leading N children** of a frame (always on top of scrolling children), not a per-layer boolean: `set_fixed_children` sets that raw count, while the high-level `pin_child` does the full recipe for one child — sets it `ABSOLUTE`, moves it into the leading fixed band, and bumps the parent's count (e.g. pin a `BottomTabBar` while the body scrolls). All three are batch-only ops (reachable via `batch` / `search_batch_ops`), validated server-side (enum + required + child-count bound) on the `validateOnly` path.
+- **`set_prototype_background` op.** Sets a page's prototype presentation background to one solid color (`color`, optional `opacity`), or clears it with `mode:"clear"` (`PageNode.prototypeBackgrounds`). Page-scoped — targets the owning page of the first nodeId, else the current page. Batch-only.
+- **`figma-prototype` skill — §10 "Scroll & fixed children" + dropdown open/close recipe.** New §10 documents the `overflowDirection`+`clipsContent` scroll gotcha, the leading-fixed-band model, and a scrollable-body-with-pinned-tab-bar recipe (cross-referencing the mobile safe-area rule). §4 gains a concrete dropdown OVERLAY-open + CLOSE-dismiss recipe, flagging that overlay *position* (MANUAL anchor / scrim / close-on-click-outside) remains UI-only (read-only via the API).
+
 ## [2.3.0] — 2026-06-17
 
 ### Added

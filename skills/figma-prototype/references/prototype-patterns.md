@@ -110,6 +110,13 @@ Overlay position/scrim/dismiss are **properties on the destination frame**, NOT 
 
 Position-by-intent: **dialog/alert** → CENTER + scrim + close-on-click-outside; **dropdown/menu/tooltip** → MANUAL (anchored) + no scrim + close-on-click-outside; **bottom sheet** → BOTTOM + scrim + close-on-click-outside; **toast** → TOP/BOTTOM, no scrim, auto-dismiss. **If a frame looks like a dropdown/sheet but its `overlayPositionType` is still `CENTER`, flag it for UI configuration — do not wire a misplaced overlay.**
 
+**Dropdown open/close recipe.** Build the menu as a separate frame and wire it with the `set_reactions` op — the open/close *interactions* are fully settable; only the overlay frame's *appearance* (MANUAL anchor, no scrim) is UI-only.
+
+- **Open** — on the trigger control: `{trigger:{type:"ON_CLICK"}, actions:[{type:"NODE", destinationId:<menuFrame>, navigation:"OVERLAY", overlayRelativePosition:{x,y}}]}`. `overlayRelativePosition` IS settable here and anchors the menu near the trigger (it only takes effect once the destination's `overlayPositionType` is MANUAL — set that in the UI).
+- **Close** — pick the dismiss: an explicit item/backdrop → `{trigger:{type:"ON_CLICK"}, actions:[{type:"CLOSE"}]}`; click-outside → set the menu frame's `overlayBackgroundInteraction:CLOSE_ON_CLICK_OUTSIDE` (UI-only, read-only via API — flag it).
+
+So: emit OVERLAY-open + CLOSE-dismiss via `set_reactions`, then flag "set this overlay's position to MANUAL + close-on-click-outside in Figma" for any dropdown-shaped destination. The §9 audit already detects a `CENTER` overlay on a dropdown-shaped frame.
+
 ---
 
 ## §5. Interactive components & variants
@@ -178,3 +185,29 @@ Use this when a prototype already exists and the job is to **understand, audit, 
 **4. Report, then fix conservatively.** Present findings as `{ source/destination ids, issue, recommended fix }`. **Auto-apply only the unambiguous, reversible fixes** (set a missing start point; correct a flipped direction; PUSH→SMART_ANIMATE on same-named pairs). Everything requiring judgment (which dead-end goes where, overlay placement) → flag for the user. Re-run the `get_prototype` op after writing to confirm.
 
 > To take a start point away, use the `set_prototype_start` op: `mode:"remove"` drops the given frame(s) and keeps the rest (remove one without re-listing the others); `mode:"clear"` empties them all (e.g. resetting a flow during iteration). These are the only paths that remove a start point — `replace`/`append` can only add. Both are `commitUndo`-backed (one Figma undo restores them), and §9 step 1's read-first rule means you always have the prior state to re-apply.
+
+---
+
+## §10. Scroll & fixed children (sticky headers / tab bars)
+
+A frame's prototype scroll and its "fix position when scrolling" children ARE settable via the API — no UI workaround needed. Three batch-only ops (find them via `search_batch_ops`):
+
+| Op | Sets | Use for |
+|---|---|---|
+| `set_overflow` | `overflowDirection` (`NONE\|HORIZONTAL\|VERTICAL\|BOTH`) + optional `clipsContent` | Make a frame scroll in presentation |
+| `set_fixed_children` | `numberOfFixedChildren` (count of leading children) | Low-level: caller owns child order + positioning |
+| `pin_child` | child→`ABSOLUTE`, moved into the leading fixed band, parent count bumped | High-level convenience: pin one child |
+
+**Scroll gotcha:** `overflowDirection` alone does NOT make a *nested* frame scroll — Figma only scrolls a frame whose content **exceeds its bounds AND is clipped**. So set `clipsContent:true` (the `set_overflow` op takes it) and ensure the content is taller/wider than the frame. (A frame parented directly under the canvas auto-scrolls when bigger than the device — no `overflowDirection` needed.)
+
+**Fixed children model:** there is no per-layer "fixed" boolean. Figma keeps the **leading N children** of a frame fixed (always rendered on top of the scrolling children); `numberOfFixedChildren` is that count. So a fixed child must be (a) out of auto-layout flow (`layoutPositioning:"ABSOLUTE"`) and (b) ordered into the leading band. `pin_child` does all three steps for you; `set_fixed_children` is the raw count if you've already ordered/positioned the children yourself.
+
+**Recipe — scrollable body with a pinned bottom tab bar (mobile screen):**
+
+1. `set_overflow` on the screen frame → `{overflowDirection:"VERTICAL", clipsContent:true}`.
+2. Make the body content taller than the screen (so there's something to scroll).
+3. `pin_child` on the `BottomTabBar` (and on a sticky `AppHeader` if any) → it goes ABSOLUTE, into the fixed band, count bumped.
+
+Cross-check the mobile safe-area rule in `figma-automation/CLAUDE.md`: a pinned bottom bar still sits inside the 34px home-indicator zone, and a pinned header inside the 59px top inset — pinning fixes scroll behavior, not safe-area padding.
+
+**Anti-patterns:** setting `overflowDirection` but leaving `clipsContent:false` or content that fits (→ "scroll doesn't work"); pinning a child without taking it ABSOLUTE first (auto-layout keeps repositioning it); `numberOfFixedChildren` greater than the child count (rejected).

@@ -1,4 +1,7 @@
 import { owningPage } from "./node-utils";
+import { makeSolidPaint } from "./write-helpers";
+
+const OVERFLOW_DIRECTIONS = ["NONE", "HORIZONTAL", "VERTICAL", "BOTH"];
 
 // Validate and normalize one action by its well-known type. A NODE (navigation) action's
 // `navigation` and `transition` are non-optional in the Plugin API, so a minimal
@@ -263,6 +266,150 @@ export const handleWritePrototypeRequest = async (request: any) => {
         type: request.type,
         requestId: request.requestId,
         data: { pageId: page.id, pageName: page.name, flowStartingPoints: final },
+      };
+    }
+
+    case "set_overflow": {
+      // Prototype scroll direction on a frame. NOTE: a nested frame only scrolls in
+      // presentation when its content exceeds its bounds AND clipsContent is true — set
+      // clipsContent here so callers don't hit "scroll doesn't work".
+      const p = request.params || {};
+      const dir = p.overflowDirection;
+      if (dir == null || !OVERFLOW_DIRECTIONS.includes(dir)) {
+        throw new Error(`overflowDirection must be one of ${OVERFLOW_DIRECTIONS.join(", ")}`);
+      }
+      const nodeIds: string[] = request.nodeIds ?? [];
+      if (nodeIds.length === 0) throw new Error("nodeId is required");
+      // Resolve + validate every node BEFORE mutating any, so a bad node in the list
+      // doesn't leave earlier nodes half-applied outside a clean undo group.
+      const nodes: any[] = [];
+      for (const id of nodeIds) {
+        const node = await figma.getNodeByIdAsync(id);
+        if (!node) throw new Error(`Node not found: ${id}`);
+        if (!("overflowDirection" in node)) {
+          throw new Error(`Node ${id} does not support overflowDirection (not a frame-like node)`);
+        }
+        if (p.clipsContent != null && !("clipsContent" in node)) {
+          throw new Error(`Node ${id} does not support clipsContent`);
+        }
+        nodes.push(node);
+      }
+      const results = nodes.map((node) => {
+        node.overflowDirection = dir;
+        if (p.clipsContent != null) node.clipsContent = !!p.clipsContent;
+        return {
+          id: node.id,
+          name: node.name,
+          overflowDirection: node.overflowDirection,
+          clipsContent: node.clipsContent,
+        };
+      });
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: results.length === 1 ? results[0] : { results },
+      };
+    }
+
+    case "set_fixed_children": {
+      // Low-level: set how many LEADING children stay fixed while the rest scroll. The
+      // caller owns child order + absolute positioning (see pin_child for the convenience path).
+      const p = request.params || {};
+      const nodeId = request.nodeIds && request.nodeIds[0];
+      if (!nodeId) throw new Error("nodeId is required");
+      const n = p.numberOfFixedChildren;
+      if (typeof n !== "number" || !Number.isInteger(n) || n < 0) {
+        throw new Error("numberOfFixedChildren must be a non-negative integer");
+      }
+      const node = await figma.getNodeByIdAsync(nodeId);
+      if (!node) throw new Error(`Node not found: ${nodeId}`);
+      if (!("numberOfFixedChildren" in node)) {
+        throw new Error(`Node ${nodeId} does not support numberOfFixedChildren (not a frame-like node)`);
+      }
+      const childCount = "children" in node ? (node as any).children.length : 0;
+      if (n > childCount) {
+        throw new Error(`numberOfFixedChildren (${n}) exceeds the frame's child count (${childCount})`);
+      }
+      (node as any).numberOfFixedChildren = n;
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { id: node.id, name: (node as any).name, numberOfFixedChildren: n },
+      };
+    }
+
+    case "pin_child": {
+      // High-level convenience: pin a child so it stays put while its frame scrolls.
+      // Mutates the child (layoutPositioning ABSOLUTE) and its order (moved into the
+      // leading fixed band), then extends the parent's fixed-children count.
+      const nodeIds: string[] = request.nodeIds ?? [];
+      if (nodeIds.length === 0) throw new Error("nodeId is required");
+      // Resolve + validate every child (and its parent) BEFORE mutating any.
+      const pairs: Array<{ child: any; parent: any }> = [];
+      for (const id of nodeIds) {
+        const child = await figma.getNodeByIdAsync(id);
+        if (!child) throw new Error(`Node not found: ${id}`);
+        const parent: any = (child as any).parent;
+        if (!parent) throw new Error(`Node ${id} has no parent to pin within`);
+        if (!("numberOfFixedChildren" in parent)) {
+          throw new Error(`Parent of ${id} does not support fixed children (must be a frame)`);
+        }
+        pairs.push({ child, parent });
+      }
+      const results = pairs.map(({ child, parent }) => {
+        if ("layoutPositioning" in child) child.layoutPositioning = "ABSOLUTE";
+        // Idempotent: if the child is already in the leading fixed band, leave the order
+        // and count alone (re-pinning must not over-count). Otherwise move it into the
+        // band and extend the count, clamped to the child count.
+        const currentIndex = parent.children ? parent.children.indexOf(child) : -1;
+        const alreadyFixed = currentIndex > -1 && currentIndex < (parent.numberOfFixedChildren || 0);
+        if (!alreadyFixed) {
+          const insertAt = parent.numberOfFixedChildren || 0;
+          parent.insertChild(insertAt, child);
+          parent.numberOfFixedChildren = Math.min(insertAt + 1, parent.children.length);
+        }
+        return {
+          id: child.id,
+          name: child.name,
+          parentId: parent.id,
+          numberOfFixedChildren: parent.numberOfFixedChildren,
+        };
+      });
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: results.length === 1 ? results[0] : { results },
+      };
+    }
+
+    case "set_prototype_background": {
+      // Page-level prototype presentation background (single solid color). Targets the
+      // owning page of the first nodeId, else the current page. mode "clear" empties it.
+      const p = request.params || {};
+      const nodeIds: string[] = request.nodeIds ?? [];
+      const mode = p.mode || "set";
+      let page: any = figma.currentPage;
+      if (nodeIds.length > 0) {
+        const node = await figma.getNodeByIdAsync(nodeIds[0]);
+        if (!node) throw new Error(`Node not found: ${nodeIds[0]}`);
+        const ancestor = owningPage(node);
+        if (!ancestor) throw new Error(`Node ${nodeIds[0]} is not on a page`);
+        page = ancestor;
+      }
+      if (mode === "clear") {
+        page.prototypeBackgrounds = [];
+      } else {
+        if (!p.color) throw new Error('set_prototype_background requires "color" (hex) unless mode is "clear"');
+        page.prototypeBackgrounds = [makeSolidPaint(p.color, p.opacity != null ? p.opacity : undefined)];
+      }
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { pageId: page.id, pageName: page.name, prototypeBackgrounds: page.prototypeBackgrounds },
       };
     }
 
