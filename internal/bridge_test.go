@@ -1301,3 +1301,155 @@ func TestBridge_HeartbeatDrainsInflightRequestFast(t *testing.T) {
 		t.Errorf("Send took %v — heartbeat drain too slow (should be ~heartbeat window, not the request ceiling)", elapsed)
 	}
 }
+
+// ── Stalled-head early-reject (generalizes the import-jam guard) ───────────────
+
+// connEntry.isStalled is pure: it reports stall from live slot occupancy + the
+// last-progress timestamp, with NO persistent flag — so nothing can stick and
+// brick the channel. Deterministic unit coverage of every branch.
+func TestConnEntry_IsStalled(t *testing.T) {
+	e := &connEntry{sem: make(chan struct{}, 1)}
+
+	// Slot free → never stalled, regardless of timestamp.
+	if e.isStalled(time.Millisecond) {
+		t.Error("a free slot must never be stalled")
+	}
+
+	// Occupy the slot.
+	e.sem <- struct{}{}
+
+	// Busy but no progress recorded yet (lastProgressAt==0) → not stalled (defensive:
+	// never reject before the holder has even been stamped).
+	if e.isStalled(time.Millisecond) {
+		t.Error("busy slot with no recorded progress must not be stalled")
+	}
+
+	// Fresh progress → not stalled.
+	e.markProgress()
+	if e.isStalled(time.Second) {
+		t.Error("fresh progress must not be stalled")
+	}
+
+	// Stale progress (older than threshold) → stalled.
+	e.lastProgressAt.Store(time.Now().Add(-time.Second).UnixNano())
+	if !e.isStalled(10 * time.Millisecond) {
+		t.Error("progress older than the threshold must be stalled")
+	}
+
+	// Drain the slot → self-heals to not-stalled even with the stale timestamp.
+	<-e.sem
+	if e.isStalled(10 * time.Millisecond) {
+		t.Error("draining the slot must self-heal stall state (no flag to stick)")
+	}
+
+	// Inherited-stale-timestamp invariant (what sendOnce's onResolve guarantees):
+	// release zeroes lastProgressAt, so the NEXT holder — in its brief window before
+	// its own markProgress — reads lp==0 and is NOT flagged from the prior holder's
+	// stale timestamp.
+	e.sem <- struct{}{}
+	e.lastProgressAt.Store(time.Now().Add(-time.Hour).UnixNano()) // very stale holder
+	e.lastProgressAt.Store(0)                                     // onResolve zeroes before release
+	<-e.sem                                                       // release
+	e.sem <- struct{}{}                                           // next holder acquires (pre-stamp window)
+	if e.isStalled(time.Millisecond) {
+		t.Error("a fresh holder must not inherit the prior holder's stale timestamp")
+	}
+	<-e.sem
+}
+
+// setupBridgeWithClientStall connects a client and sets a tiny stall threshold so
+// a hung head is detected fast in tests. The client never responds (the head hangs).
+func setupBridgeWithClientStall(t *testing.T, stall time.Duration) *Bridge {
+	t.Helper()
+	b := NewBridge()
+	b.stallThreshold = stall
+
+	srv := httptest.NewServer(http.HandlerFunc(b.HandleUpgrade))
+	t.Cleanup(srv.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	clientConn, _, err := websocket.Dial(context.Background(), wsURL, nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	t.Cleanup(func() { clientConn.Close(websocket.StatusNormalClosure, "") })
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if b.IsConnected() {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !b.IsConnected() {
+		t.Fatal("bridge not connected after 500ms")
+	}
+	return b
+}
+
+// slotBusy reports whether the (sole) channel's serial slot is currently held.
+func slotBusy(b *Bridge) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, e := range b.conns {
+		return len(e.sem) == 1
+	}
+	return false
+}
+
+// A new request arriving at a channel whose head op has held the slot past the
+// stall threshold with no progress must fast-fail with ErrChannelStalled, instead
+// of queueing behind the (likely hung) head and eating its full ceiling.
+func TestBridge_StalledHead_RejectsNewArrival(t *testing.T) {
+	b := setupBridgeWithClientStall(t, 40*time.Millisecond)
+
+	// op1 hangs: the client never responds, so it holds the slot. Its own ctx is
+	// cancelled at test end; the slot stays held by design until true resolution.
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	t.Cleanup(cancel1)
+	go func() { _, _ = b.Send(ctx1, "set_text", []string{"1:1"}, nil) }()
+
+	// Wait until op1 holds the slot, then past the stall threshold.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && !slotBusy(b) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !slotBusy(b) {
+		t.Fatal("op1 never acquired the slot")
+	}
+	time.Sleep(70 * time.Millisecond) // exceed the 40ms stall threshold
+
+	// op2 must be early-rejected fast (well under any request ceiling).
+	start := time.Now()
+	_, err := b.Send(context.Background(), "set_text", []string{"2:2"}, nil)
+	if !errors.Is(err, ErrChannelStalled) {
+		t.Fatalf("op2 err = %v, want ErrChannelStalled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("op2 took %v — early-reject should be immediate", elapsed)
+	}
+}
+
+// A progressing head keeps lastProgressAt fresh, so a peer is NOT falsely rejected.
+// Uses a roomy threshold so the assert-right-after-tick can't flake under a loaded
+// scheduler (we are testing the logic, not a tight deadline).
+func TestBridge_ProgressingHead_NotStalled(t *testing.T) {
+	b := setupBridgeWithClientStall(t, 500*time.Millisecond)
+
+	// Manually occupy the slot and keep progress fresh past the threshold window.
+	b.mu.RLock()
+	var entry *connEntry
+	for _, e := range b.conns {
+		entry = e
+	}
+	b.mu.RUnlock()
+	entry.sem <- struct{}{}
+	t.Cleanup(func() { <-entry.sem })
+	entry.markProgress()
+	time.Sleep(50 * time.Millisecond)
+	entry.markProgress() // fresh tick — resets the stall clock
+
+	if entry.isStalled(b.stallThreshold) {
+		t.Error("a head with a fresh progress tick must not be stalled")
+	}
+}

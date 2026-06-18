@@ -42,6 +42,23 @@ describe("makeProgress — cadence", () => {
     await tick();
     expect(ticks("r3").length).toBe(3);
   });
+
+  it("time-based heartbeat: emits below the count cadence once heartbeatMs elapses", async () => {
+    // every=800 (so count cadence never fires here), heartbeatMs=20.
+    const tick = makeProgress("r7", "get_document", 800, 20);
+    await tick(); // n=1, no count tick, time not yet elapsed
+    expect(ticks("r7").length).toBe(0);
+    await new Promise((r) => setTimeout(r, 30)); // exceed the 20ms floor
+    await tick(); // n=2, time-due → one tick despite being far below 800
+    expect(ticks("r7").length).toBe(1);
+  });
+
+  it("a fast high-count loop is unaffected by the heartbeat (count cadence dominates)", async () => {
+    // Default 10s heartbeat never fires in a sub-ms loop; only the 800-count fires.
+    const tick = makeProgress("r8", "get_node");
+    for (let i = 0; i < 800; i++) await tick();
+    expect(ticks("r8").length).toBe(1);
+  });
 });
 
 describe("makeProgress — message shape", () => {
