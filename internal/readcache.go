@@ -176,6 +176,36 @@ func (c *readCache) InvalidateChannel(channel string) {
 	}
 }
 
+// DeleteChannel drops every cached entry for a channel AND its generation counter.
+// Called when a channel disconnects for good (NOT on a same-channel reconnect, which
+// uses InvalidateChannel). Without this, gens[channel] accumulates forever as
+// auto-assigned channel ids (auto-N) churn across reconnects — a textbook unbounded
+// map. A later reconnect re-registers the channel and InvalidateChannel re-seeds its
+// gen from zero, which is safe: an in-flight read holding an old gen snapshot simply
+// fails its Put gen-equality check and is dropped (the channel's data is gone anyway).
+func (c *readCache) DeleteChannel(channel string) {
+	if !c.enabled() {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for el := c.order.Front(); el != nil; {
+		next := el.Next()
+		if el.Value.(*cacheItem).channel == channel {
+			c.removeElement(el)
+		}
+		el = next
+	}
+	delete(c.gens, channel)
+}
+
+// gensLen returns the number of tracked channel generations (test/observability helper).
+func (c *readCache) gensLen() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.gens)
+}
+
 // removeElement unlinks an element from both the map and the LRU list. Caller holds c.mu.
 func (c *readCache) removeElement(el *list.Element) {
 	if el == nil {

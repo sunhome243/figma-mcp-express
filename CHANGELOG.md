@@ -6,6 +6,23 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Transport compression on both hops.** Enabled permessage-deflate on the plugin↔leader
+  WebSocket (`websocket.AcceptOptions.CompressionMode`) and gzip on the leader's `/rpc` + `/channels`
+  HTTP endpoints (follower hop). Measured on the real captured wire corpus (78 payloads, 6.0 MB):
+  node-tree reads compress ~6–14× (whole-corpus 6.3×, ~84% fewer bytes) at ~10 ms/MB CPU. The plugin
+  (browser WS client) and follower (Go `http.Client`) both auto-negotiate and transparently
+  decompress — no client-side change. base64 image payloads compress only ~1.3× (already-compressed),
+  so this is primarily a JSON-read win.
+
+### Fixed
+
+- **readCache generation-map leak.** `gens[channel]` entries were never removed, so auto-assigned
+  channel ids (`auto-N`) accumulated across reconnects. Added `readCache.DeleteChannel`, invoked on
+  final channel disconnect, which drops the channel's generation counter and any residual cached
+  entries.
+
 ## [2.5.1] — 2026-06-18
 
 ### Added
