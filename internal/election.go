@@ -53,21 +53,38 @@ func (e *Election) Stop() {
 }
 
 // determineRole tries to become leader; falls back to follower if a
-// healthy leader already exists on the port.
+// healthy leader already exists on the port — UNLESS that leader is running an
+// older binary than ours, in which case we evict it (issue #26).
 func (e *Election) determineRole(ctx context.Context) error {
 	if err := e.node.BecomeLeader(); err == nil {
 		return nil
 	}
 
-	// Port taken — check if there is a healthy leader
-	if e.follower.Ping(ctx) {
+	// Port taken — check if there is a healthy leader and what version it runs.
+	healthy, remoteVersion := e.follower.PingVersion(ctx)
+	if healthy {
+		// Stale-binary guard: a strictly-newer local binary must not proxy to an
+		// older leader forever. Evict it and take over. Equal/older/unparseable
+		// ("dev") → follow (no fight, no flapping).
+		if shouldTakeOver(e.node.version, remoteVersion) {
+			electionLogger.Printf("local version %s newer than leader %s — evicting stale leader and taking over",
+				e.node.version, remoteVersion)
+			return e.takeOver(ctx, "stale leader")
+		}
 		e.node.BecomeFollower()
 		return nil
 	}
 
 	// Port taken but no healthy leader — zombie process holding the port.
-	// Kill it and take over as the new leader.
 	electionLogger.Printf("port taken but leader not responding — killing zombie and taking over")
+	return e.takeOver(ctx, "zombie")
+}
+
+// takeOver kills whatever process holds the port and re-attempts BecomeLeader.
+// Best-effort: on failure it logs and leaves the role unchanged for the next
+// monitor tick to retry. Shared by the zombie path and the stale-version path
+// (issue #26). reason is logged for diagnosis.
+func (e *Election) takeOver(ctx context.Context, reason string) error {
 	killPortHolder(e.port)
 	select {
 	case <-time.After(300 * time.Millisecond):
@@ -77,7 +94,7 @@ func (e *Election) determineRole(ctx context.Context) error {
 	if err := e.node.BecomeLeader(); err == nil {
 		return nil
 	}
-	electionLogger.Printf("takeover failed after killing zombie — will retry on next tick")
+	electionLogger.Printf("takeover failed after killing %s — will retry on next tick", reason)
 	return nil
 }
 
@@ -102,10 +119,19 @@ func (e *Election) monitor(ctx context.Context) {
 func (e *Election) tick(ctx context.Context) error {
 	switch e.node.Role() {
 	case RoleFollower:
-		if !e.follower.Ping(ctx) {
+		healthy, remoteVersion := e.follower.PingVersion(ctx)
+		if !healthy {
 			electionLogger.Printf("leader not responding, attempting takeover...")
 			if err := e.node.BecomeLeader(); err != nil {
 				electionLogger.Printf("takeover failed: %v", err)
+			}
+		} else if shouldTakeOver(e.node.version, remoteVersion) {
+			// We discovered (after following) that the leader runs an older binary
+			// than ours — evict it (issue #26).
+			electionLogger.Printf("leader %s older than local %s — evicting stale leader",
+				remoteVersion, e.node.version)
+			if err := e.takeOver(ctx, "stale leader"); err != nil {
+				electionLogger.Printf("stale-leader takeover error: %v", err)
 			}
 		}
 	case RoleUnknown:

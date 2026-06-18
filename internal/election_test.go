@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -234,5 +235,92 @@ func TestElection_ConcurrentTakeover_OneLeader(t *testing.T) {
 	}
 	if newLeaders != 1 {
 		t.Errorf("expected exactly 1 new leader, got %d", newLeaders)
+	}
+}
+
+// ── Version-aware election (issue #26) ────────────────────────────────────────
+
+// fakeLeaderPing stands up an httptest server that answers /ping exactly like a
+// real leader (handlePing), reporting the given version. Returns the bound port.
+func fakeLeaderPing(t *testing.T, version string) int {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ping" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": version})
+	}))
+	t.Cleanup(srv.Close)
+	tcpAddr, ok := srv.Listener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("unexpected addr type: %T", srv.Listener.Addr())
+	}
+	return tcpAddr.Port
+}
+
+// A node whose binary is NEWER than the leader holding the port must NOT settle
+// as a passive follower behind that stale leader (issue #26). It refuses to
+// follow and attempts takeover; the kill can't land on an in-process httptest
+// server (killPortHolder skips the test's own PID), so the role ends up NOT
+// follower (Unknown), which is the observable behavioral change. Before the fix
+// it became RoleFollower — proxying every call to the stale binary forever.
+func TestDetermineRole_NewerLocalRefusesStaleLeader(t *testing.T) {
+	port := fakeLeaderPing(t, "1.0.0")
+	n := NewNode("127.0.0.1", port, "2.0.0")
+	t.Cleanup(n.Stop)
+
+	e := NewElection("127.0.0.1", port, n)
+	if err := e.determineRole(context.Background()); err != nil {
+		t.Fatalf("determineRole: %v", err)
+	}
+	if n.Role() == RoleFollower {
+		t.Errorf("newer local (2.0.0) became FOLLOWER behind stale leader (1.0.0) — must refuse")
+	}
+}
+
+// Equal versions must follow — no fight, no flapping.
+func TestDetermineRole_EqualVersionFollows(t *testing.T) {
+	port := fakeLeaderPing(t, "2.0.0")
+	n := NewNode("127.0.0.1", port, "2.0.0")
+	t.Cleanup(n.Stop)
+
+	e := NewElection("127.0.0.1", port, n)
+	if err := e.determineRole(context.Background()); err != nil {
+		t.Fatalf("determineRole: %v", err)
+	}
+	if n.Role() != RoleFollower {
+		t.Errorf("role = %v, want FOLLOWER for equal versions", n.Role())
+	}
+}
+
+// An older local binary must follow a newer leader (never take over).
+func TestDetermineRole_OlderLocalFollows(t *testing.T) {
+	port := fakeLeaderPing(t, "2.0.0")
+	n := NewNode("127.0.0.1", port, "1.0.0")
+	t.Cleanup(n.Stop)
+
+	e := NewElection("127.0.0.1", port, n)
+	if err := e.determineRole(context.Background()); err != nil {
+		t.Fatalf("determineRole: %v", err)
+	}
+	if n.Role() != RoleFollower {
+		t.Errorf("role = %v, want FOLLOWER for older local", n.Role())
+	}
+}
+
+// A "dev"/unparseable local version must never fight a real leader — follow.
+func TestDetermineRole_DevLocalFollows(t *testing.T) {
+	port := fakeLeaderPing(t, "2.0.0")
+	n := NewNode("127.0.0.1", port, "dev")
+	t.Cleanup(n.Stop)
+
+	e := NewElection("127.0.0.1", port, n)
+	if err := e.determineRole(context.Background()); err != nil {
+		t.Fatalf("determineRole: %v", err)
+	}
+	if n.Role() != RoleFollower {
+		t.Errorf("role = %v, want FOLLOWER for dev local", n.Role())
 	}
 }
