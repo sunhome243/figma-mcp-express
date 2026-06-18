@@ -185,19 +185,44 @@ type gzipResponseWriter struct {
 
 func (g *gzipResponseWriter) Write(b []byte) (int, error) { return g.gz.Write(b) }
 
+// acceptsGzip reports whether an Accept-Encoding header offers gzip with a non-zero
+// quality. Tokenizes on commas and honours an explicit `gzip;q=0` refusal, rather
+// than a bare substring match (which would also match `gzip;q=0` and `x-gzip`).
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if strings.TrimSpace(coding) != "gzip" {
+			continue
+		}
+		// Reject an explicit q=0 (RFC 9110 "not acceptable"); any other q means yes.
+		if v, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
+			switch strings.TrimSpace(v) {
+			case "0", "0.0", "0.00", "0.000":
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // withGzip gzips a JSON handler's response when the request advertises gzip support.
 // Used only for /rpc and /channels (never the /ws upgrade). When the client does not
 // accept gzip, the handler runs unwrapped and the output is byte-identical to before.
 func withGzip(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		if !acceptsGzip(r.Header.Get("Accept-Encoding")) {
 			h(w, r)
 			return
 		}
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Add("Vary", "Accept-Encoding")
 		gz := gzip.NewWriter(w)
-		defer gz.Close()
+		defer func() {
+			if err := gz.Close(); err != nil {
+				leaderLogger.Printf("gzip close error: %v", err)
+			}
+		}()
 		h(&gzipResponseWriter{ResponseWriter: w, gz: gz}, r)
 	}
 }

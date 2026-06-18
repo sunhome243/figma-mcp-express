@@ -2,12 +2,93 @@ package internal
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// acceptsGzip must honour the q-value: a bare "gzip" yes, "gzip;q=0" no, and
+// non-matching codings ("x-gzip", "deflate") no.
+func TestAcceptsGzip(t *testing.T) {
+	cases := map[string]bool{
+		"gzip":                  true,
+		"gzip, deflate, br":     true,
+		"deflate, gzip;q=0.5":   true,
+		"":                      false,
+		"deflate":               false,
+		"x-gzip":                false, // substring match would wrongly accept this
+		"gzip;q=0":              false, // explicit refusal
+		"deflate, gzip;q=0.000": false,
+	}
+	for header, want := range cases {
+		if got := acceptsGzip(header); got != want {
+			t.Errorf("acceptsGzip(%q) = %v, want %v", header, got, want)
+		}
+	}
+}
+
+// The real handler interaction: a handler that calls WriteHeader(status) then
+// json.NewEncoder(w).Encode(...) (exactly what sendJSON does) must round-trip through
+// withGzip with the status preserved and the body recoverable; an http.Error path
+// must also survive.
+func TestWithGzip_RealHandlerPaths(t *testing.T) {
+	payload := map[string]any{"data": map[string]any{"id": "1:2", "name": "Frame", "type": "FRAME"}}
+
+	t.Run("WriteHeader+Encode (sendJSON shape) gzipped", func(t *testing.T) {
+		h := withGzip(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(payload)
+		})
+		req := httptest.NewRequest(http.MethodPost, "/rpc", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		h(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if rec.Header().Get("Content-Encoding") != "gzip" {
+			t.Fatalf("missing Content-Encoding: gzip")
+		}
+		gr, err := gzip.NewReader(rec.Body)
+		if err != nil {
+			t.Fatalf("gzip.NewReader: %v", err)
+		}
+		var got map[string]any
+		if err := json.NewDecoder(gr).Decode(&got); err != nil {
+			t.Fatalf("decode gunzip: %v", err)
+		}
+		if data, ok := got["data"].(map[string]any); !ok || data["id"] != "1:2" {
+			t.Fatalf("decoded payload wrong: %v", got)
+		}
+	})
+
+	t.Run("http.Error path survives gzip", func(t *testing.T) {
+		h := withGzip(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		})
+		req := httptest.NewRequest(http.MethodGet, "/rpc", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		h(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status = %d, want 405", rec.Code)
+		}
+		gr, err := gzip.NewReader(rec.Body)
+		if err != nil {
+			t.Fatalf("gzip.NewReader: %v", err)
+		}
+		body, _ := io.ReadAll(gr)
+		if !strings.Contains(string(body), "method not allowed") {
+			t.Fatalf("error body not recoverable: %q", body)
+		}
+	})
+}
 
 // withGzip must be transparent: the decompressed body a client receives is
 // byte-identical to what the wrapped handler wrote, and compression only kicks

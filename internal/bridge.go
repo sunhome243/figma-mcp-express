@@ -454,10 +454,9 @@ func (b *Bridge) readLoop(ctx context.Context, cancelConn context.CancelFunc, ch
 			delete(b.conns, channel)
 			// Channel is gone for good (not a same-channel reconnect, which keeps a
 			// different entry) — drop its read-cache generation so the gens map does
-			// not grow without bound across auto-N reconnects.
-			if b.readCache != nil {
-				b.readCache.DeleteChannel(channel)
-			}
+			// not grow without bound across auto-N reconnects. DeleteChannel is
+			// nil-safe (enabled() guards a nil receiver), matching the other call sites.
+			b.readCache.DeleteChannel(channel)
 		}
 		// Drain all pending requests that were dispatched on this connection so they
 		// resolve IMMEDIATELY with a "connection closed" error, rather than waiting
