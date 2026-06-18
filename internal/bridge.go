@@ -157,6 +157,15 @@ type connEntry struct {
 	// via onResolve at the same instant the slot is released.
 	inFlightMu     sync.Mutex
 	importInFlight bool
+
+	// lastProgressAt is the unix-nanos of the current slot-holder's last sign of
+	// life: stamped when it acquires the slot, and refreshed on every progress tick
+	// (readLoop). It drives the stalled-head guard (isStalled) — a generalization of
+	// the import-jam guard to ANY hung op. Deliberately NOT a "stalled" boolean:
+	// stall is computed live from this timestamp + actual slot occupancy, so there is
+	// no flag that could be left set and brick the channel — it self-heals the instant
+	// the head frees the slot. Atomic: written at acquire/progress, read at early-reject.
+	lastProgressAt atomic.Int64
 }
 
 // addWaitingOrigin records that the wait identified by token is waiting on the
@@ -207,6 +216,31 @@ func (e *connEntry) isImportInFlight() bool {
 	return e.importInFlight
 }
 
+// markProgress stamps the current slot-holder's liveness — called when the holder
+// acquires the slot and on every progress tick.
+func (e *connEntry) markProgress() {
+	e.lastProgressAt.Store(time.Now().UnixNano())
+}
+
+// isStalled reports whether the slot is currently held by an op that has shown no
+// progress for longer than threshold. Live computation, no persistent state:
+//   - slot free (len(sem)==0) → never stalled (self-heals when the head resolves);
+//   - holder not yet stamped (lastProgressAt==0) → not stalled (don't reject before
+//     the holder has even started);
+//   - otherwise stalled iff now - lastProgressAt > threshold.
+//
+// A slightly-stale len(sem) snapshot only ever causes a harmless soft-retry.
+func (e *connEntry) isStalled(threshold time.Duration) bool {
+	if len(e.sem) == 0 {
+		return false
+	}
+	lp := e.lastProgressAt.Load()
+	if lp == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, lp)) > threshold
+}
+
 // isImportRequest reports whether a request type occupies the plugin thread with a
 // library import that can hang it.
 func isImportRequest(requestType string) bool {
@@ -218,6 +252,14 @@ func isImportRequest(requestType string) bool {
 // stop retrying and do non-import work until the thread clears — retrying an import
 // only re-poisons a recovering thread.
 var ErrImportInFlight = errors.New("plugin thread busy with a prior import — do not retry; do non-import work (clone_node, set_text, set_fills, save_screenshots) until it clears")
+
+// ErrChannelStalled is returned (without dispatching) when a NEW request arrives on
+// a channel whose current op has held the serial slot past the stall threshold with
+// no progress — almost certainly a hung Figma call. It generalizes ErrImportInFlight
+// to any op: rather than silently queue behind the wedge (and eat the head's full
+// inactivity ceiling), the new request fast-fails with guidance. The stuck op itself
+// is unchanged — it still force-resolves at its ceiling, freeing the channel.
+var ErrChannelStalled = errors.New("an op has been stuck on this channel with no progress (likely a hung Figma call) — it will be force-resolved at its ceiling; do other work or retry shortly")
 
 // flight is one in-flight read whose result is shared by any identical
 // concurrent callers (singleflight). done is closed when resp/err are set.
@@ -258,6 +300,12 @@ type Bridge struct {
 	// dial these down; production never reassigns them.
 	heartbeatInterval time.Duration
 	heartbeatTimeout  time.Duration
+
+	// stallThreshold drives the stalled-head guard: a NEW request to a channel whose
+	// current op has held the slot this long with no progress is fast-failed
+	// (ErrChannelStalled) rather than queued behind a likely-hung head. Generalizes
+	// the import-jam guard to any op. Mutable so tests dial it down.
+	stallThreshold time.Duration
 }
 
 // Heartbeat defaults: ping every 15s, fail the transport if no pong within 10s.
@@ -267,6 +315,12 @@ type Bridge struct {
 const (
 	defaultHeartbeatInterval = 15 * time.Second
 	defaultHeartbeatTimeout  = 10 * time.Second
+	// defaultStallThreshold: how long the slot-holder may show no progress before a
+	// peer's NEW request is early-rejected. Well under the 120s/600s ceiling (so it
+	// actually helps), well above any legitimate no-progress gap — writes finish
+	// sub-second, reads/exports tick via makeProgress, imports self-cap at 15s — so a
+	// progressing op is never falsely flagged.
+	defaultStallThreshold = 45 * time.Second
 )
 
 // NewBridge creates a ready-to-use Bridge.
@@ -278,7 +332,14 @@ func NewBridge() *Bridge {
 		readCache:         newReadCache(),
 		heartbeatInterval: defaultHeartbeatInterval,
 		heartbeatTimeout:  defaultHeartbeatTimeout,
+		stallThreshold:    parseStallThreshold(),
 	}
+}
+
+// parseStallThreshold reads FIGMA_MCP_STALL_THRESHOLD (integer seconds), falling
+// back to defaultStallThreshold when unset/invalid/non-positive.
+func parseStallThreshold() time.Duration {
+	return time.Duration(envInt("FIGMA_MCP_STALL_THRESHOLD", int(defaultStallThreshold/time.Second))) * time.Second
 }
 
 // HandleUpgrade upgrades an HTTP request to a WebSocket connection on the channel
@@ -462,6 +523,11 @@ func (b *Bridge) readLoop(ctx context.Context, cancelConn context.CancelFunc, ch
 				}
 				pe.timer.Stop()
 				pe.timer.Reset(resetTo)
+				// Refresh the holder's liveness so the stalled-head guard treats a
+				// progressing op as alive (pe.conn is the connEntry it was dispatched on).
+				if pe.conn != nil {
+					pe.conn.markProgress()
+				}
 				bridgeLogger.Printf("progress %s: %d%% %s", resp.RequestID, resp.Progress, resp.Message)
 			} else {
 				bridgeLogger.Printf("progress %s: %d%% %s (no pending entry)", resp.RequestID, resp.Progress, resp.Message)
@@ -722,6 +788,16 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 		return BridgeResponse{}, ErrImportInFlight
 	}
 
+	// Stalled-head guard (generalizes the import-jam guard to ANY hung op): if the
+	// slot is held by an op that has shown no progress for stallThreshold, reject this
+	// NEW request immediately rather than queue it behind a likely-hung head where it
+	// would eat the head's full inactivity ceiling. Live check (slot occupancy +
+	// last-progress), no persistent flag — self-heals the instant the head frees.
+	if entry.isStalled(b.stallThreshold) {
+		bridgeLogger.Printf("⨯ %s rejected: channel stalled — head op no progress for >%s (channel %q)", requestType, b.stallThreshold, channel)
+		return BridgeResponse{}, ErrChannelStalled
+	}
+
 	// Acquire the per-plugin serial slot. We wait ONLY on the caller's ctx: the
 	// current holder is guaranteed to release within its own (progress-extended)
 	// timeout, so a healthy long heavy read never spuriously fails queued work.
@@ -762,6 +838,10 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 	// time spent queued before acquisition. Both feed the C1 response metadata.
 	queueDepth := entry.waiters.Add(-1) // returns the post-decrement count = others still waiting
 	queueWaitMs := time.Since(enqueued).Milliseconds()
+	// Stamp this holder's liveness at acquisition so the stalled-head guard measures
+	// from when THIS op started occupying the slot (not from a prior holder), and a
+	// fresh holder is never instantly flagged. Refreshed on each progress tick below.
+	entry.markProgress()
 	// The serial slot is intentionally NOT released on return. Release flows through
 	// pe.onResolve (true resolution only), so a client-cancelled-but-still-running
 	// request holds the slot until the plugin finishes. See pe.onResolve below.
