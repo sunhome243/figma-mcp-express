@@ -19,6 +19,20 @@
 
 import { handleWriteRequest } from "./write-handlers";
 import { handleReadRequest } from "./read-handlers";
+import { withTimeout } from "./timeout";
+
+// Per-op timeout for a batch dispatch (issue #31). A hung Figma API call inside
+// an op would otherwise hold the channel's serial slot until the server's ~120s
+// inactivity ceiling force-drains it, wedging every other agent on the channel.
+// The default sits just under that ceiling so a genuinely hung op fails with a
+// clear, actionable error — freeing the channel a beat before the harsh server
+// drain — without false-tripping any op the server itself would allow. It is a
+// mutable config (not a const) so tests can dial it down to a few ms; production
+// code never reassigns it. Heavy single reads (a full-tree get_design_context /
+// scan) that legitimately approach the ceiling belong as standalone tool calls,
+// not batch ops. Library imports keep their own tighter 15s guard
+// (withImportTimeout) inside the import handlers.
+export const batchConfig = { opTimeoutMs: 115_000 };
 
 // A ref is a string of the exact form "$<opIndex>.<dotted.path>", e.g. "$0.id"
 // or "$2.bounds.width". REF_BODY is the single source of that grammar — REF
@@ -363,7 +377,17 @@ async function executeOp(
   figma.skipInvisibleInstanceChildren =
     params?.skipInvisibleInstanceChildren === true;
   const opReq = { type: op.type, requestId, nodeIds, params };
-  const out = (await handleReadRequest(opReq)) ?? (await handleWriteRequest(opReq));
+  // Guard the dispatch with a timeout so a hung Figma API call can't wedge the
+  // channel until the server ceiling fires (issue #31). A timeout throws like any
+  // other op failure, so the outer loop's continueOnError policy still applies.
+  const dispatch = (async () =>
+    (await handleReadRequest(opReq)) ?? (await handleWriteRequest(opReq)))();
+  const out = await withTimeout(
+    dispatch,
+    `batch op "${op.type}" (#${i})`,
+    batchConfig.opTimeoutMs,
+    "the Figma API call hung; re-scope the op or run a heavy read as a standalone call",
+  );
   if (out === null) throw new Error(`unknown op type: ${op.type}`);
   if (out.error) throw new Error(out.error);
   return { i, type: op.type, data: out.data };
