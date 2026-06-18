@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite build --watch\" \"vite build --watch -c vite.config.main.ts\"",
+    "dev": "concurrently \"vite build --watch --mode development\" \"vite build --watch --mode development -c vite.config.main.ts\"",
     "build": "vite build && vite build -c vite.config.main.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",

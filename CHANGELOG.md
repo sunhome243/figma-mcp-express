@@ -6,6 +6,14 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Plugin bundle minified for consumers, readable for developers.** `vite.config.main.ts` now
+  gates minification on build mode: the default `vite build` (and the release CI artifact) produces a
+  minified `code.js` (190KB → ~102KB, ~46% smaller), while the `dev` watch builds with
+  `--mode development` (unminified + sourcemap) so plugin-logic stack traces stay readable. No
+  behavior change — only bundle size.
+
 ## [2.5.1] — 2026-06-18
 
 ### Added
