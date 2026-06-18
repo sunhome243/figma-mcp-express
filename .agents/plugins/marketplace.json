@@ -1,0 +1,20 @@
+{
+  "name": "figma-mcp-express",
+  "interface": {
+    "displayName": "Figma MCP Express"
+  },
+  "plugins": [
+    {
+      "name": "figma-mcp-express",
+      "source": {
+        "source": "local",
+        "path": "./plugins/figma-mcp-express"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design"
+    }
+  ]
+}

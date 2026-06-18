@@ -156,10 +156,17 @@ claude plugin install figma-mcp-express@figma-mcp-express
 
 ```bash
 codex plugin marketplace add sunhome243/figma-mcp-express
-codex plugin install figma-mcp-express@figma-mcp-express
+codex plugin add figma-mcp-express@figma-mcp-express
 ```
 
-Both commands pull the plugin manifest directly from GitHub. For project-scoped install (Claude Code only):
+Codex installs from the configured marketplace snapshot. If you added this marketplace before a new release was published, refresh it first:
+
+```bash
+codex plugin marketplace upgrade figma-mcp-express
+codex plugin add figma-mcp-express@figma-mcp-express
+```
+
+For project-scoped install (Claude Code only):
 
 ```bash
 claude plugin install figma-mcp-express@figma-mcp-express --scope project

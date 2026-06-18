@@ -6,6 +6,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Codex plugin marketplace install.** Added the Codex marketplace catalog and plugin wrapper so `codex plugin marketplace add sunhome243/figma-mcp-express` exposes `figma-mcp-express` as an installable plugin; corrected Codex docs to use `codex plugin add` and documented `codex plugin marketplace upgrade` for stale snapshots.
+
 ## [2.4.0] — 2026-06-18
 
 ### Added
