@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { resolveRefs, handleBatchRequest, substituteBindings } from "./batch";
+import { resolveRefs, handleBatchRequest, substituteBindings, batchConfig } from "./batch";
 
 // Shared makeProgress noop used by read ops inside a batch.
 const noopUi = { postMessage: () => {} };
@@ -933,5 +933,110 @@ describe("handleBatchRequest — map control-flow op", () => {
     expect(res.data.results[1].error).toBeUndefined();
     expect(res.data.results[1].data.results).toHaveLength(2);
     expect(res.data.okCount).toBe(2);
+  });
+});
+
+// ── Per-op timeout (issue #31) ────────────────────────────────────────────────
+//
+// A hung Figma API call inside a batch op must not block forever — it must reject
+// within the configured timeout so the op resolves and the channel's serial slot
+// frees, instead of stalling every agent until the server's ~120s ceiling.
+describe("handleBatchRequest — per-op timeout (issue #31)", () => {
+  const originalOp = batchConfig.opTimeoutMs;
+  const originalHeavy = batchConfig.heavyReadTimeoutMs;
+  const restore = () => {
+    batchConfig.opTimeoutMs = originalOp;
+    batchConfig.heavyReadTimeoutMs = originalHeavy;
+  };
+
+  it("times out a hung op instead of hanging the whole batch", async () => {
+    batchConfig.opTimeoutMs = 30;
+    (globalThis as any).figma = {
+      // Never resolves — simulates a wedged Figma API call.
+      getNodeByIdAsync: () => new Promise(() => {}),
+      variables: { getVariableByIdAsync: async () => null },
+      commitUndo: () => {},
+      ui: noopUi,
+    };
+
+    try {
+      const res = await handleBatchRequest({
+        type: "batch",
+        requestId: "req-timeout-hang",
+        params: {
+          ops: [
+            { type: "set_fills", nodeIds: ["10:1"], params: { color: "#ff0000" } },
+          ],
+        },
+      });
+      expect(res.data.results[0].error).toMatch(/timed out/);
+      expect(res.data.failCount).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("continueOnError lets a later op run after a prior op times out", async () => {
+    batchConfig.opTimeoutMs = 30;
+    (globalThis as any).figma = {
+      getNodeByIdAsync: (id: string) =>
+        id === "10:hang"
+          ? new Promise(() => {}) // wedged
+          : Promise.resolve({ id, name: "Rect", type: "RECTANGLE", fills: [] }),
+      variables: { getVariableByIdAsync: async () => null },
+      commitUndo: () => {},
+      ui: noopUi,
+    };
+
+    try {
+      const res = await handleBatchRequest({
+        type: "batch",
+        requestId: "req-timeout-continue",
+        params: {
+          continueOnError: true,
+          ops: [
+            { type: "set_fills", nodeIds: ["10:hang"], params: { color: "#ff0000" } },
+            { type: "set_fills", nodeIds: ["10:ok"], params: { color: "#00ff00" } },
+          ],
+        },
+      });
+      expect(res.data.results[0].error).toMatch(/timed out/);
+      expect(res.data.results[1].error).toBeUndefined();
+      expect(res.data.okCount).toBe(1);
+      expect(res.data.failCount).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
+  // A heavy READ op must use heavyReadTimeoutMs, NOT the short write cap — the
+  // server gives a batch the generous 600s read ceiling precisely so a big read
+  // doesn't time out, and the plugin must not undercut that. Here the write cap is
+  // long (won't fire) and the heavy-read cap is short, so a hung get_node timing
+  // out PROVES the op-type split routes it to heavyReadTimeoutMs.
+  it("routes a heavy read op to heavyReadTimeoutMs, not the write cap", async () => {
+    batchConfig.opTimeoutMs = 10_000; // long — would NOT fire in the test window
+    batchConfig.heavyReadTimeoutMs = 30; // short — the heavy-read path
+    (globalThis as any).figma = {
+      getNodeByIdAsync: () => new Promise(() => {}), // wedged
+      ui: noopUi,
+    };
+
+    try {
+      const start = Date.now();
+      const res = await handleBatchRequest({
+        type: "batch",
+        requestId: "req-timeout-heavy",
+        params: {
+          ops: [{ type: "get_node", nodeIds: ["10:1"], params: {} }],
+        },
+      });
+      // Timed out fast via the heavy-read cap; if get_node had wrongly used the
+      // 10s write cap, this would not have resolved within the window.
+      expect(res.data.results[0].error).toMatch(/timed out/);
+      expect(Date.now() - start).toBeLessThan(5_000);
+    } finally {
+      restore();
+    }
   });
 });

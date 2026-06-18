@@ -735,4 +735,50 @@ describe("serializeNode", () => {
     // Confirm no extra fields leaked
     expect(Object.keys(result.mainComponent)).toEqual(["key", "name", "remote"]);
   });
+
+  // Issue #29: an INSTANCE read must surface the resolved master node id as a
+  // top-level `mainComponentId`, so a reader can reference/reuse a file-local
+  // master without a follow-up round-trip. The id lives at top level — NOT inside
+  // `mainComponent` — so the byte-identity guard above stays exactly {key,name,remote}.
+  it("surfaces the master node id as top-level mainComponentId (issue #29)", async () => {
+    const node = {
+      id: "99:3",
+      name: "ButtonInstance",
+      type: "INSTANCE",
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 40,
+      children: [],
+      getMainComponentAsync: async () => ({
+        key: "btn-key-abc",
+        name: "Button/Primary",
+        remote: false,
+        id: "comp:999",
+      }),
+    };
+    const result = await serializeNode(node);
+    expect(result.mainComponentId).toBe("comp:999");
+    // mainComponent itself stays exactly {key,name,remote} — the id is top-level only.
+    expect(Object.keys(result.mainComponent)).toEqual(["key", "name", "remote"]);
+  });
+
+  // A detached instance (no resolvable master) must omit mainComponentId entirely
+  // rather than emit null/undefined — keeps payloads compact and diff-friendly.
+  it("omits mainComponentId when no master resolves (issue #29)", async () => {
+    const node = {
+      id: "99:4",
+      name: "Detached",
+      type: "INSTANCE",
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      children: [],
+      getMainComponentAsync: async () => null,
+    };
+    const result = await serializeNode(node);
+    expect(result.mainComponentId).toBeUndefined();
+    expect(result.mainComponent).toBeUndefined();
+  });
 });

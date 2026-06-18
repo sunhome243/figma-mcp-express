@@ -168,7 +168,10 @@ export const handleReadDocumentRequest = async (request: any) => {
         if (tokens) result.tokens = tokens;
         const componentRef = await serializeComponentRef(node, caches.components);
         if (componentRef) {
-          result.componentRef = componentRef;
+          // componentRef is Code-Connect-keyed ({key,name,remote}); the master node
+          // id rides on serializeNode's top-level mainComponentId (issue #29), not here.
+          const { id: _masterId, ...refForCodegen } = componentRef;
+          result.componentRef = refForCodegen;
           const cc = codeConnectMap[componentRef.key];
           if (cc !== undefined) result.codeConnect = cc;
         }

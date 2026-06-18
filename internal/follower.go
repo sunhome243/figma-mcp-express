@@ -121,22 +121,44 @@ func (f *Follower) ListChannels(ctx context.Context) ([]ChannelInfo, error) {
 
 // Ping checks if the leader is alive. Returns true if healthy.
 func (f *Follower) Ping(ctx context.Context) bool {
+	healthy, _ := f.PingVersion(ctx)
+	return healthy
+}
+
+// PingVersion checks if the leader is alive AND reports the leader's build
+// version (from the /ping JSON body). Returns (healthy, version). version is ""
+// when the body can't be decoded — callers treat an unknown version as "don't
+// take over" (follow), so a decode miss degrades to today's behavior. Used by
+// the election to evict a stale older leader (issue #26).
+func (f *Follower) PingVersion(ctx context.Context) (bool, string) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.leaderURL+"/ping", nil)
 	if err != nil {
 		followerLogger.Printf("ping new request error: %v", err)
-		return false
+		return false, ""
 	}
 
 	resp, err := f.client.Do(req)
 	if err != nil {
 		followerLogger.Printf("ping %s failed: %v", f.leaderURL, err)
-		return false
+		return false, ""
 	}
-	resp.Body.Close()
-	ok := resp.StatusCode == http.StatusOK
-	followerLogger.Printf("ping %s → %d (healthy=%v)", f.leaderURL, resp.StatusCode, ok)
-	return ok
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		followerLogger.Printf("ping %s → %d (healthy=false)", f.leaderURL, resp.StatusCode)
+		return false, ""
+	}
+
+	var body struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+	}
+	// A decode error leaves version "" — still healthy, just version-unknown.
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		followerLogger.Printf("ping %s → 200 but body decode failed: %v", f.leaderURL, err)
+	}
+	followerLogger.Printf("ping %s → 200 (healthy=true, version=%q)", f.leaderURL, body.Version)
+	return true, body.Version
 }
