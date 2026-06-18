@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 )
 
 var leaderLogger = log.New(os.Stderr, "[leader] ", 0)
@@ -55,9 +57,14 @@ func (l *Leader) Start() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", l.handlePing)
-	mux.HandleFunc("/rpc", l.handleRPC)
+	// /rpc and /channels carry the full follower-proxied payload (node trees etc.),
+	// which compress ~6–14× — gzip them when the client accepts it. The follower's
+	// Go http.Client auto-negotiates Accept-Encoding and transparently decompresses,
+	// so no follower-side change is needed. /ws (WebSocket upgrade) and /ping (tiny)
+	// are NOT wrapped — gzipping a hijacked upgrade would break it.
+	mux.HandleFunc("/rpc", withGzip(l.handleRPC))
 	mux.HandleFunc("/ws", l.handleWS)
-	mux.HandleFunc("/channels", l.handleChannels)
+	mux.HandleFunc("/channels", withGzip(l.handleChannels))
 
 	srv := &http.Server{Handler: mux}
 	l.server = srv
@@ -166,6 +173,33 @@ func (l *Leader) handleRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	l.sendJSON(w, http.StatusOK, RPCResponse{Data: resp.Data})
+}
+
+// gzipResponseWriter pipes the response body through a gzip.Writer. Header() and
+// WriteHeader() pass through to the underlying writer unchanged — Content-Encoding
+// is set by withGzip before the handler runs, so it is present when headers flush.
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) { return g.gz.Write(b) }
+
+// withGzip gzips a JSON handler's response when the request advertises gzip support.
+// Used only for /rpc and /channels (never the /ws upgrade). When the client does not
+// accept gzip, the handler runs unwrapped and the output is byte-identical to before.
+func withGzip(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			h(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		h(&gzipResponseWriter{ResponseWriter: w, gz: gz}, r)
+	}
 }
 
 func (l *Leader) sendJSON(w http.ResponseWriter, status int, body RPCResponse) {

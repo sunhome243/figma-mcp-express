@@ -350,6 +350,12 @@ func (b *Bridge) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true, // skip Origin check — plugin connects via Figma's sandbox
+		// permessage-deflate: figma read payloads (node trees) compress ~6–14× on real
+		// captures at ~5–10ms/MB CPU — a large bandwidth win for a trivial CPU cost. The
+		// browser plugin client negotiates this automatically; falls back to no-compression
+		// if a client doesn't offer the extension. ContextTakeover keeps a small per-conn
+		// window (few WS conns — one per open file — so the RAM cost is negligible).
+		CompressionMode: websocket.CompressionContextTakeover,
 	})
 	if err != nil {
 		bridgeLogger.Printf("upgrade error: %v", err)
@@ -446,6 +452,12 @@ func (b *Bridge) readLoop(ctx context.Context, cancelConn context.CancelFunc, ch
 		// (a same-channel reconnect may have already replaced it).
 		if cur, ok := b.conns[channel]; ok && cur == entry {
 			delete(b.conns, channel)
+			// Channel is gone for good (not a same-channel reconnect, which keeps a
+			// different entry) — drop its read-cache generation so the gens map does
+			// not grow without bound across auto-N reconnects.
+			if b.readCache != nil {
+				b.readCache.DeleteChannel(channel)
+			}
 		}
 		// Drain all pending requests that were dispatched on this connection so they
 		// resolve IMMEDIATELY with a "connection closed" error, rather than waiting
