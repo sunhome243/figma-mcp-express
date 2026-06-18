@@ -272,7 +272,13 @@ export const serializeNode = async (
   // thread killer this avoids).
   if (node.type === "INSTANCE") {
     const ref = await serializeComponentRef(node, caches.components);
-    if (ref) base = Object.assign({}, base, { mainComponent: ref });
+    if (ref) {
+      // Split the master node id out to a top-level `mainComponentId` (issue #29
+      // recovery path) so `mainComponent` stays exactly {key,name,remote}.
+      const { id: mainComponentId, ...mainComponent } = ref;
+      base = Object.assign({}, base, { mainComponent });
+      if (mainComponentId) base.mainComponentId = mainComponentId;
+    }
     // Surface the variant/property selection (e.g. {Type: "icon"}) so a reader can tell which
     // variant this instance is — the loss of this was the root cause of icon-cells flattening
     // to generic cells on rebuild. Flattened to bare values to match the dedupeComponents path
@@ -503,11 +509,16 @@ export const serializeCodegenTokens = async (
 // collapses re-resolution of the SAME instance within one read (e.g.
 // get_design_context resolves an instance both in serializeNode and again in
 // enrichForCodegen). Narrower than the style memo by construction.
-export type ComponentCache = Map<string, { key: string; name: string; remote: boolean } | undefined>;
+export type ComponentCache = Map<
+  string,
+  { key: string; name: string; remote: boolean; id?: string } | undefined
+>;
 
 // serializeComponentRef returns the published main-component key + name for an
 // INSTANCE node, used for Code-Connect mapping. Returns undefined for non-INSTANCE
-// nodes or when no main component resolves.
+// nodes or when no main component resolves. The `id` (master node id) is carried
+// for the issue-#29 recovery path; surfacing sites that need a {key,name,remote}-
+// only shape (mainComponent / componentRef) strip it back out.
 export const serializeComponentRef = async (
   node: any,
   cache: ComponentCache = new Map(),
@@ -525,7 +536,9 @@ export const serializeComponentRef = async (
   }
   // Include the remote flag so callers can distinguish library components from local ones —
   // omitting it caused false "component not found" gaps in the relibrary pipeline.
-  const ref = mc ? { key: mc.key, name: mc.name, remote: mc.remote === true } : undefined;
+  const ref = mc
+    ? { key: mc.key, name: mc.name, remote: mc.remote === true, id: mc.id }
+    : undefined;
   cache.set(node.id, ref);
   return ref;
 };
