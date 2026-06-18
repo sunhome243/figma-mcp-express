@@ -249,15 +249,35 @@ type Bridge struct {
 	// near-simultaneous subagent reads of the same node collapse onto ONE plugin
 	// round-trip (extends singleflight's collapse window). See readcache.go.
 	readCache *readCache
+
+	// Heartbeat config (issue #32). A dead/partitioned transport that never sends a
+	// TCP FIN leaves the readLoop blocked and every in-flight request waiting the
+	// full per-request inactivity ceiling. A periodic WebSocket ping detects that
+	// case in heartbeatTimeout instead, closing the conn so the existing drain
+	// fails the requests fast and resolve() rejects new ones. Mutable so tests can
+	// dial these down; production never reassigns them.
+	heartbeatInterval time.Duration
+	heartbeatTimeout  time.Duration
 }
+
+// Heartbeat defaults: ping every 15s, fail the transport if no pong within 10s.
+// Generous enough that a healthy plugin (its UI continuously reads, so the
+// browser auto-pongs) is never falsely dropped; tight enough that a partition is
+// caught in seconds, not the ~120s request ceiling.
+const (
+	defaultHeartbeatInterval = 15 * time.Second
+	defaultHeartbeatTimeout  = 10 * time.Second
+)
 
 // NewBridge creates a ready-to-use Bridge.
 func NewBridge() *Bridge {
 	return &Bridge{
-		conns:     make(map[string]*connEntry),
-		pending:   make(map[string]*pendingEntry),
-		flights:   make(map[string]*flight),
-		readCache: newReadCache(),
+		conns:             make(map[string]*connEntry),
+		pending:           make(map[string]*pendingEntry),
+		flights:           make(map[string]*flight),
+		readCache:         newReadCache(),
+		heartbeatInterval: defaultHeartbeatInterval,
+		heartbeatTimeout:  defaultHeartbeatTimeout,
 	}
 }
 
@@ -299,11 +319,59 @@ func (b *Bridge) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 		bridgeLogger.Printf("plugin connected (channel %q) from %s", channel, r.RemoteAddr)
 	}
 
-	go b.readLoop(channel, entry, conn)
+	// One context per connection: readLoop's exit cancels it (stopping the
+	// heartbeat), and a heartbeat failure cancels it (unblocking readLoop's Read).
+	connCtx, cancelConn := context.WithCancel(context.Background())
+	go b.heartbeat(connCtx, cancelConn, channel, conn)
+	go b.readLoop(connCtx, cancelConn, channel, entry, conn)
+}
+
+// heartbeat periodically pings the plugin so a dead or partitioned transport
+// (one that never sends a TCP FIN) is detected in heartbeatTimeout rather than at
+// the full per-request inactivity ceiling (issue #32). On a failed ping it closes
+// the conn, which makes readLoop's Read return an error → the existing drain fails
+// every in-flight request fast and resolve() rejects new ones.
+//
+// SCOPE (honest): this catches a dead/partitioned/half-open TRANSPORT. It does
+// NOT catch a JS-frozen-but-connected plugin — a browser auto-pongs at the
+// protocol layer on a thread independent of the frozen JS, so the ping still
+// succeeds. Detecting a frozen-but-connected plugin needs an application-level
+// "alive" ping from the plugin (a larger change, tracked separately). And NO
+// disconnect is recoverable: in-flight work is lost and writes are not
+// replay-safe — this only makes the loss FAST and clean, not recoverable.
+func (b *Bridge) heartbeat(ctx context.Context, cancelConn context.CancelFunc, channel string, conn *websocket.Conn) {
+	ticker := time.NewTicker(b.heartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, b.heartbeatTimeout)
+			err := conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				if ctx.Err() != nil {
+					return // conn already closing for another reason
+				}
+				bridgeLogger.Printf("heartbeat ping failed (channel %q): %v — closing dead transport", channel, err)
+				// Cancel the conn ctx first so readLoop's Read returns IMMEDIATELY
+				// (→ drain) rather than waiting for a close handshake the dead peer
+				// will never answer. CloseNow then frees the socket without the
+				// handshake's multi-second timeout.
+				cancelConn()
+				_ = conn.CloseNow()
+				return
+			}
+		}
+	}
 }
 
 // readLoop reads messages from one plugin connection and resolves pending requests.
-func (b *Bridge) readLoop(channel string, entry *connEntry, conn *websocket.Conn) {
+func (b *Bridge) readLoop(ctx context.Context, cancelConn context.CancelFunc, channel string, entry *connEntry, conn *websocket.Conn) {
+	// Stop the heartbeat goroutine whenever this loop exits (normal close, read
+	// error, or heartbeat-triggered close).
+	defer cancelConn()
 	// A panic while handling one response must not tear down the whole loop
 	// silently; recover, log, and let the cleanup defer below run normally.
 	defer func() {
@@ -352,7 +420,6 @@ func (b *Bridge) readLoop(channel string, entry *connEntry, conn *websocket.Conn
 		bridgeLogger.Printf("plugin disconnected (channel %q)", channel)
 	}()
 
-	ctx := context.Background()
 	for {
 		var resp BridgeResponse
 		if err := wsjson.Read(ctx, conn, &resp); err != nil {
