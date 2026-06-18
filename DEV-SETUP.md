@@ -132,6 +132,7 @@ FIGMA_MCP_BATCH_MAX_BYTES=2097152 # Max encoded batch.ops payload bytes before f
 FIGMA_MCP_SPILL_BYTES=25000   # Response gate threshold (bytes). Default: 25000
 FIGMA_MCP_TIMEOUT=120         # Inactivity ceiling (seconds) for lightweight ops. Default: 120
 FIGMA_MCP_READ_TIMEOUT=600    # Inactivity ceiling (seconds) for heavy reads + batch. Default: 600
+FIGMA_MCP_STALL_THRESHOLD=45  # Seconds an op may hold a channel's slot with no progress before a NEW call is fast-rejected (ErrChannelStalled). Default: 45
 ```
 
 ---

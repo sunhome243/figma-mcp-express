@@ -290,8 +290,12 @@ The timeout only fires during a **silent stretch**: a single blocking plugin cal
 Three failure modes are handled, all fast-fail:
 
 - Plugin returns an error response → resolved immediately (no waiting for the ceiling).
-- Plugin WebSocket drops → ALL pending requests for that connection resolve immediately with "connection closed: plugin disconnected" — not after the 600s ceiling.
+- Plugin WebSocket drops → ALL pending requests for that connection resolve immediately with "connection closed: plugin disconnected" — not after the 600s ceiling. A dead/partitioned transport that never sends a clean close is caught by a server heartbeat (ping every 15s, 10s pong window) and drained the same way within ~25s.
 - Silent inactivity (connected but no response or progress tick) → inactivity timer fires at the ceiling.
+
+To keep a *slow but progressing* op from being mistaken for a hung one, `makeProgress` ticks not only every 800 nodes but also at least once per ~10s of wall-clock while the loop executes — so a low-count slow read still refreshes liveness; a genuinely hung op (never calls `makeProgress`) emits nothing and is correctly detected.
+
+**Stalled-head guard (collateral-damage limiter).** Because the channel serializes on one slot, a single hung op would otherwise wedge every other agent on that channel until the head drains at its ceiling. When the slot-holder has shown no progress for `FIGMA_MCP_STALL_THRESHOLD` (default 45s), a NEW call on that channel is early-rejected with `ErrChannelStalled` ("do other work or retry shortly") instead of queueing behind the wedge — generalizing the import-jam guard (`ErrImportInFlight`) to any op. Stall is computed live from slot occupancy + the holder's last-progress timestamp (no persistent flag), so it self-heals the instant the head frees the slot; the stuck op itself is untouched and still resolves at its ceiling.
 
 Three resource axes are handled independently:
 

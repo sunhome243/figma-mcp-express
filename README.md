@@ -252,6 +252,7 @@ After running `make build` (see [DEV-SETUP.md](DEV-SETUP.md)):
 | `FIGMA_MCP_SPILL_BYTES`  | `25000` | Response size threshold. Larger responses spill to `.figma-mcp-cache/`.                                                                                                                                                                           |
 | `FIGMA_MCP_TIMEOUT`      | `120`   | Inactivity ceiling in seconds for lightweight ops (writes, metadata reads, styles). Resets on each progress heartbeat.                                                                                                                            |
 | `FIGMA_MCP_READ_TIMEOUT` | `600`   | Inactivity ceiling in seconds for heavy reads (`get_node`, `get_nodes_info`, `get_design_context`, full-document reads, scan/search tools) and `batch`. Resets on each progress heartbeat. A firing timer means retry narrower, not raise the ceiling. |
+| `FIGMA_MCP_STALL_THRESHOLD` | `45` | Seconds an op may hold a channel's serial slot with **no progress** before a NEW call on that channel is fast-rejected (`ErrChannelStalled`) instead of queueing behind the likely-hung op. Protects concurrent agents from a single wedged call; the stuck op itself still resolves at its own ceiling, and the guard self-heals when the slot frees. |
 
 ### FIGMA_TOKEN
 

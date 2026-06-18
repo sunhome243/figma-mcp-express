@@ -14,7 +14,13 @@ Read `SKILL.md § Workflow 5` first; this document is the full spec it points to
 | **Cross-channel calls run in true parallel** | Each channel is its own `connEntry` with its own sem. No global lock. | Targeting a different Figma file = pass a different `channel: "auto-N"` = full parallelism, zero serialization. |
 | **Read singleflight + C4 read-cache (3 s TTL)** | Simultaneous identical reads collapse onto one plugin round-trip (singleflight). Near-simultaneous ones hit the in-process LRU cache (TTL default 3 s). Any write on a channel invalidates ALL cached reads for that channel immediately (generation bump + map clear). | Cache hits never touch the plugin — those reads are fully parallel. Write → instant cache purge → next read is live. |
 
-**Drop-on-disconnect.** When the WebSocket drops, all in-flight calls on that channel resolve immediately with `"connection closed: plugin disconnected"` (not a hang). The plugin auto-reconnects with exponential backoff.
+**Drop-on-disconnect.** When the WebSocket drops, all in-flight calls on that channel resolve immediately with `"connection closed: plugin disconnected"` (not a hang). The plugin auto-reconnects with exponential backoff. A dead/partitioned transport that never sends a clean close is detected by a server-side heartbeat (ping every 15s, 10s pong window) and drained the same way within ~25s, instead of stalling until the request ceiling.
+
+**Stuck-op early-reject — back off, don't tight-loop.** If an op holds a channel's serial slot with no progress (a hung Figma call), a NEW call on that channel is fast-rejected rather than silently queued behind the wedge:
+- `ErrImportInFlight` — a prior `import_*_by_key` is still occupying the plugin thread.
+- `ErrChannelStalled` — any op has been stuck > `FIGMA_MCP_STALL_THRESHOLD` (default 45s) with no progress.
+
+Both are actionable signals that *another* op is wedged — not a fault in your call. The right response is the same: **do OTHER work** (a different `channel`, or non-conflicting ops) or **retry after a short pause** — do NOT tight-loop retry, which only re-poisons a recovering thread. The stuck op self-resolves at its inactivity ceiling, and the guard self-heals the instant the slot frees.
 
 ---
 
