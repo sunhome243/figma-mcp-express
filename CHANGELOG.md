@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-06-18
+
 ### Changed
 
 - **Transport compression on both hops.** Enabled permessage-deflate on the plugin↔leader
