@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-06-18
+
 ### Added
 
 - **Multi-agent presence — per-session identity (`sessionId`) so two orchestrators never clobber.** The leader is shared across all Claude sessions (first process binds the port; the rest proxy over `/rpc`), and the panel keyed presence by `origin` alone — so two uncoordinated orchestrators that both dispatch a "grace" collapsed onto one row and overwrote each other. Each process now mints a random `sessionId` at startup (`internal/node.go`) and stamps it into params on every `Send` (it rides the existing params map through `/rpc` to the leader and on to the plugin — no `RPCRequest` contract change). The plugin keys presence by **`(sessionId, origin)`**, so the same roster name from two sessions is two distinct rows that never clobber. Identity is the pair; the displayed NAME stays truthful (no rename), and same-name agents are told apart visually by a per-`(sessionId, origin)` **avatar** (the face is seeded by the pair — distinct but stable) plus a per-session **accent colour** (an evenly-spaced hue per distinct session, shown only when ≥2 sessions are present). Fully automatic — zero LLM burden. Graceful degradation: an absent `sessionId` (older server) folds into one default bucket = today's origin-only behaviour. Excluded from read cache / singleflight keys (`hashReadKey`) so cross-session reads of the same node still coalesce.
