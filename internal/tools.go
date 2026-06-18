@@ -188,7 +188,8 @@ const maxTaskLen = 80
 // Sticky: the plugin remembers the last value per (sessionId, origin).
 func taskParam() mcp.ToolOption {
 	return mcp.WithString("task",
-		mcp.Description("Optional one-sentence description of what you are working on (e.g. 'redesigning the dashboard sidebar'). Sticky — the plugin remembers it; resend only when it changes. Shown as the main line of your Watch-agent row."),
+		mcp.Description("Optional one-sentence description of what you are working on (e.g. 'redesigning the dashboard sidebar'). Sticky — the plugin remembers it; resend only when it changes. Shown as the main line of your Watch-agent row. Max 80 characters."),
+		mcp.MaxLength(maxTaskLen),
 	)
 }
 

@@ -9,6 +9,7 @@
     type AgentActivity,
   } from "../presence";
   import Typewriter from "./Typewriter.svelte";
+  import Marquee from "./Marquee.svelte";
 
   // Map a status to one of FOUR semantic colour GROUPS so colour actually carries
   // meaning (vs a 14-colour rainbow): working (green, breathing) · waiting (amber) ·
@@ -533,7 +534,7 @@
                 </span>
                 <span class="agent-text">
                   <span class="agent-name">{meta.name}</span>
-                  {#if a.task}<span class="agent-task" title={a.task}>{a.task}</span>{/if}
+                  {#if a.task}<Marquee text={a.task} cls="agent-task" title={a.task} />{/if}
                   <span class="agent-action"><Typewriter text={a.label} /> <span class="agent-time">· {relTime(a.lastTs, now)}</span></span>
                 </span>
                 <span class="agent-status">
@@ -862,14 +863,15 @@
     align-items: center;
     gap: 9px;
     width: 100%;
-    flex-shrink: 0; /* keep natural height so a tall list SCROLLS instead of cramping */
+    flex-shrink: 0;
     background: #fafafa;
-    border: 1px solid #eee;
-    border-radius: 9px;
-    padding: 6px 9px 6px 7px;
+    border: 1px solid #e8e8e8;
+    border-radius: 10px;
+    padding: 7px 10px 7px 8px;
     cursor: pointer;
     font-family: inherit;
     text-align: left;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     transition: background 0.15s, border-color 0.15s, opacity 0.25s, box-shadow 0.15s;
   }
 
@@ -909,8 +911,8 @@
   .avatar-wrap {
     position: relative;
     flex-shrink: 0;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     padding: 2px;
     background: var(--c); /* the identity-colour ring */
@@ -953,7 +955,7 @@
   .agent-text {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 2px;
     min-width: 0;
   }
 
@@ -966,14 +968,13 @@
     white-space: nowrap;
   }
 
-  /* Sticky task narration — the MAIN content line (what the agent is working on),
-     more prominent than the auto activity line below it. Truncates on overflow. */
-  .agent-task {
+  /* Sticky task narration — rendered inside <Marquee> which owns overflow/truncation.
+     :global() pierces the component boundary so the class applies to Marquee's inner spans. */
+  :global(.agent-task) {
     font-size: 11px;
-    color: #555;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: #3d3d3d;
+    font-weight: 450;
+    line-height: 1.4;
   }
 
   /* Monospace activity line — a "live log" character without an external font. */
@@ -997,8 +998,8 @@
      --c identity colour on the avatar ring/follow tag). Active-work statuses
      breathe; terminal/idle statuses are static. */
   .status-chip {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: #d2d2d2;
     box-shadow: 0 0 0 0 transparent;
