@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-06-18
+
 ### Added
 
 - **Prototype scroll & fixed-children ops (`set_overflow`, `set_fixed_children`, `pin_child`).** Closes the "scroll / body-scroll / fix-position is not available" gap (issue #38) — these were always writable via the Plugin API (`FrameNode.overflowDirection`, `FrameNode.numberOfFixedChildren`), just unexposed. `set_overflow` sets a frame's prototype scroll direction (`NONE|HORIZONTAL|VERTICAL|BOTH`) and optionally toggles `clipsContent` (a nested frame only scrolls when its content overflows *and* is clipped — folding `clipsContent` in prevents the common "scroll doesn't work" mistake). Fixed children are modeled by Figma as the **leading N children** of a frame (always on top of scrolling children), not a per-layer boolean: `set_fixed_children` sets that raw count, while the high-level `pin_child` does the full recipe for one child — sets it `ABSOLUTE`, moves it into the leading fixed band, and bumps the parent's count (e.g. pin a `BottomTabBar` while the body scrolls). All three are batch-only ops (reachable via `batch` / `search_batch_ops`), validated server-side (enum + required + child-count bound) on the `validateOnly` path.
