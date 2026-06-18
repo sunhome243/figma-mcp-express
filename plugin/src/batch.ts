@@ -22,17 +22,48 @@ import { handleReadRequest } from "./read-handlers";
 import { withTimeout } from "./timeout";
 
 // Per-op timeout for a batch dispatch (issue #31). A hung Figma API call inside
-// an op would otherwise hold the channel's serial slot until the server's ~120s
+// an op would otherwise hold the channel's serial slot until the SERVER's
 // inactivity ceiling force-drains it, wedging every other agent on the channel.
-// The default sits just under that ceiling so a genuinely hung op fails with a
-// clear, actionable error — freeing the channel a beat before the harsh server
-// drain — without false-tripping any op the server itself would allow. It is a
-// mutable config (not a const) so tests can dial it down to a few ms; production
-// code never reassigns it. Heavy single reads (a full-tree get_design_context /
-// scan) that legitimately approach the ceiling belong as standalone tool calls,
-// not batch ops. Library imports keep their own tighter 15s guard
-// (withImportTimeout) inside the import handlers.
-export const batchConfig = { opTimeoutMs: 115_000 };
+//
+// CRITICAL: the timeout must mirror the server's OWN per-op-type ceiling, or it
+// regresses legitimate slow work. The Go bridge gives a `batch` request the
+// GENEROUS read ceiling (FIGMA_MCP_READ_TIMEOUT, default 600s) precisely so a
+// batch containing a big read (scan_text_nodes, get_design_context on a large
+// file) doesn't time out — see resolveRequestTimeout/isHeavyReadOrBatch in
+// internal/bridge.go. So a flat sub-600s cap would FALSE-KILL a legitimate slow
+// read in a batch. Instead we split by op type, mirroring that server logic:
+//   - heavy reads → heavyReadTimeoutMs (600s, the generous read ceiling): the
+//     server allows this much, so we must too — no plugin-side false-trip.
+//   - everything else (writes, cheap reads) → opTimeoutMs (120s, the base
+//     ceiling): a write legitimately completes in well under a second, so a
+//     hung write is capped at 120s instead of the batch's 600s — the real #31
+//     win (the issue is hung *writes* / imports, not slow reads).
+// Mutable config (not const) so tests dial it down; production never reassigns.
+// Defaults assume the server's default timeouts; if FIGMA_MCP_READ_TIMEOUT is
+// raised, raise heavyReadTimeoutMs to match. Library imports keep their own
+// tighter 15s guard (withImportTimeout) inside the import handlers.
+export const batchConfig = { opTimeoutMs: 120_000, heavyReadTimeoutMs: 600_000 };
+
+// Mirrors internal/bridge.go isHeavyReadOrBatch (minus "batch" itself): reads
+// whose payloads can be legitimately large/slow and so earn the generous ceiling.
+const HEAVY_READ_OPS = new Set([
+  "get_node",
+  "get_nodes_info",
+  "get_design_context",
+  "get_document",
+  "scan_nodes_by_types",
+  "scan_text_nodes",
+  "search_nodes",
+  "get_local_components",
+]);
+
+// opTimeoutMs picks the per-op ceiling by type, mirroring the server so the
+// plugin never kills an op the server itself would have allowed to run.
+function opTimeoutMs(type: string): number {
+  return HEAVY_READ_OPS.has(type)
+    ? batchConfig.heavyReadTimeoutMs
+    : batchConfig.opTimeoutMs;
+}
 
 // A ref is a string of the exact form "$<opIndex>.<dotted.path>", e.g. "$0.id"
 // or "$2.bounds.width". REF_BODY is the single source of that grammar — REF
@@ -385,7 +416,7 @@ async function executeOp(
   const out = await withTimeout(
     dispatch,
     `batch op "${op.type}" (#${i})`,
-    batchConfig.opTimeoutMs,
+    opTimeoutMs(op.type),
     "the Figma API call hung; re-scope the op or run a heavy read as a standalone call",
   );
   if (out === null) throw new Error(`unknown op type: ${op.type}`);
