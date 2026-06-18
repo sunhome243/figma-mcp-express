@@ -336,10 +336,11 @@ describe("codegen — depth, text, and full regression", () => {
     expect(Object.keys(node)).toEqual([
       "id", "name", "type", "bounds", "styles", "children", "autoLayout", "tokens",
     ]);
-    // Child INSTANCE: base … mainComponent, then children, then enrich keys incl. componentRef.
+    // Child INSTANCE: base … mainComponent, mainComponentId (issue #29), then
+    // children, then enrich keys incl. componentRef.
     const child = node.children[0];
     expect(Object.keys(child)).toEqual([
-      "id", "name", "type", "bounds", "styles", "mainComponent", "children",
+      "id", "name", "type", "bounds", "styles", "mainComponent", "mainComponentId", "children",
       "autoLayout", "tokens", "componentRef",
     ]);
   });
