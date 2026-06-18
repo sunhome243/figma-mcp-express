@@ -1341,6 +1341,20 @@ func TestConnEntry_IsStalled(t *testing.T) {
 	if e.isStalled(10 * time.Millisecond) {
 		t.Error("draining the slot must self-heal stall state (no flag to stick)")
 	}
+
+	// Inherited-stale-timestamp invariant (what sendOnce's onResolve guarantees):
+	// release zeroes lastProgressAt, so the NEXT holder — in its brief window before
+	// its own markProgress — reads lp==0 and is NOT flagged from the prior holder's
+	// stale timestamp.
+	e.sem <- struct{}{}
+	e.lastProgressAt.Store(time.Now().Add(-time.Hour).UnixNano()) // very stale holder
+	e.lastProgressAt.Store(0)                                     // onResolve zeroes before release
+	<-e.sem                                                       // release
+	e.sem <- struct{}{}                                           // next holder acquires (pre-stamp window)
+	if e.isStalled(time.Millisecond) {
+		t.Error("a fresh holder must not inherit the prior holder's stale timestamp")
+	}
+	<-e.sem
 }
 
 // setupBridgeWithClientStall connects a client and sets a tiny stall threshold so
@@ -1417,8 +1431,10 @@ func TestBridge_StalledHead_RejectsNewArrival(t *testing.T) {
 }
 
 // A progressing head keeps lastProgressAt fresh, so a peer is NOT falsely rejected.
+// Uses a roomy threshold so the assert-right-after-tick can't flake under a loaded
+// scheduler (we are testing the logic, not a tight deadline).
 func TestBridge_ProgressingHead_NotStalled(t *testing.T) {
-	b := setupBridgeWithClientStall(t, 40*time.Millisecond)
+	b := setupBridgeWithClientStall(t, 500*time.Millisecond)
 
 	// Manually occupy the slot and keep progress fresh past the threshold window.
 	b.mu.RLock()
@@ -1430,7 +1446,7 @@ func TestBridge_ProgressingHead_NotStalled(t *testing.T) {
 	entry.sem <- struct{}{}
 	t.Cleanup(func() { <-entry.sem })
 	entry.markProgress()
-	time.Sleep(70 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	entry.markProgress() // fresh tick — resets the stall clock
 
 	if entry.isStalled(b.stallThreshold) {

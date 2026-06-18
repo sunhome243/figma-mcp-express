@@ -871,6 +871,14 @@ func (b *Bridge) sendOnce(ctx context.Context, channel, requestType string, node
 		if isImport {
 			entry.setImportInFlight(false)
 		}
+		// Reset liveness BEFORE releasing the slot so the NEXT holder's brief
+		// pre-stamp window (between its sem-acquire and its markProgress) reads
+		// lastProgressAt==0 → isStalled false, identical to the first-ever holder.
+		// Without this, a holder that acquires after an idle gap > stallThreshold
+		// would inherit the prior holder's stale timestamp and a racing peer could
+		// spuriously see it as stalled. The sem send/receive happens-before edge
+		// orders this store ahead of the next acquire.
+		entry.lastProgressAt.Store(0)
 		<-entry.sem
 	}
 
