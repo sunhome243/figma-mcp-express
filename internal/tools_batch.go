@@ -48,7 +48,6 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 		),
 		channelParam(),
 		originParam(),
-		statusParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		rawOps, err := batchOpsFromParams(req.GetArguments())
 		if err != nil {
@@ -75,14 +74,11 @@ func registerBatchTools(s *server.MCPServer, node *Node) {
 			params["continueOnError"] = v
 		}
 		// Presence label: forwarded verbatim to the plugin (the bridge strips
-		// only `channel`), where it attributes this write to a named agent.
+		// only `channel`), where it attributes this write to a named agent. The
+		// manual workflow `status` (and `task`) now flow through the dedicated
+		// set_presence tool — NOT batch — so presence is one consistent path.
 		if origin, ok := pickOrigin(req.GetArguments()); ok {
 			params["origin"] = origin
-		}
-		// Presence status: the acting agent's workflow state, forwarded
-		// verbatim to the plugin alongside origin.
-		if status, ok := pickStatus(req.GetArguments()); ok {
-			params["status"] = status
 		}
 
 		resp, err := node.Send(ctx, "batch", nil, withChannel(req, params))

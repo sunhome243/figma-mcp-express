@@ -2,11 +2,13 @@ import { describe, it, expect } from "bun:test";
 import {
   activeAgents,
   collectAffectedNodeIds,
+  derivePresence,
   isExpired,
   isHighlightableRequest,
   isStickyStatus,
   mergeQueued,
   opStatus,
+  sessionAccents,
   statusLabel,
   unionActiveNodeIds,
   type PresenceEvent,
@@ -18,7 +20,8 @@ const ev = (
   nodeIds: string[] = ["1:1"],
   status = "building",
   label = "Building…",
-): PresenceEvent => ({ origin, ts, nodeIds, status, label });
+  sessionId = "",
+): PresenceEvent => ({ origin, ts, nodeIds, status, label, sessionId });
 
 // Response shapes mirror what the real handlers return (see write-create.ts,
 // write-modify.ts, batch.ts): standalone ops wrap their payload in `.data`, and a
@@ -239,6 +242,41 @@ describe("activeAgents", () => {
     expect(agents.find((a) => a.origin === "grace")!.lastTs).toBe(20); // latest grace
   });
 
+  it("keys by (sessionId, origin): the same name in two sessions does NOT clobber", () => {
+    // Two orchestrators each dispatch a "grace". Different sessionIds → two distinct
+    // rows, each keeping its own latest activity. Identity is (sessionId, origin), so
+    // the name is free to repeat without one session overwriting the other.
+    const events = [
+      ev("grace", 10, ["1:1"], "building", "Building…", "sessA"),
+      ev("grace", 20, ["2:2"], "building", "Building…", "sessB"),
+    ];
+    const agents = activeAgents(events, 30, { activeWindowMs: 60000 });
+    expect(agents.length).toBe(2);
+    expect(agents.map((a) => a.sessionId).sort()).toEqual(["sessA", "sessB"]);
+    // Each row keeps its OWN nodes (no clobber).
+    expect(agents.find((a) => a.sessionId === "sessA")!.nodeIds).toEqual(["1:1"]);
+    expect(agents.find((a) => a.sessionId === "sessB")!.nodeIds).toEqual(["2:2"]);
+  });
+
+  it("carries the sticky task through to the activity", () => {
+    const e = {
+      ...ev("grace", 10, ["1:1"], "building", "Building…", "sessA"),
+      task: "redesigning the dashboard sidebar",
+    };
+    const a = activeAgents([e], 20, { activeWindowMs: 60000 })[0];
+    expect(a.task).toBe("redesigning the dashboard sidebar");
+  });
+
+  it("same (sessionId, origin) still collapses to the latest", () => {
+    const events = [
+      ev("grace", 10, ["1:1"], "building", "Building…", "sessA"),
+      ev("grace", 20, ["2:2"], "building", "Building…", "sessA"),
+    ];
+    const agents = activeAgents(events, 30, { activeWindowMs: 60000 });
+    expect(agents.length).toBe(1);
+    expect(agents[0].lastTs).toBe(20);
+  });
+
   it("carries status + label through for an active agent", () => {
     const events = [ev("grace", 100, ["1:1"], "reviewing", "Reviewing…")];
     const a = activeAgents(events, 110, { activeWindowMs: 15000 })[0];
@@ -330,5 +368,59 @@ describe("mergeQueued", () => {
   it("is a no-op when nothing is queued", () => {
     const agents = activeAgents([ev("grace", now - 1000)], now);
     expect(mergeQueued(agents, [], now)).toEqual(agents);
+  });
+});
+
+describe("sessionAccents", () => {
+  it("gives NO accent when only one real session is present", () => {
+    const m = sessionAccents(["sessA", "sessA", ""]);
+    expect(m.get("sessA")).toBeNull();
+  });
+
+  it("assigns distinct, evenly-spaced hues to multiple sessions (sorted by id)", () => {
+    const m = sessionAccents(["sessB", "sessA"]);
+    expect(m.get("sessA")).toBe(0);
+    expect(m.get("sessB")).toBe(180);
+  });
+
+  it("never accents the empty (old-server) bucket", () => {
+    const m = sessionAccents(["sessA", "sessB", ""]);
+    expect(m.get("")).toBeNull();
+  });
+});
+
+describe("derivePresence", () => {
+  const base = { type: "create_frame", explicitStatus: "", hasError: false, isPresencePing: false, task: undefined };
+
+  it("explicit (LLM-set) status wins over everything", () => {
+    const r = derivePresence(undefined, { ...base, explicitStatus: "reviewing" });
+    expect(r.status).toBe("reviewing");
+  });
+
+  it("error response → error status", () => {
+    const r = derivePresence(undefined, { ...base, hasError: true });
+    expect(r.status).toBe("error");
+  });
+
+  it("a normal op derives its auto status from the op type", () => {
+    expect(derivePresence(undefined, { ...base, type: "set_fills" }).status).toBe("building");
+    expect(derivePresence(undefined, { ...base, type: "get_node" }).status).toBe("scanning");
+  });
+
+  it("set_presence ping with NO explicit status KEEPS the prior status (never auto 'building')", () => {
+    const prev = { status: "reviewing", label: "Reviewing…", task: "old" };
+    const r = derivePresence(prev, { ...base, type: "set_presence", isPresencePing: true });
+    expect(r.status).toBe("reviewing"); // not "building"
+  });
+
+  it("set_presence ping with no prior entry → 'joined' (not 'building')", () => {
+    const r = derivePresence(undefined, { ...base, type: "set_presence", isPresencePing: true });
+    expect(r.status).toBe("joined");
+  });
+
+  it("task is sticky: absent → keep prior; present → update", () => {
+    const prev = { status: "building", label: "Building…", task: "redesign sidebar" };
+    expect(derivePresence(prev, { ...base, task: undefined }).task).toBe("redesign sidebar");
+    expect(derivePresence(prev, { ...base, task: "build KPI row" }).task).toBe("build KPI row");
   });
 });

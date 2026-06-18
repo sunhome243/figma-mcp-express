@@ -11,6 +11,7 @@ const toolProfileEnv = "FIGMA_MCP_TOOL_PROFILE"
 
 var coreToolSurface = map[string]bool{
 	"list_channels":                     true,
+	"set_presence":                      true,
 	"batch":                             true,
 	"search_batch_ops":                  true,
 	"get_batch_op_spec":                 true,

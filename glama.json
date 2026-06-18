@@ -6,6 +6,7 @@
   "license": "MIT",
   "tools": [
     { "name": "list_channels", "description": "List all connected Figma files by channel id" },
+    { "name": "set_presence", "description": "Update your Watch-agent presence (manual status + one-sentence task) without a Figma operation" },
     { "name": "batch", "description": "Execute validated BatchOpCatalog ops in one round-trip with $N.field refs, projection, map, and validateOnly dry-runs" },
     { "name": "search_batch_ops", "description": "Search batch/FigmaPlan operations by capability, op name, category, read/write flag, or param key" },
     { "name": "get_batch_op_spec", "description": "Inspect the exact schema for one batch/FigmaPlan operation before composing a plan" },

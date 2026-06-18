@@ -98,6 +98,13 @@ func rejectUnknownParams(tool string, params map[string]interface{}, allowed map
 		if allowed[k] {
 			continue
 		}
+		// Presence params (origin/status/sessionId/task) ride params but are NOT
+		// declared in every tool's schema — `sessionId` is injected by Node.Send and
+		// declared nowhere. The leader re-validates proxied follower /rpc calls, so they
+		// must pass here or every 2nd+-session call 400s. They never reach the plugin op.
+		if isPresenceParam(k) {
+			continue
+		}
 		if correct, ok := hints[k]; ok {
 			return fmt.Sprintf("%s: unknown param %q — use %s", tool, k, correct)
 		}

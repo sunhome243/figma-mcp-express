@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -20,17 +22,35 @@ type Node struct {
 	leader   *Leader
 	follower *Follower
 	version  string
+	// sessionID identifies this process (= one MCP/orchestrator session). Minted
+	// once at construction and stamped onto every Send so cross-session presence
+	// keys by (sessionId, origin) instead of colliding on the shared leader.
+	sessionID string
 }
 
 // NewNode creates a Node in the Unknown role.
 func NewNode(ip string, port int, version string) *Node {
 	return &Node{
-		ip:       ip,
-		port:     port,
-		role:     RoleUnknown,
-		version:  version,
-		follower: NewFollower(fmt.Sprintf("http://%s:%d", ip, port)),
+		ip:        ip,
+		port:      port,
+		role:      RoleUnknown,
+		version:   version,
+		sessionID: newSessionID(),
+		follower:  NewFollower(fmt.Sprintf("http://%s:%d", ip, port)),
 	}
+}
+
+// newSessionID returns a short random per-process id (8 hex chars). Random so two
+// uncoordinated sessions on the same Figma file never share an id; not security-
+// sensitive, just a presence namespace.
+func newSessionID() string {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// rand.Read effectively never fails; fall back to a non-empty constant so
+		// presence still functions (worst case: two such fallbacks share an id).
+		return "sess0000"
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // Role returns the current role.
@@ -84,6 +104,14 @@ func (n *Node) Send(ctx context.Context, tool string, nodeIDs []string, params m
 	}
 
 	nodeLogger.Printf("tool=%s role=%s nodeIDs=%v", tool, n.RoleName(), nodeIDs)
+
+	// Stamp this process's sessionID so it rides params through the follower /rpc
+	// hop to the leader and on to the plugin (presence keys by (sessionId, origin)).
+	// Injected here — the single chokepoint both leader-direct and follower paths
+	// funnel through — so it is present regardless of role.
+	if params != nil && n.sessionID != "" {
+		params["sessionId"] = n.sessionID
+	}
 
 	var resp BridgeResponse
 	var err error

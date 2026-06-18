@@ -47,9 +47,15 @@ func validateBatchOps(rawOps []interface{}) error {
 func batchOpsFromParams(params map[string]interface{}) ([]interface{}, error) {
 	for k := range params {
 		switch k {
-		case "ops", "continueOnError", "validateOnly", "channel", "origin", "status":
+		case "ops", "continueOnError", "validateOnly", "channel":
+			// structural batch params
 		default:
-			return nil, fmt.Errorf("batch: unknown top-level param %q", k)
+			// Presence params (origin/status/sessionId/task) ride params; sessionId is
+			// injected by Node.Send and declared in no schema. Allow them through the
+			// follower /rpc re-validation (they're stripped/forwarded downstream, not ops).
+			if !isPresenceParam(k) {
+				return nil, fmt.Errorf("batch: unknown top-level param %q", k)
+			}
 		}
 	}
 	rawOps, ok := params["ops"].([]interface{})
@@ -98,13 +104,11 @@ func validateAndPrepareBatchParams(params map[string]interface{}) error {
 	} else {
 		delete(params, "origin")
 	}
-	// Same sanitize for the presence status on the follower /rpc path: keep a
-	// known roster status, drop everything else before it reaches the plugin.
-	if s, ok := pickStatus(params); ok {
-		params["status"] = s
-	} else {
-		delete(params, "status")
-	}
+	// Manual `status` no longer flows through batch — it moved to the dedicated
+	// set_presence tool, so presence is one consistent path. Strip any stray status
+	// (e.g. from a not-yet-migrated caller) so the leader and follower paths agree
+	// and batch carries identity only.
+	delete(params, "status")
 	return nil
 }
 

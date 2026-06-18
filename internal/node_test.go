@@ -222,3 +222,44 @@ func TestNodeSend_ValidatesBatchBeforeFollowerRPC(t *testing.T) {
 		t.Fatal("invalid batch should not reach follower RPC")
 	}
 }
+
+// ── sessionID (presence: per-process identity) ───────────────────────────────
+
+// Each Node (= one MCP process = one orchestrator session) mints its own random
+// sessionID at construction so cross-session presence never collides on the
+// shared leader. Two Nodes must get distinct ids.
+func TestNewNode_MintsUniqueSessionID(t *testing.T) {
+	n1 := NewNode("127.0.0.1", 19940, "test")
+	if n1.sessionID == "" {
+		t.Fatal("NewNode must mint a non-empty sessionID")
+	}
+	n2 := NewNode("127.0.0.1", 19940, "test")
+	if n1.sessionID == n2.sessionID {
+		t.Errorf("two Nodes must mint distinct sessionIDs, both = %q", n1.sessionID)
+	}
+}
+
+// Send must stamp the Node's sessionID into params so it rides the existing
+// params map through the follower /rpc hop to the leader (which forwards it to
+// the plugin for (sessionId, origin) presence keying). No RPCRequest contract change.
+func TestNodeSend_InjectsSessionID(t *testing.T) {
+	var capturedReq RPCRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedReq) //nolint:errcheck
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(RPCResponse{Data: "ok"}) //nolint:errcheck
+	}))
+	t.Cleanup(srv.Close)
+
+	n := &Node{
+		role:      RoleFollower,
+		follower:  NewFollower(srv.URL),
+		sessionID: "sess-xyz",
+	}
+	if _, err := n.Send(context.Background(), "get_node", []string{"1:1"}, map[string]any{"origin": "grace"}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if got, _ := capturedReq.Params["sessionId"].(string); got != "sess-xyz" {
+		t.Fatalf("sessionId not injected into params; got %q want %q", got, "sess-xyz")
+	}
+}

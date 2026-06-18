@@ -79,27 +79,62 @@ export function collectAffectedNodeIds(result: unknown): string[] {
 // already flavored at record time (e.g. "Building…", "📸 Capturing…").
 export interface PresenceEvent {
   origin: string;
+  // sessionId identifies the orchestrator process that sent this. Presence is keyed
+  // by (sessionId, origin) so the same roster name from two sessions does NOT clobber.
+  // Empty string = a pre-session-id (old server) event → one shared default bucket.
+  sessionId: string;
   nodeIds: string[];
   status: string;
   label: string;
   ts: number;
+  // task is the agent's sticky one-sentence narration (set via set_presence). The
+  // plugin carries the last value forward across ops (main.ts), so it persists
+  // between status pings. Undefined until the agent declares one.
+  task?: string;
 }
 
 export interface AgentActivity {
   origin: string;
+  sessionId: string;
   status: string; // EFFECTIVE status after decay / queued merge
   label: string; // EFFECTIVE display string
   lastTs: number;
   nodeIds: string[];
   active: boolean; // within the active window (used by the union highlight)
   queuePos?: number; // 1-based position when status === "queued"
+  task?: string; // sticky one-sentence narration (set_presence)
 }
 
-// Presence is stored as the LATEST activity per origin (a Map keyed by origin —
-// see main.ts), not an event log: one row per agent, always current. An AUTO
-// status decays on a timer — active (breathing, in the union highlight) within
-// ACTIVE, then idle, then away — and is finally REMOVED once it has been quiet
-// past REMOVE (so a finished agent disappears on its own instead of lingering).
+// presenceKey is the identity a presence row is grouped by: (sessionId, origin).
+// The "|" separator can't appear in a roster name or hex sessionId, so distinct
+// pairs never alias. An empty sessionId folds all old-server events into one bucket.
+export function presenceKey(sessionId: string, origin: string): string {
+  return `${sessionId}|${origin}`;
+}
+
+// sessionAccents maps each DISTINCT non-empty sessionId to an evenly-spaced hue
+// (0–359), assigned by SORTED id so different orchestrator sessions are separable
+// at a glance. Even spacing (vs hashing a single id) guarantees maximum separation
+// and never collides at 2–3 sessions. When 0 or 1 real session is present nobody
+// needs disambiguation, so every id maps to null (no accent); the "" old-server
+// bucket never gets an accent.
+export function sessionAccents(sessionIds: string[]): Map<string, number | null> {
+  const distinct = [...new Set(sessionIds.filter((s) => s !== ""))].sort();
+  const m = new Map<string, number | null>();
+  m.set("", null);
+  if (distinct.length <= 1) {
+    for (const s of distinct) m.set(s, null);
+    return m;
+  }
+  distinct.forEach((sid, i) => m.set(sid, Math.round((360 * i) / distinct.length)));
+  return m;
+}
+
+// Presence is stored as the LATEST activity per (sessionId, origin) — a Map keyed by
+// presenceKey (see main.ts), not an event log: one row per agent, always current. An
+// AUTO status decays on a timer — active (breathing, in the union highlight) within
+// ACTIVE, then idle, then away — and is finally REMOVED once it has been quiet past
+// REMOVE (so a finished agent disappears on its own instead of lingering).
 export const PRESENCE_ACTIVE_WINDOW_MS = 30000; // ≤30s → active (breathing)
 export const PRESENCE_AWAY_WINDOW_MS = 60000; // 30–60s → idle, >60s → away
 export const PRESENCE_REMOVE_WINDOW_MS = 150000; // >150s quiet (AUTO only) → removed
@@ -211,6 +246,44 @@ export function statusLabel(
   }
 }
 
+// derivePresence computes the (status, label, task) to STORE for one op, given the
+// agent's prior stored entry. PURE so it is unit-tested directly — main.ts only does
+// the I/O around it (read params, key the map, emit, highlight). Precedence:
+//   1. explicit LLM-set status (from set_presence / a status ping) wins
+//   2. an errored response → "error"
+//   3. a set_presence ping with no explicit status KEEPS the prior status — it must
+//      NOT run opStatus, whose catch-all would falsely show "Building…" (none → "joined")
+//   4. otherwise derive the auto status from the op type
+// `task` is sticky: undefined (not sent this call) keeps the prior value.
+export function derivePresence(
+  prev: { status: string; label: string; task?: string } | undefined,
+  input: {
+    type: unknown;
+    explicitStatus: string;
+    hasError: boolean;
+    isPresencePing: boolean;
+    task?: string;
+  },
+): { status: string; label: string; task?: string } {
+  let status: string;
+  let label: string;
+  if (input.explicitStatus) {
+    status = input.explicitStatus;
+    label = statusLabel(status);
+  } else if (input.hasError) {
+    status = "error";
+    label = statusLabel("error");
+  } else if (input.isPresencePing) {
+    status = prev?.status ?? "joined";
+    label = prev?.label ?? statusLabel(status);
+  } else {
+    status = opStatus(input.type);
+    label = statusLabel(status, { opType: input.type });
+  }
+  const task = input.task !== undefined ? input.task : prev?.task;
+  return { status, label, task };
+}
+
 // activeAgents collapses the event log into the latest activity per origin,
 // most-recent first. AUTO statuses decay on a timer (active → idle → away);
 // STICKY (LLM-set) statuses are preserved. The latest NON-EMPTY nodeIds per
@@ -224,14 +297,17 @@ export function activeAgents(
   const activeWindowMs = opts.activeWindowMs ?? PRESENCE_ACTIVE_WINDOW_MS;
   const awayWindowMs = opts.awayWindowMs ?? PRESENCE_AWAY_WINDOW_MS;
 
+  // Group by (sessionId, origin), NOT origin alone — the same roster name from two
+  // sessions is two distinct agents and must not collapse onto one row.
   const latest = new Map<string, PresenceEvent>();
   const latestNodes = new Map<string, { ts: number; nodeIds: string[] }>();
   for (const e of events) {
-    const prev = latest.get(e.origin);
-    if (!prev || e.ts >= prev.ts) latest.set(e.origin, e);
+    const key = presenceKey(e.sessionId, e.origin);
+    const prev = latest.get(key);
+    if (!prev || e.ts >= prev.ts) latest.set(key, e);
     if (e.nodeIds.length) {
-      const pn = latestNodes.get(e.origin);
-      if (!pn || e.ts >= pn.ts) latestNodes.set(e.origin, { ts: e.ts, nodeIds: e.nodeIds });
+      const pn = latestNodes.get(key);
+      if (!pn || e.ts >= pn.ts) latestNodes.set(key, { ts: e.ts, nodeIds: e.nodeIds });
     }
   }
 
@@ -254,11 +330,13 @@ export function activeAgents(
       }
       return {
         origin: e.origin,
+        sessionId: e.sessionId,
         status,
         label,
         lastTs: e.ts,
-        nodeIds: latestNodes.get(e.origin)?.nodeIds ?? e.nodeIds,
+        nodeIds: latestNodes.get(presenceKey(e.sessionId, e.origin))?.nodeIds ?? e.nodeIds,
         active,
+        task: e.task,
       };
     });
 }
@@ -291,6 +369,10 @@ export function mergeQueued(
     .filter((o) => !known.has(o))
     .map((o) => ({
       origin: o,
+      // The server queue frame is still origin-only; a queued row with no prior
+      // activity has no known sessionId yet (default bucket). Session-qualifying the
+      // queue is a follow-up (Go PresenceQueueFrame must carry sessionId per entry).
+      sessionId: "",
       status: "queued",
       label: statusLabel("queued", { queuePos: posOf(o) }),
       lastTs: now,

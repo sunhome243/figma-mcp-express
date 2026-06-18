@@ -132,8 +132,8 @@ func TestToolSchemas_AllToolsRegistered(t *testing.T) {
 	resp := listTools(t)
 	// Full profile preserves the legacy top-level tools, plus the two compact
 	// catalog meta-tools used for progressive discovery. Count includes the
-	// prototype additions get_prototype + set_prototype_start.
-	const want = 74
+	// prototype additions get_prototype + set_prototype_start, plus set_presence.
+	const want = 75
 	got := len(resp.Result.Tools)
 	if got != want {
 		t.Errorf("expected %d registered tools, got %d — update the constant if tools were intentionally added or removed", want, got)
@@ -147,7 +147,7 @@ func TestToolSchemas_DefaultCoreProfileExposesSmallSurface(t *testing.T) {
 		t.Fatalf("unmarshal tools/list response: %v", err)
 	}
 
-	const want = 21
+	const want = 22
 	got := len(resp.Result.Tools)
 	if got != want {
 		t.Fatalf("default core profile tool count = %d, want %d", got, want)
@@ -159,6 +159,7 @@ func TestToolSchemas_DefaultCoreProfileExposesSmallSurface(t *testing.T) {
 	}
 	for _, name := range []string{
 		"list_channels",
+		"set_presence",
 		"batch",
 		"search_batch_ops",
 		"get_batch_op_spec",

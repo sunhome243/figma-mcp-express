@@ -101,9 +101,11 @@ func TestPickStatusAcceptsEveryRosterStatus(t *testing.T) {
 	}
 }
 
-// validateAndPrepareBatchParams (follower /rpc path) must sanitize `status` the
-// same way it sanitizes `origin`: keep a known status, drop everything else.
-func TestValidateAndPrepareBatchParamsSanitizesStatus(t *testing.T) {
+// validateAndPrepareBatchParams (follower /rpc path) must STRIP `status` from batch
+// entirely: manual workflow status moved to the dedicated set_presence tool, so
+// batch carries identity only. Known or unknown, status is dropped (leader and
+// follower paths agree).
+func TestValidateAndPrepareBatchParamsStripsStatus(t *testing.T) {
 	newParams := func(status interface{}) map[string]interface{} {
 		p := map[string]interface{}{
 			"ops": []interface{}{
@@ -116,69 +118,35 @@ func TestValidateAndPrepareBatchParamsSanitizesStatus(t *testing.T) {
 		return p
 	}
 
-	t.Run("keeps a known status", func(t *testing.T) {
-		p := newParams("reviewing")
-		if err := validateAndPrepareBatchParams(p); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if p["status"] != "reviewing" {
-			t.Errorf("status = %v; want reviewing", p["status"])
-		}
-	})
-
-	t.Run("drops an unknown status", func(t *testing.T) {
-		p := newParams("blocked")
-		if err := validateAndPrepareBatchParams(p); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if _, present := p["status"]; present {
-			t.Errorf("unknown status should have been deleted, got %v", p["status"])
-		}
-	})
-
-	t.Run("no status key stays absent", func(t *testing.T) {
-		p := newParams(nil)
-		if err := validateAndPrepareBatchParams(p); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if _, present := p["status"]; present {
-			t.Errorf("status should be absent, got %v", p["status"])
-		}
-	})
+	for _, status := range []interface{}{"reviewing", "blocked", nil} {
+		t.Run("strips status", func(t *testing.T) {
+			p := newParams(status)
+			if err := validateAndPrepareBatchParams(p); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if _, present := p["status"]; present {
+				t.Errorf("status (%v) must not survive on batch, got %v", status, p["status"])
+			}
+		})
+	}
 }
 
-// End-to-end through the batch tool handler: a valid status is forwarded to the
-// plugin in params; an unknown one is dropped (handler still succeeds).
-func TestRegisterBatchToolsForwardsValidStatusOnly(t *testing.T) {
+// End-to-end through the batch tool handler: batch does NOT forward `status` (it
+// moved to set_presence). Even a valid status is dropped; the handler still
+// succeeds. Origin is still forwarded — see TestReadToolForwardsOrigin.
+func TestRegisterBatchToolsDoesNotForwardStatus(t *testing.T) {
 	okReply := RPCResponse{Data: map[string]any{"okCount": float64(1), "failCount": float64(0)}}
-
-	t.Run("valid status reaches forwarded params", func(t *testing.T) {
-		s, captured := newBatchTestServerWithBackend(t, okReply)
-		res := callToolResult(t, s, "batch", map[string]any{
-			"ops":    []any{map[string]any{"type": "get_metadata"}},
-			"status": "reviewing",
-		})
-		if res.IsError {
-			t.Fatalf("batch with valid status errored: %s", resultText(t, res))
-		}
-		if captured.Params["status"] != "reviewing" {
-			t.Fatalf("forwarded params.status = %#v; want reviewing", captured.Params["status"])
-		}
+	s, captured := newBatchTestServerWithBackend(t, okReply)
+	res := callToolResult(t, s, "batch", map[string]any{
+		"ops":    []any{map[string]any{"type": "get_metadata"}},
+		"status": "reviewing",
 	})
-
-	t.Run("unknown status is dropped, handler still succeeds", func(t *testing.T) {
-		s, captured := newBatchTestServerWithBackend(t, okReply)
-		res := callToolResult(t, s, "batch", map[string]any{
-			"ops":    []any{map[string]any{"type": "get_metadata"}},
-			"status": "blocked",
-		})
-		if res.IsError {
-			t.Fatalf("unknown status should be dropped, not error: %s", resultText(t, res))
-		}
-		if _, present := captured.Params["status"]; present {
-			t.Fatalf("unknown status should not be forwarded, got %#v", captured.Params["status"])
-		}
-	})
+	if res.IsError {
+		t.Fatalf("batch with a status arg should still succeed: %s", resultText(t, res))
+	}
+	if _, present := captured.Params["status"]; present {
+		t.Fatalf("batch must not forward status (use set_presence), got %#v", captured.Params["status"])
+	}
 }
 
 // A read tool (get_metadata) must forward a valid `origin` into the params map
@@ -342,4 +310,52 @@ func TestRegisterBatchToolsForwardsValidOriginOnly(t *testing.T) {
 			t.Fatalf("unknown origin should not be forwarded, got %#v", captured.Params["origin"])
 		}
 	})
+}
+
+// ── task (presence: sticky one-sentence narration) ────────────────────────────
+
+func TestPickTask(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    map[string]interface{}
+		wantVal string
+		wantOK  bool
+	}{
+		{"simple sentence", map[string]interface{}{"task": "build the dashboard sidebar"}, "build the dashboard sidebar", true},
+		{"trims surrounding whitespace", map[string]interface{}{"task": "  build sidebar  "}, "build sidebar", true},
+		{"empty dropped", map[string]interface{}{"task": ""}, "", false},
+		{"whitespace-only dropped", map[string]interface{}{"task": "   "}, "", false},
+		{"missing key dropped", map[string]interface{}{}, "", false},
+		{"non-string dropped", map[string]interface{}{"task": 7}, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := pickTask(tc.args)
+			if got != tc.wantVal || ok != tc.wantOK {
+				t.Fatalf("pickTask(%v) = (%q, %v); want (%q, %v)", tc.args, got, ok, tc.wantVal, tc.wantOK)
+			}
+		})
+	}
+}
+
+// Internal whitespace (newlines, tabs, runs of spaces) is collapsed to single spaces
+// so a multi-line task can't break the single-line Watch-agent row layout.
+func TestPickTask_CollapsesInternalWhitespace(t *testing.T) {
+	got, ok := pickTask(map[string]interface{}{"task": "build the\n\tsidebar   now"})
+	if !ok || got != "build the sidebar now" {
+		t.Fatalf("internal whitespace must collapse to single spaces, got %q (ok=%v)", got, ok)
+	}
+}
+
+// An over-long task is truncated to maxTaskLen RUNES (not bytes — Unicode-safe for
+// Korean) rather than rejected, so a verbose agent still gets a (clipped) label.
+func TestPickTask_TruncatesToRuneCap(t *testing.T) {
+	long := strings.Repeat("가", maxTaskLen+50) // multi-byte runes
+	got, ok := pickTask(map[string]interface{}{"task": long})
+	if !ok {
+		t.Fatal("over-length task must still be accepted (truncated), got ok=false")
+	}
+	if n := len([]rune(got)); n != maxTaskLen {
+		t.Fatalf("task must truncate to %d runes, got %d", maxTaskLen, n)
+	}
 }

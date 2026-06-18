@@ -1,8 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { nextReconnectDelay } from "../status";
-  import { metaFor, initialOf } from "../presence-roster";
-  import { PRESENCE_ACTIVE_WINDOW_MS, type AgentActivity } from "../presence";
+  import { metaFor, initialOf, avatarFor } from "../presence-roster";
+  import {
+    PRESENCE_ACTIVE_WINDOW_MS,
+    presenceKey,
+    sessionAccents,
+    type AgentActivity,
+  } from "../presence";
   import Typewriter from "./Typewriter.svelte";
 
   // Map a status to one of FOUR semantic colour GROUPS so colour actually carries
@@ -62,16 +67,26 @@
   let agents: AgentActivity[] = [];
   let now = Date.now();
   let avatarFailed = new Set<string>();
-  // Origin the viewport is currently following (camera tracks its ops), or null.
-  let followOrigin: string | null = null;
+  // Composite key (sessionId|origin) of the agent the viewport follows, or null.
+  let followKey: string | null = null;
 
-  // ── Followed agent pinned to the TOP. Guard undefined: the followed origin may
+  // akey is the identity a presence row is grouped by — (sessionId, origin). ALL
+  // per-agent UI state (follow, pulse, join, avatar-failed) keys by this, never by
+  // origin alone, so two same-name agents from different sessions don't share state.
+  const akey = (a: AgentActivity): string => presenceKey(a.sessionId, a.origin);
+
+  // ── Followed agent pinned to the TOP. Guard undefined: the followed agent may
   // not yet have a row (e.g. follow set before its first op). Pulse stays on the
   // RAW agents array so it fires on whoever just acted, not the pinned row.
   $: orderedAgents = (() => {
-    const f = agents.find((a) => a.origin === followOrigin);
+    const f = agents.find((a) => akey(a) === followKey);
     return f ? [f, ...agents.filter((a) => a !== f)] : agents;
   })();
+
+  // Per-session accent hue (only when ≥2 sessions are present) so two agents that
+  // share a roster name but come from different orchestrators read as distinct —
+  // alongside their per-(sessionId,origin) avatar. Names stay truthful (metaFor).
+  $: sessionAccentMap = sessionAccents(orderedAgents.map((a) => a.sessionId));
 
   // ── Join entrance: origins not yet `seen` get a one-shot entrance animation.
   // `seen` resets when Watch is toggled off so re-enabling re-animates the joins.
@@ -79,28 +94,28 @@
   let joining = new Set<string>();
   const joinTimers = new Map<string, ReturnType<typeof setTimeout>>();
   function markJoins(list: AgentActivity[]) {
-    const fresh = list.map((a) => a.origin).filter((o) => !seen.has(o));
+    const fresh = list.map(akey).filter((k) => !seen.has(k));
     if (fresh.length) {
       const nextJoining = new Set(joining);
-      for (const o of fresh) {
-        nextJoining.add(o);
-        const prev = joinTimers.get(o);
+      for (const k of fresh) {
+        nextJoining.add(k);
+        const prev = joinTimers.get(k);
         if (prev) clearTimeout(prev);
         joinTimers.set(
-          o,
+          k,
           setTimeout(() => {
-            joining = new Set([...joining].filter((x) => x !== o));
-            joinTimers.delete(o);
+            joining = new Set([...joining].filter((x) => x !== k));
+            joinTimers.delete(k);
           }, 450),
         );
       }
       joining = nextJoining;
     }
-    // `seen` tracks origins CURRENTLY present. An agent that decayed/was pruned out
-    // of the roster drops from `seen`, so if it returns later it counts as fresh and
-    // re-animates (a genuine re-join) — while a still-shown away agent that merely
-    // wakes stays in `seen` and does NOT re-animate.
-    seen = new Set(list.map((a) => a.origin));
+    // `seen` tracks the (sessionId,origin) keys CURRENTLY present. An agent that
+    // decayed/was pruned out of the roster drops from `seen`, so if it returns later
+    // it counts as fresh and re-animates (a genuine re-join) — while a still-shown
+    // away agent that merely wakes stays in `seen` and does NOT re-animate.
+    seen = new Set(list.map(akey));
   }
 
   // Re-derive activity against the live clock so dimming tracks real time.
@@ -141,21 +156,21 @@
   // presence_update pulses that row in the agent's colour. No core change needed.
   let pulse = new Set<string>();
   const pulseTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  // Last lastTs we saw per origin — so a pulse fires only when activity genuinely
-  // advances, not on the periodic decay sweep's re-emit (which keeps timestamps).
-  let lastTsByOrigin = new Map<string, number>();
-  function triggerPulse(origin: string) {
+  // Last lastTs we saw per (sessionId,origin) key — so a pulse fires only when
+  // activity genuinely advances, not on the periodic decay sweep's re-emit.
+  let lastTsByKey = new Map<string, number>();
+  function triggerPulse(key: string) {
     // Drop then re-add next frame so the CSS animation restarts on rapid repeats.
-    pulse = new Set([...pulse].filter((o) => o !== origin));
+    pulse = new Set([...pulse].filter((k) => k !== key));
     requestAnimationFrame(() => {
-      pulse = new Set(pulse).add(origin);
-      const prev = pulseTimers.get(origin);
+      pulse = new Set(pulse).add(key);
+      const prev = pulseTimers.get(key);
       if (prev) clearTimeout(prev);
       pulseTimers.set(
-        origin,
+        key,
         setTimeout(() => {
-          pulse = new Set([...pulse].filter((o) => o !== origin));
-          pulseTimers.delete(origin);
+          pulse = new Set([...pulse].filter((k) => k !== key));
+          pulseTimers.delete(key);
         }, 650),
       );
     });
@@ -163,13 +178,14 @@
 
   // Clicking a row toggles "follow" — the viewport then tracks that agent's ops
   // until it's clicked again (or another agent is followed). The core echoes the
-  // resulting state back via follow_state.
-  function toggleFollow(origin: string) {
-    postToPlugin({ type: "set_follow", origin });
+  // resulting state back via follow_state. Carry sessionId so the followed identity
+  // is the (sessionId, origin) pair, not just a (possibly shared) roster name.
+  function toggleFollow(a: AgentActivity) {
+    postToPlugin({ type: "set_follow", origin: a.origin, sessionId: a.sessionId });
   }
 
-  function markAvatarFailed(origin: string) {
-    avatarFailed = new Set(avatarFailed).add(origin); // new ref → Svelte reactivity
+  function markAvatarFailed(key: string) {
+    avatarFailed = new Set(avatarFailed).add(key); // new ref → Svelte reactivity
   }
 
   function relTime(ts: number, ref: number): string {
@@ -193,11 +209,12 @@
     postToPlugin({ type: "set_presence", enabled: watchAgent });
     if (!watchAgent) {
       agents = []; // clear immediately; core also resets its log
-      followOrigin = null;
+      followKey = null;
       pulse = new Set();
       seen = new Set(); // re-enabling should re-animate joins
       joining = new Set();
-      lastTsByOrigin = new Map();
+      lastTsByKey = new Map();
+      avatarFailed = new Set(); // forget 404s so a recovered avatar re-renders
     }
     // The content-fit reactive resizes the window once the section mounts/unmounts.
   }
@@ -325,16 +342,16 @@
       // it no longer makes the most-recent row flash while nothing is happening.
       // Queued rows are synthetic (lastTs = now each emit) → excluded explicitly.
       for (const a of agents) {
-        if (a.status !== "queued" && a.lastTs > (lastTsByOrigin.get(a.origin) ?? 0)) {
-          triggerPulse(a.origin);
+        if (a.status !== "queued" && a.lastTs > (lastTsByKey.get(akey(a)) ?? 0)) {
+          triggerPulse(akey(a));
         }
       }
-      lastTsByOrigin = new Map(agents.map((a) => [a.origin, a.lastTs]));
+      lastTsByKey = new Map(agents.map((a) => [akey(a), a.lastTs]));
       return;
     }
 
     if (msg.type === "follow_state") {
-      followOrigin = typeof msg.origin === "string" ? msg.origin : null;
+      followKey = typeof msg.key === "string" ? msg.key : null;
       return;
     }
 
@@ -485,35 +502,38 @@
           <div class="presence-empty"><span class="eyes">👀</span> waiting for an agent…</div>
         {:else}
           <div class="presence-list" style="max-height:{LIST_MAX_H}px">
-            {#each orderedAgents as a (a.origin)}
+            {#each orderedAgents as a (akey(a))}
               {@const meta = metaFor(a.origin)}
-              {@const following = a.origin === followOrigin}
+              {@const following = akey(a) === followKey}
               {@const active = isActive(a.lastTs, now)}
+              {@const hue = sessionAccentMap.get(a.sessionId)}
               <button
                 class="agent-row"
                 class:idle={!active}
                 class:following
-                class:pulse={pulse.has(a.origin)}
-                class:joining={joining.has(a.origin)}
-                style="--c:{meta.color}"
-                on:click={() => toggleFollow(a.origin)}
+                class:session-accented={hue != null}
+                class:pulse={pulse.has(akey(a))}
+                class:joining={joining.has(akey(a))}
+                style="--c:{meta.color}{hue != null ? `; --sc:hsl(${hue} 70% 55%)` : ''}"
+                on:click={() => toggleFollow(a)}
                 title={following ? `Following ${meta.name} — click to stop` : `Follow ${meta.name}'s edits`}
               >
                 <span class="avatar-wrap" class:crowned={meta.crown}>
-                  {#if avatarFailed.has(a.origin)}
+                  {#if avatarFailed.has(akey(a))}
                     <span class="avatar avatar-mono">{initialOf(a.origin)}</span>
                   {:else}
                     <img
                       class="avatar"
-                      src={meta.avatar}
+                      src={avatarFor(a.sessionId, a.origin)}
                       alt={meta.name}
-                      on:error={() => markAvatarFailed(a.origin)}
+                      on:error={() => markAvatarFailed(akey(a))}
                     />
                   {/if}
                   {#if meta.crown}<span class="crown" title="Orchestrator">👑</span>{/if}
                 </span>
                 <span class="agent-text">
                   <span class="agent-name">{meta.name}</span>
+                  {#if a.task}<span class="agent-task" title={a.task}>{a.task}</span>{/if}
                   <span class="agent-action"><Typewriter text={a.label} /> <span class="agent-time">· {relTime(a.lastTs, now)}</span></span>
                 </span>
                 <span class="agent-status">
@@ -853,6 +873,13 @@
     transition: background 0.15s, border-color 0.15s, opacity 0.25s, box-shadow 0.15s;
   }
 
+  /* Per-session accent: a coloured left edge so two agents sharing a roster name but
+     from different sessions read as distinct (only applied when ≥2 sessions). */
+  .agent-row.session-accented {
+    border-left: 3px solid var(--sc);
+    padding-left: 5px;
+  }
+
   .agent-row:hover { background: #f3f3f3; border-color: #e2e2e2; }
   .agent-row.idle { opacity: 0.45; }
 
@@ -934,6 +961,16 @@
     font-size: 12px;
     font-weight: 600;
     color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Sticky task narration — the MAIN content line (what the agent is working on),
+     more prominent than the auto activity line below it. Truncates on overflow. */
+  .agent-task {
+    font-size: 11px;
+    color: #555;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
