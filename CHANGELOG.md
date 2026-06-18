@@ -15,6 +15,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
   (browser WS client) and follower (Go `http.Client`) both auto-negotiate and transparently
   decompress — no client-side change. base64 image payloads compress only ~1.3× (already-compressed),
   so this is primarily a JSON-read win.
+- **Plugin bundle minified for consumers, readable for developers.** `vite.config.main.ts` now
+  gates minification on build mode: the default `vite build` (and the release CI artifact) produces a
+  minified `code.js` (190KB → ~102KB, ~46% smaller), while the `dev` watch builds with
+  `--mode development` (unminified + sourcemap) so plugin-logic stack traces stay readable. No
+  behavior change — only bundle size.
 
 ### Fixed
 
