@@ -6,9 +6,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-06-18
+
 ### Added
 
 - **Marquee scroll for long task text.** `agent-task` lines in the Watch-agent panel now scroll horizontally in a seamless loop instead of truncating. Falls back to ellipsis when `prefers-reduced-motion` is set.
+- **`set_presence` task `maxLength: 80` in schema.** LLMs now see the 80-char cap directly in the tool schema, not just via server-side truncation.
 
 ### Changed
 
