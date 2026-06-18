@@ -28,6 +28,7 @@ func RegisterTools(s *server.MCPServer, node *Node) {
 	registerChannelTools(s, node)
 	registerBatchTools(s, node)
 	registerBatchCatalogTools(s)
+	registerPresenceTools(s, node)
 	// Snapshot every tool's declared param keys so the schema-derived unknown-param
 	// allowlist (registeredParamKeys) is available to ValidateRPC + the batch loop.
 	recordToolParamKeys(s)
@@ -174,6 +175,47 @@ func pickStatus(args map[string]interface{}) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// maxTaskLen caps the sticky task sentence in RUNES (Unicode-safe for Korean) so a
+// verbose agent can never push an unbounded string into the presence panel.
+const maxTaskLen = 80
+
+// taskParam is the optional one-sentence task narration exposed ONLY on the dedicated
+// set_presence tool (presence is one consistent path — operational tools carry only
+// `origin`). Unlike origin/status it is FREE-FORM (no enum) — the agent's own
+// description of what it is working on, shown as the main line of its Watch-agent row.
+// Sticky: the plugin remembers the last value per (sessionId, origin).
+func taskParam() mcp.ToolOption {
+	return mcp.WithString("task",
+		mcp.Description("Optional one-sentence description of what you are working on (e.g. 'redesigning the dashboard sidebar'). Sticky — the plugin remembers it; resend only when it changes. Shown as the main line of your Watch-agent row."),
+	)
+}
+
+// pickTask returns the request's `task` arg, trimmed and capped to maxTaskLen runes.
+// Empty/whitespace-only/non-string values are dropped. Free-form (no roster enum):
+// unlike origin/status it is the agent's own prose, sanitised only for length.
+func pickTask(args map[string]interface{}) (string, bool) {
+	t, _ := args["task"].(string)
+	// Collapse ALL whitespace runs (incl. newlines/tabs) to single spaces — also trims
+	// the ends — so a multi-line task can't break the single-line presence row.
+	t = strings.Join(strings.Fields(t), " ")
+	if t == "" {
+		return "", false
+	}
+	if r := []rune(t); len(r) > maxTaskLen {
+		t = string(r[:maxTaskLen])
+	}
+	return t, true
+}
+
+// applyTask folds the optional presence `task` arg into the plugin params (only when
+// non-empty after sanitising). Shape-mirrors applyOrigin, but is wired only on
+// set_presence (not on operational tools).
+func applyTask(req mcp.CallToolRequest, params map[string]interface{}) {
+	if task, ok := pickTask(req.GetArguments()); ok {
+		params["task"] = task
+	}
 }
 
 // applyOrigin folds the optional presence `origin` arg into the plugin params

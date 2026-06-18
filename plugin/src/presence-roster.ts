@@ -47,6 +47,15 @@ export function metaFor(origin: string): AgentMeta {
   return ROSTER[origin] ?? { ...GENERIC, name: origin || "Agent" };
 }
 
+// avatarFor seeds the face by (sessionId, origin) so the SAME truthful roster name
+// in two different sessions renders a distinct — but stable — face. This is a pure
+// visual "these are different agents" signal; the displayed NAME stays truthful
+// (metaFor), so it never mismatches the orchestrator's logs. With no sessionId
+// (old-server / single default bucket) the canonical per-name face is kept.
+export function avatarFor(sessionId: string, origin: string): string {
+  return sessionId ? seedAvatar(`${sessionId}:${origin}`) : metaFor(origin).avatar;
+}
+
 // initialOf is the monogram shown when the avatar image cannot load.
 export function initialOf(origin: string): string {
   return (metaFor(origin).name[0] ?? "?").toUpperCase();

@@ -515,3 +515,53 @@ func waitWaiters(t *testing.T, b *Bridge, channel string, want int64) {
 	}
 	t.Fatalf("expected >= %d waiters on channel %s", want, channel)
 }
+
+// TestReadCacheKey_ExcludesPresenceParams locks the cache-first invariant against
+// the presence params: two agents in two sessions reading the SAME node must
+// produce the SAME read key so singleflight/readcache still coalesce the duplicate
+// live plugin call. origin/status/sessionId/task are presence-only — they never
+// change the read RESULT — so they must be stripped from the key. A genuine param
+// (depth) must still split the key.
+func TestReadCacheKey_ExcludesPresenceParams(t *testing.T) {
+	keyA, okA := readCacheKey("chA", "get_node", []string{"1:1"}, map[string]interface{}{
+		"origin": "grace", "sessionId": "sessA", "status": "thinking", "task": "build sidebar",
+	})
+	keyB, okB := readCacheKey("chA", "get_node", []string{"1:1"}, map[string]interface{}{
+		"origin": "theo", "sessionId": "sessB", "status": "reviewing", "task": "fix table",
+	})
+	if !okA || !okB {
+		t.Fatalf("get_node must be cacheable (okA=%v okB=%v)", okA, okB)
+	}
+	if keyA != keyB {
+		t.Errorf("presence params must not split the read key:\n  A=%q\n  B=%q", keyA, keyB)
+	}
+
+	keyDepth, _ := readCacheKey("chA", "get_node", []string{"1:1"}, map[string]interface{}{
+		"origin": "grace", "sessionId": "sessA", "depth": float64(2),
+	})
+	if keyDepth == keyA {
+		t.Error("a real functional param (depth) must still change the read key")
+	}
+}
+
+// set_presence records presence on the plugin but performs NO Figma mutation, so it
+// must NOT invalidate the channel read-cache. Otherwise the orchestrator calling it
+// per-agent at dispatch would repeatedly flush the cross-agent read cache that the
+// cache-first discipline depends on.
+func TestBridge_SetPresenceDoesNotInvalidateCache(t *testing.T) {
+	b, plugin := setupBridgeChannel(t, "fileA")
+	ctx := context.Background()
+	ch := map[string]interface{}{"channel": "fileA"}
+
+	mustSend(t, b, ctx, "get_node", []string{"1:1"}, cloneParams(ch)) // hit #1 (live), caches
+	// No `origin` here on purpose: it would trigger async presence_queue broadcasts the
+	// counting plugin also tallies, confounding the cache-invalidation hit count.
+	mustSend(t, b, ctx, "set_presence", nil, map[string]interface{}{
+		"channel": "fileA", "task": "x",
+	}) // hit #2 (live) — must NOT invalidate
+	mustSend(t, b, ctx, "get_node", []string{"1:1"}, cloneParams(ch)) // must be a CACHE HIT
+
+	if got := plugin.hits.Load(); got != 2 {
+		t.Errorf("set_presence must not invalidate cache: expected 2 plugin hits (read + set_presence; re-read cached), got %d", got)
+	}
+}

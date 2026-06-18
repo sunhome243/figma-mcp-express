@@ -6,9 +6,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-agent presence — per-session identity (`sessionId`) so two orchestrators never clobber.** The leader is shared across all Claude sessions (first process binds the port; the rest proxy over `/rpc`), and the panel keyed presence by `origin` alone — so two uncoordinated orchestrators that both dispatch a "grace" collapsed onto one row and overwrote each other. Each process now mints a random `sessionId` at startup (`internal/node.go`) and stamps it into params on every `Send` (it rides the existing params map through `/rpc` to the leader and on to the plugin — no `RPCRequest` contract change). The plugin keys presence by **`(sessionId, origin)`**, so the same roster name from two sessions is two distinct rows that never clobber. Identity is the pair; the displayed NAME stays truthful (no rename), and same-name agents are told apart visually by a per-`(sessionId, origin)` **avatar** (the face is seeded by the pair — distinct but stable) plus a per-session **accent colour** (an evenly-spaced hue per distinct session, shown only when ≥2 sessions are present). Fully automatic — zero LLM burden. Graceful degradation: an absent `sessionId` (older server) folds into one default bucket = today's origin-only behaviour. Excluded from read cache / singleflight keys (`hashReadKey`) so cross-session reads of the same node still coalesce.
+- **`set_presence` tool — the dedicated presence path.** Manual workflow `status` and a new one-sentence `task` narration now flow through a single `set_presence` tool instead of being piggybacked on operational tools. `set_presence` performs NO Figma mutation — it records `(sessionId, origin, status, task)` for the Watch-agent panel and returns `{ok}`; the plugin special-cases it so `opStatus` never auto-flavors it as "Building…". `task` is a free-form, length-capped (≤80 runes, Unicode-safe), **sticky** sentence: the plugin remembers the last value per `(sessionId, origin)`, so an agent sends it once and it persists. Shown as the MAIN line of the agent's row (what it's working on), above the auto activity line. Reliability by design: `origin` stays required on every operational tool (per-call attribution), the orchestrator stamps each agent's `task` once at dispatch (single instructable caller), and manual `status` degrades to auto-status if a worker never sets it. In the core tool profile + `glama.json`.
+
 ### Changed
 
 - **Codex plugin marketplace install.** Added the Codex marketplace catalog and plugin wrapper so `codex plugin marketplace add sunhome243/figma-mcp-express` exposes `figma-mcp-express` as an installable plugin; corrected Codex docs to use `codex plugin add` and documented `codex plugin marketplace upgrade` for stale snapshots.
+- **Manual `status` moved off `batch` → `set_presence`.** Presence is now one consistent path: operational tools (incl. `batch`) carry only the required `origin`; manual workflow `status` and `task` go through `set_presence`. This removes the "status only on `batch`" asymmetry. A stray `status` on `batch` is stripped on both the leader and follower paths so they agree. `status` degrades gracefully to auto-status, so a not-yet-migrated caller loses nothing critical.
+
+### Fixed
+
+- **"queued" presence stuck indefinitely after the op ran (plugin-side clear).** The server's clear-queue broadcast is best-effort and `TryLock`-dropped when the acquiring op's own write holds the socket (the common case); if that was the last op, no later broadcast re-fired, so the row stayed "queued" forever (masked while active, re-asserted after decay). The plugin now clears an agent from the server-reported queue **locally** the moment that agent's op records activity — an op that produced activity is by definition no longer waiting — independent of the droppable frame.
 
 ## [2.4.0] — 2026-06-18
 

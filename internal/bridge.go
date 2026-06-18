@@ -568,6 +568,14 @@ func (b *Bridge) Send(ctx context.Context, requestType string, nodeIDs []string,
 	//     that gen. The POST bump advances the gen again so that entry misses on the
 	//     next Get (and clears it outright). Without the POST bump, that stale entry
 	//     would survive (its gen still matched) and cross the mutation = a bug.
+	// set_presence reaches the plugin (to record presence) but performs NO Figma
+	// mutation, so it must neither invalidate the read cache (it would needlessly flush
+	// the cross-agent cache — the orchestrator calls it per agent) nor be cached (no
+	// cacheable result). Send it straight through the serial slot.
+	if requestType == "set_presence" {
+		return b.sendOnce(ctx, channel, requestType, nodeIDs, params)
+	}
+
 	if !isReadOnly(requestType) {
 		if cacheOK {
 			b.readCache.InvalidateChannel(cacheChannel)
@@ -893,19 +901,41 @@ func isCacheable(requestType string) bool {
 // json.Marshal sorts map keys recursively, so the key is deterministic for equal
 // (nodeIDs, params). This is the shared core used by both flightKey (singleflight)
 // and readCacheKey (read cache) so the key format has one definition.
+// isPresenceParam reports whether a param key is presence metadata (identity /
+// status narration) that rides params for the plugin's Watch-agent panel but never
+// affects a read RESULT — so it must be stripped from read keys (see hashReadKey).
+func isPresenceParam(k string) bool {
+	switch k {
+	case "origin", "status", "sessionId", "task":
+		return true
+	}
+	return false
+}
+
+// hasPresenceParam reports whether any presence param is present, so hashReadKey
+// only allocates a filtered copy when there is something to strip.
+func hasPresenceParam(params map[string]interface{}) bool {
+	for k := range params {
+		if isPresenceParam(k) {
+			return true
+		}
+	}
+	return false
+}
+
 func hashReadKey(channel, requestType string, nodeIDs []string, params map[string]interface{}) (string, bool) {
-	// Presence-only params (origin/status) do NOT change the read RESULT, so they
-	// must be excluded from the key — otherwise two agents reading the same node
-	// under different origins would split the read cache / singleflight and each
+	// Presence-only params (origin/status/sessionId/task) do NOT change the read
+	// RESULT, so they must be excluded from the key — otherwise two agents (or two
+	// sessions) reading the same node would split the read cache / singleflight and each
 	// pay a separate serial plugin round-trip, defeating cross-agent coalescing
 	// (the cache-first discipline). Trade-off: a cache HIT / singleflight FOLLOWER
 	// never reaches the plugin, so the SERVED agent's "scanning" status won't fire
 	// for that read — acceptable (reads are the noisiest, least-important status).
 	keyParams := params
-	if _, hasOrigin := params["origin"]; hasOrigin {
+	if hasPresenceParam(params) {
 		keyParams = make(map[string]interface{}, len(params))
 		for k, v := range params {
-			if k == "origin" || k == "status" {
+			if isPresenceParam(k) {
 				continue
 			}
 			keyParams[k] = v

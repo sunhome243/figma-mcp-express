@@ -157,7 +157,8 @@ Do NOT use git stash, git reset --hard, git checkout --, or git clean.
 channel: "auto-N"  ← pass this on every tool call.
 origin: "<rosterName>"  ← pass this on every batch AND read call so the plugin's
                           Watch-agent panel attributes your edits/reads.
-                          (`status` is set by the orchestrator, not per-builder — see § 7.)
+                          (manual `status` + `task` go via the set_presence tool, set
+                          by the orchestrator at dispatch — not per-builder — see § 7.)
 
 Shared resources already created by coordinator:
   wrapperId = <id>
@@ -176,8 +177,10 @@ published/production server (`npx figma-mcp-express`, port 1994) and the plugin.
 
 > **Give every agent a name.** When you dispatch an agent to use these tools, assign it
 > one roster `origin` (the enum lists them) and pass it on every call — `origin` is
-> required so the Watch-agent panel attributes the work to a named agent. `status`
-> (optional) is the agent's current workflow state.
+> required so the Watch-agent panel attributes the work to a named agent. Its manual
+> workflow `status` and one-sentence `task` are set separately via the **`set_presence`**
+> tool (typically by the orchestrator at dispatch — see below); two orchestrators can
+> reuse the same roster names without colliding (per-session `sessionId`, automatic).
 
 ### Why a label, not auto-detection
 
@@ -227,7 +230,7 @@ Each row also shows *what* the agent is doing. Statuses come from two tiers:
 |---|---|---|---|
 | **Auto** | **0 LLM tokens** | `building` (Building…/Styling…/Moving…/Resizing…/Removing…), `importing` (⤵ Importing…), `screenshotting` (📸 Capturing…), `scanning` (🔍 Looking around…), `theming` (🎨 Theming…), `error`, `idle` (30–60 s), `away` (>60 s), `joined` (entrance anim) | Plugin/server derive it from the op the agent already sends — no extra call. `building`/`importing`/`theming` from write op type, `screenshotting` from `save_screenshots`, `scanning` from any `get_`/`scan_`/`search_`/`list_`/`fetch_` read. |
 | **Auto (server)** | **0 LLM tokens** | `queued` (Queued · #N) | The **server** pushes the per-channel serial-slot waiting list to the plugin as an unsolicited `presence_queue` WS frame. The agent is by definition not yet running, so only the server (which owns the FIFO) can report it. |
-| **LLM-set** | tiny | `thinking`, `waiting_review`, `reviewing`, `approved` (reviewer PASS), `escalated` (asset missing → STOP), `done` | The orchestrator/reviewer pings at **workflow transitions only**, never per op (see heartbeat below). |
+| **LLM-set** | tiny | `thinking`, `waiting_review`, `reviewing`, `approved` (reviewer PASS), `escalated` (asset missing → STOP), `done` | The orchestrator/reviewer calls **`set_presence`** at **workflow transitions only**, never per op (see below). |
 
 Auto statuses decay on a timer: active (≤30 s) → `idle` (30–60 s) → `away` (>60 s) →
 auto-removed (>150 s quiet). LLM-set statuses are **sticky** — no TTL, never auto-removed
@@ -237,30 +240,57 @@ auto-removed (>150 s quiet). LLM-set statuses are **sticky** — no TTL, never a
 
 A `queued` or `waiting_review` agent **cannot self-report** — it's blocked in the
 serial slot or has already returned its result to the orchestrator. So the LLM-set
-transitions are stamped **by the orchestrator on behalf of a named `origin`**, not by
-the agent itself. The orchestrator knows the workflow shape (who's thinking, who's up
-for review, who passed), so it owns those pings. Per-op auto statuses still come from
-the acting agent's own calls.
+transitions are stamped via `set_presence` **by the orchestrator on behalf of a named
+`origin`**, not by the agent itself. The orchestrator knows the workflow shape (who's
+thinking, who's up for review, who passed), so it owns those pings — and likewise
+stamps each agent's `task` at dispatch. Per-op auto statuses still come from the acting
+agent's own operational calls (which carry `origin`).
 
-### Status-only pings — ride a real lightweight READ op (NOT `validateOnly`)
+### Status + task pings — use the dedicated `set_presence` tool
 
-To announce a transition **without mutating the canvas**, stamp `{origin, status}` on
-a **real, read-only** op that reaches the plugin — a scoped `get_node` (`depth:0`) on a
-node the agent owns is ideal — e.g.
-`batch(origin:"theo", status:"reviewing", ops:[{type:"get_node", nodeIds:["1:23"], params:{depth:0}}])`.
+To announce a workflow transition or declare an agent's task **without mutating the
+canvas**, call **`set_presence`** — the dedicated presence tool. It performs no Figma
+op; it records `{origin, status, task}` for the panel and returns `{ok}`:
 
-> ⚠️ **Do NOT use `validateOnly:true` for status pings.** `validateOnly` is resolved
-> entirely **server-side** ("no plugin call was made") — it never forwards `{origin,
-> status}` to the plugin, so the presence panel never updates. The op must actually
-> reach the plugin. A read op mutates nothing, and the plugin treats an explicit
-> `status` as status-only (it ignores the carrier op's returned node ids, so the ping
-> never hijacks the selection or triggers a highlight).
+```
+set_presence(origin:"theo", status:"reviewing")                       ← phase transition
+set_presence(origin:"grace", task:"redesigning the dashboard sidebar") ← declare task
+set_presence(origin:"grace", task:"...", status:"thinking")            ← both at once
+```
 
-Use this for `thinking`, `waiting_review`, `reviewing`, `approved`, `escalated`, `done`.
+Use it for the manual statuses (`thinking`, `waiting_review`, `reviewing`, `approved`,
+`escalated`, `done`) and for `task`. `set_presence` is special-cased in the plugin so it
+never auto-flavors as "Building…" and never touches the selection/highlight.
+
+> **History (why this changed):** earlier versions piggybacked `{origin, status}` on a
+> real read op (and warned against `validateOnly`, which is resolved server-side and
+> never reaches the plugin). That's superseded — `set_presence` is the one explicit
+> presence path. Manual `status` is **no longer accepted on `batch`**; send it via
+> `set_presence`. Operational tools (incl. `batch`) carry only the required `origin`.
+
+### `task` — the agent's one-sentence narration
+
+`task` is a free-form, sticky one-sentence description of what the agent is working on
+("redesigning the dashboard sidebar"). The plugin remembers the last value per agent, so
+send it **once at dispatch** and it persists — it shows as the MAIN line of the agent's
+row, above the auto activity line. Reliability: have the **orchestrator** stamp each
+agent's `task` right after spawning it (the orchestrator knows the task and is a single,
+reliable caller); the worker need not call `set_presence` itself. An agent may re-send
+`task` to refine it as it moves through sub-steps (best-effort).
+
+### Two orchestrators on one file never collide (`sessionId`, automatic)
+
+The leader server is shared across all Claude sessions, so two uncoordinated
+orchestrators that both dispatch a "grace" would have collided on one panel row. The
+server now stamps a per-process `sessionId` automatically (zero LLM burden), and the
+plugin keys presence by **`(sessionId, origin)`** — same name from two sessions = two
+distinct rows that never clobber. The displayed NAME stays truthful; the two are told
+apart by a per-`(sessionId, origin)` avatar (distinct face) and a per-session accent
+colour (shown only when ≥2 sessions are live). You don't pass `sessionId` — it's
+injected for you. So you may freely reuse roster names across separate orchestrators.
 
 ### `origin` works on read tools too
 
-`origin` is no longer batch-only — the read tools (`get_`/`scan_`/`search_`/`list_`/
-`fetch_`) accept it as well, so an agent's reads are attributed (this is what powers
-the `scanning` auto status). Pass `origin` on reads the same way you pass it on `batch`.
-(Same version gate: 2.3.0+ server only.)
+`origin` is not batch-only — the read tools (`get_`/`scan_`/`search_`/`list_`/`fetch_`)
+accept it as well, so an agent's reads are attributed (this powers the `scanning` auto
+status). Pass `origin` on reads the same way you pass it on `batch`.

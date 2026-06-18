@@ -38,9 +38,9 @@ Read-tool choice, validation matrix, batch refs, import-key format, and gotchas 
 | Read-tool choice, detail levels, style audit, common errors | `references/tool-selection.md` |
 | Batch refs, projection, `map`, validation-first recipes, write-workflow recipes | `references/batch-recipes.md` |
 | Permanent Figma Plugin API constraints (instance children, clone IDs, auto-layout children, etc.) | `references/platform-constraints.md` |
-| Server bugs + workarounds with issue tracking (#33–#36, #27, #28) | `references/mcp-known-bugs.md` |
+| Server bugs + workarounds with issue tracking (#33, #34) | `references/mcp-known-bugs.md` |
 | Remaining failure modes: stale IDs, node format, spilled cache, text/font/image | `references/gotchas.md` |
-| Parallel agents and channel partitioning | `references/multi-agent.md` |
+| Parallel agents, channel partitioning, Watch-agent presence (`origin` + `set_presence` for status/task; per-session no-clobber) | `references/multi-agent.md` |
 | Parameterized generators (type scale, color palette, component variants, design tokens) | MCP prompts: `generate_type_scale`, `generate_color_palette`, `generate_component_variants`, `design_token_generation_strategy` — invoke via the MCP prompts list |
 
 Exact operation names and params live in `BatchOpCatalog`; never copy op schemas into skill docs. Use `get_batch_op_spec` for the current schema.

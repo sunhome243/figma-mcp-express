@@ -7,15 +7,15 @@ import { statusEquals, type PluginStatus } from "./status";
 import {
   activeAgents,
   collectAffectedNodeIds,
+  derivePresence,
   focusNodes,
   highlightNodes,
   highlightUnion,
   isExpired,
   isHighlightableRequest,
   mergeQueued,
-  opStatus,
+  presenceKey,
   scrollToNodes,
-  statusLabel,
   unionActiveNodeIds,
   type PresenceEvent,
 } from "./presence";
@@ -33,21 +33,23 @@ const channel = Math.random().toString(36).slice(2, 8);
 // Persisted per plugin id via clientStorage; hydrated on boot below.
 let presenceEnabled = false;
 
-// Multi-agent presence — the LATEST activity per origin (NOT an event log), keyed
-// by the `origin` each agent stamps on its calls: one row per agent, always current.
-// Drives the panel's per-agent list and the canvas union-highlight. An AUTO status
-// decays (active → idle → away) and is self-pruned once quiet past the remove window
-// (see the sweep below); sticky LLM-set statuses persist. Reset when presence is off.
-const presenceByOrigin = new Map<string, PresenceEvent>();
+// Multi-agent presence — the LATEST activity per agent (NOT an event log), keyed by
+// presenceKey(sessionId, origin) so the same roster name from two sessions stays two
+// rows: one row per agent, always current. Drives the panel's per-agent list and the
+// canvas union-highlight. An AUTO status decays (active → idle → away) and is
+// self-pruned once quiet past the remove window (see the sweep below); sticky LLM-set
+// statuses persist. Reset when presence is off.
+const presenceByKey = new Map<string, PresenceEvent>();
 
 // Server-reported queue — origins currently waiting in the server's per-channel
 // queue (forwarded from the server frame via a `presence_queue` UI message).
 // Folded into the roster by mergeQueued so waiting agents show as "Queued · #N".
 let queuedOrigins: string[] = [];
 
-// "Follow" mode — when set to an origin, the viewport tracks that agent's every
-// subsequent op (camera-only; the union selection is unchanged). null = no follow.
-let followOrigin: string | null = null;
+// "Follow" mode — the (sessionId, origin) composite key of the agent the viewport
+// tracks (camera-only; the union selection is unchanged). null = no follow. Keyed by
+// the composite, NOT origin, so following one "grace" doesn't track another session's.
+let followKey: string | null = null;
 
 // emitPresence posts the merged roster (decayed activity + server queue) to the
 // UI. The single place a `presence_update` is emitted from a live event.
@@ -58,7 +60,7 @@ const emitPresence = () => {
   try {
     const now = Date.now();
     const agents = mergeQueued(
-      activeAgents([...presenceByOrigin.values()], now),
+      activeAgents([...presenceByKey.values()], now),
       queuedOrigins,
       now,
     );
@@ -80,13 +82,13 @@ const startPresenceSweep = () => {
   presenceSweep = setInterval(() => {
     const now = Date.now();
     let changed = false;
-    for (const [origin, e] of presenceByOrigin) {
+    for (const [key, e] of presenceByKey) {
       if (isExpired(e.status, e.ts, now)) {
-        presenceByOrigin.delete(origin);
+        presenceByKey.delete(key);
         changed = true;
       }
     }
-    if (changed || presenceByOrigin.size > 0 || queuedOrigins.length > 0) emitPresence();
+    if (changed || presenceByKey.size > 0 || queuedOrigins.length > 0) emitPresence();
   }, PRESENCE_SWEEP_MS);
 };
 const stopPresenceSweep = () => {
@@ -133,6 +135,13 @@ const sendStatus = () => {
 
 const handleRequest = async (request: any) => {
   try {
+    // set_presence is a presence-only command — NO Figma mutation. The panel update
+    // (status/task) happens in the server-request presence block below; here we only
+    // acknowledge so the round-trip completes. Kept out of the read/write/batch chain
+    // so opStatus never auto-flavors it as "Building…".
+    if (request.type === "set_presence") {
+      return { type: "set_presence", requestId: request.requestId, data: { ok: true } };
+    }
     // Per-op perf toggle (global mutable Figma flag). Reset on EVERY request so a
     // prior op's `true` never leaks into a later op that omitted it (single-thread
     // + serial slot = no race). Omitted → false = current/non-breaking semantics.
@@ -217,11 +226,11 @@ figma.ui.onmessage = async (message) => {
     } else {
       // Turning it off clears the roster + follow so the panel resets immediately.
       stopPresenceSweep();
-      presenceByOrigin.clear();
+      presenceByKey.clear();
       queuedOrigins = [];
-      followOrigin = null;
+      followKey = null;
       figma.ui.postMessage({ type: "presence_update", agents: [] });
-      figma.ui.postMessage({ type: "follow_state", origin: null });
+      figma.ui.postMessage({ type: "follow_state", key: null });
     }
     return;
   }
@@ -233,9 +242,14 @@ figma.ui.onmessage = async (message) => {
     return;
   }
   if (message.type === "jump_to_agent") {
-    // Panel "jump" click: move the viewport to one agent's most recent nodes.
-    const agent = activeAgents([...presenceByOrigin.values()], Date.now()).find(
-      (a) => a.origin === message.origin,
+    // Panel "jump" click: move the viewport to one agent's most recent nodes. Match
+    // by the (sessionId, origin) composite so a shared roster name can't mis-target.
+    const target = presenceKey(
+      typeof message.sessionId === "string" ? message.sessionId : "",
+      typeof message.origin === "string" ? message.origin : "",
+    );
+    const agent = activeAgents([...presenceByKey.values()], Date.now()).find(
+      (a) => presenceKey(a.sessionId, a.origin) === target,
     );
     if (agent && agent.nodeIds.length) {
       try {
@@ -247,14 +261,18 @@ figma.ui.onmessage = async (message) => {
     return;
   }
   if (message.type === "set_follow") {
-    // Toggle "follow this agent": clicking the followed agent again clears it.
-    const target = typeof message.origin === "string" ? message.origin : null;
-    followOrigin = followOrigin === target ? null : target;
-    figma.ui.postMessage({ type: "follow_state", origin: followOrigin });
+    // Toggle "follow this agent": clicking the followed agent again clears it. Identity
+    // is the (sessionId, origin) composite key, so two same-name agents are distinct.
+    const target =
+      typeof message.origin === "string"
+        ? presenceKey(typeof message.sessionId === "string" ? message.sessionId : "", message.origin)
+        : null;
+    followKey = followKey === target ? null : target;
+    figma.ui.postMessage({ type: "follow_state", key: followKey });
     // Jump to the followed agent's latest work right away (select + scroll).
-    if (followOrigin) {
-      const agent = activeAgents([...presenceByOrigin.values()], Date.now()).find(
-        (a) => a.origin === followOrigin,
+    if (followKey) {
+      const agent = activeAgents([...presenceByKey.values()], Date.now()).find(
+        (a) => presenceKey(a.sessionId, a.origin) === followKey,
       );
       if (agent && agent.nodeIds.length) {
         try {
@@ -292,51 +310,83 @@ figma.ui.onmessage = async (message) => {
       const type = message.payload?.type;
       const params = message.payload?.params;
       const origin = typeof params?.origin === "string" ? params.origin : "";
+      // sessionId identifies the orchestrator process. Presence is keyed by
+      // (sessionId, origin) so the same roster name from two sessions never clobbers.
+      // Absent (old server) → "" → one shared default bucket (graceful degradation).
+      const sessionId = typeof params?.sessionId === "string" ? params.sessionId : "";
       const explicitStatus =
         typeof params?.status === "string" ? params.status : "";
-      // An explicit status ping is STATUS-ONLY: ignore any node ids its carrier op
-      // returned (e.g. a get_node heartbeat), so it carries forward the agent's prior
-      // nodeIds and never hijacks the selection / triggers a highlight.
+      const isPresencePing = type === "set_presence";
+      // task is the sticky one-sentence narration. Present this call → update it;
+      // absent → undefined, so we carry the prior value forward (sticky) below.
+      const task = typeof params?.task === "string" ? params.task : undefined;
+      // An explicit status ping (or set_presence) is STATUS-ONLY: ignore any node ids
+      // its carrier op returned, so it carries forward the agent's prior nodeIds and
+      // never hijacks the selection / triggers a highlight.
       const ids =
-        response.error || explicitStatus ? [] : collectAffectedNodeIds(response);
+        response.error || explicitStatus || isPresencePing
+          ? []
+          : collectAffectedNodeIds(response);
 
       if (origin) {
-        // Derive the status: explicit (LLM-set) wins, then error, else op-derived.
-        let status: string;
-        let label: string;
-        if (explicitStatus) {
-          status = explicitStatus;
-          label = statusLabel(status);
-        } else if (response.error) {
-          status = "error";
-          label = statusLabel("error");
-        } else {
-          status = opStatus(type);
-          label = statusLabel(status, { opType: type });
-        }
+        const key = presenceKey(sessionId, origin);
+        const prev = presenceByKey.get(key);
 
-        // Update this origin's single latest-activity entry. Carry forward the
-        // prior nodeIds on a status-only ping (empty ids) so jump/follow still works.
-        const prev = presenceByOrigin.get(origin);
+        // Status/label/task decision is the PURE, unit-tested derivePresence (see
+        // presence.test.ts). main.ts only does the I/O around it.
+        const { status, label, task: nextTask } = derivePresence(prev, {
+          type,
+          explicitStatus,
+          hasError: !!response.error,
+          isPresencePing,
+          task,
+        });
+
+        // Update this (sessionId, origin)'s single latest-activity entry. Carry
+        // forward the prior nodeIds on a status-only ping (empty ids) so jump/follow
+        // still works. NOTE: a task-only set_presence ping refreshes `ts`, which
+        // resets the auto-decay clock — intentional: an agent narrating its task is
+        // clearly still alive, so it should not decay to idle mid-narration.
         const nodeIds = ids.length ? ids : (prev?.nodeIds ?? []);
-        presenceByOrigin.set(origin, { origin, nodeIds, status, label, ts: Date.now() });
+        presenceByKey.set(key, {
+          origin,
+          sessionId,
+          nodeIds,
+          status,
+          label,
+          ts: Date.now(),
+          task: nextTask,
+        });
 
-        // Emit only on a MEANINGFUL change — a status transition, an explicit ping,
-        // or a mutating op. Repeated same-status reads (scanning) just refresh the
-        // entry; the periodic sweep re-emits so they don't flood the UI with updates.
+        // This op COMPLETED → the agent is no longer waiting on the serial slot, so
+        // clear it from the server-reported queue LOCALLY. The server's clear-broadcast
+        // is best-effort and TryLock-dropped when the op's own write holds the socket
+        // (the common case), and if this was the last op no later broadcast re-fires —
+        // which is exactly how a row gets stuck showing "queued" forever. Clearing on
+        // activity here is reliable and independent of that dropped frame.
+        const wasQueued = queuedOrigins.includes(origin);
+        if (wasQueued) queuedOrigins = queuedOrigins.filter((o) => o !== origin);
+
+        // Emit only on a MEANINGFUL change — a status transition, an explicit ping, a
+        // task change, a queue clear, or a mutating op. Repeated same-status reads
+        // (scanning) just refresh the entry; the periodic sweep re-emits so they don't
+        // flood the UI.
         const meaningful =
           !prev ||
           prev.status !== status ||
           !!explicitStatus ||
+          isPresencePing ||
+          wasQueued ||
+          (task !== undefined && task !== prev?.task) ||
           (ids.length > 0 && isHighlightableRequest(type));
         if (meaningful) emitPresence();
 
         // Highlight only for mutating ops that actually touched nodes.
         if (ids.length && isHighlightableRequest(type)) {
           try {
-            const agents = activeAgents([...presenceByOrigin.values()], Date.now());
+            const agents = activeAgents([...presenceByKey.values()], Date.now());
             await highlightUnion(unionActiveNodeIds(agents));
-            if (followOrigin && origin === followOrigin) await scrollToNodes(ids);
+            if (followKey && key === followKey) await scrollToNodes(ids);
           } catch (e) {
             console.warn("[presence] highlight failed:", e);
           }
