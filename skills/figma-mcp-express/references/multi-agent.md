@@ -14,7 +14,7 @@ Read `SKILL.md § Workflow 5` first; this document is the full spec it points to
 | **Cross-channel calls run in true parallel** | Each channel is its own `connEntry` with its own sem. No global lock. | Targeting a different Figma file = pass a different `channel: "auto-N"` = full parallelism, zero serialization. |
 | **Read singleflight + C4 read-cache (3 s TTL)** | Simultaneous identical reads collapse onto one plugin round-trip (singleflight). Near-simultaneous ones hit the in-process LRU cache (TTL default 3 s). Any write on a channel invalidates ALL cached reads for that channel immediately (generation bump + map clear). | Cache hits never touch the plugin — those reads are fully parallel. Write → instant cache purge → next read is live. |
 
-**Drop-on-disconnect.** When the WebSocket drops, all in-flight calls on that channel resolve immediately with `"connection closed: plugin disconnected"` (not a hang). The plugin auto-reconnects with exponential backoff.
+**Drop-on-disconnect.** When the WebSocket drops, all in-flight calls on that channel resolve immediately with `"connection closed: plugin disconnected"` (not a hang). The plugin auto-reconnects.
 
 ---
 
@@ -124,6 +124,7 @@ Pass `channel: "auto-N"` explicitly on every call. Missing `channel:` defaults t
 |---|---|---|
 | Call returns `"connection closed: plugin disconnected"` | WebSocket drop during in-flight call | Plugin auto-reconnects. For **reads**: retry freely (idempotent). For **writes**: call `get_node` first to verify whether the effect was applied, THEN retry if not — never blind-retry a non-idempotent write. |
 | Import (`import_component_by_key`) is slow; calls queue behind it | Malformed/truncated/node-id keys fail fast, but valid-looking unpublished/wrong-library keys or missing COMPONENT_SET type hints can still wait for the plugin import timeout | Don't loop-retry. Validate the key (`get_local_components`/`fetch_library_catalog`) before retrying, pass `assetType:"COMPONENT_SET"` for sets, or do other work (clone_node, set_text) meanwhile. Calls behind it complete once it clears. |
+| Call fast-rejected with `ErrImportInFlight` or `ErrChannelStalled` | Another op is wedged on that channel — a prior import still running (`ErrImportInFlight`), or any op stuck with no progress (`ErrChannelStalled`). Your call wasn't queued behind it. | Not your call's fault. Do OTHER work — a different `channel`, or non-conflicting ops — or retry after a short pause. Never tight-loop retry. The wedged op clears on its own; the channel frees once it does. |
 | Agent gets "node not found" mid-task | Another agent deleted the node, or ID was from a stale cache snapshot | Coordinator re-queries the live ID and re-dispatches. Scope partition prevents recurrence. |
 | Reads return stale data after an external Figma Desktop edit | 3 s TTL window on the read-cache | Wait up to 3 s, or issue any write on the channel (instant invalidation). For must-be-live reads, the staleness window is ≤ 3 s. |
 | Two agents create the same named frame | No coordinator-shared-once; both agents raced existence check | Design fix: coordinator creates the frame upfront, passes the ID to both agents. |
@@ -140,7 +141,7 @@ Pass `channel: "auto-N"` explicitly on every call. Missing `channel:` defaults t
 | Can agents issue concurrent live reads on DIFFERENT channels? | Yes — truly parallel. |
 | Should I verify-before-create on every call? | Only at shared-resource creation decisions where existence is ambiguous. Rare if the coordinator created shared resources upfront. |
 | Can I retry a write after a connection drop? | Only after verifying the write's effect was NOT applied (get_node first). Blind retry risks double-apply. |
-| Can I retry an import after "import in flight"? | No. Do non-import work until the thread clears. |
+| Can I retry after `ErrImportInFlight` / `ErrChannelStalled`? | No — an op is wedged on that channel. Do other work (or a different channel) until it clears; don't tight-loop. |
 
 ---
 
@@ -259,14 +260,8 @@ set_presence(origin:"grace", task:"...", status:"thinking")            ← both 
 ```
 
 Use it for the manual statuses (`thinking`, `waiting_review`, `reviewing`, `approved`,
-`escalated`, `done`) and for `task`. `set_presence` is special-cased in the plugin so it
-never auto-flavors as "Building…" and never touches the selection/highlight.
-
-> **History (why this changed):** earlier versions piggybacked `{origin, status}` on a
-> real read op (and warned against `validateOnly`, which is resolved server-side and
-> never reaches the plugin). That's superseded — `set_presence` is the one explicit
-> presence path. Manual `status` is **no longer accepted on `batch`**; send it via
-> `set_presence`. Operational tools (incl. `batch`) carry only the required `origin`.
+`escalated`, `done`) and for `task`. Manual `status` is **not accepted on `batch`** — send
+it via `set_presence`; operational tools (incl. `batch`) carry only the required `origin`.
 
 ### `task` — the agent's one-sentence narration
 
