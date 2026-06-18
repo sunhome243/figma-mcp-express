@@ -28,7 +28,7 @@ Load this before composing any `batch` call. Part 1 = ready-to-use recipes (incl
 >
 > **Node target = the op-level `nodeIds` field**, not a param: write `{ "type": "delete_nodes", "nodeIds": ["$0.id"] }`, not `{ …, "params": { "nodeIds": […] } }` — even though `get_batch_op_spec` lists `nodeIds` under `paramKeys` (a plural `params.nodeIds` is auto-hoisted, but op-level is canonical). The singular `nodeId` IS a real param for read/scan ops (`scan_nodes_by_types`, `get_design_context`) — there it's the subtree root, kept in `params`.
 >
-> `search_batch_ops` matches **all whitespace-separated tokens** (AND), so `"create frame"` / `"auto layout"` find `create_frame` / `set_auto_layout` — no need to guess the exact underscore name.
+> `search_batch_ops` matches intent words with AND semantics and normalizes common query mess: separators, camelCase, singular/plural, and filler words like `op`/`tool`. `"create frame"` / `"auto layout"` find `create_frame` / `set_auto_layout`; `"delete_node op"` finds `delete_nodes`; `"reorder tool"` finds `reorder_nodes`. Use the exact returned op name in the final batch.
 
 ---
 

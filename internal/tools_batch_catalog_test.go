@@ -158,7 +158,16 @@ func TestSearchBatchOps_MultiWordQueryMatches(t *testing.T) {
 	cases := []struct{ query, wantOp string }{
 		{"create frame", "create_frame"},
 		{"auto layout", "set_auto_layout"},
+		{"corn", "set_corner_radius"},
 		{"delete node", "delete_nodes"},
+		{"delete_node op", "delete_nodes"},
+		{"delete-node tool", "delete_nodes"},
+		{"reorder op", "reorder_nodes"},
+		{"bring forward tool", "reorder_nodes"},
+		// Search-only synonyms (batchOpSearchAliases) — the op name/description say
+		// "delete"/"clone", but a peer searching the common word still finds them.
+		{"remove node", "delete_nodes"},
+		{"duplicate", "clone_node"},
 	}
 	for _, tc := range cases {
 		search := callToolResult(t, s, "search_batch_ops", map[string]any{"query": tc.query, "limit": float64(30)})
@@ -182,6 +191,55 @@ func TestSearchBatchOps_MultiWordQueryMatches(t *testing.T) {
 		if !found {
 			t.Fatalf("search %q did not find %q; got %#v", tc.query, tc.wantOp, out.Matches)
 		}
+	}
+}
+
+// A query that finds NO exact (AND) match must not dead-end — search_batch_ops
+// returns ranked "closest ops" + a hint so an agent doesn't wrongly conclude the
+// capability is absent. Reproduces the real failure: searched, found nothing,
+// gave up.
+func TestSearchBatchOps_ZeroMatchSuggestsClosest(t *testing.T) {
+	s, _ := newTestServer(t)
+	// "delete" + a non-matching term → no op matches BOTH (AND) → zero matches.
+	search := callToolResult(t, s, "search_batch_ops", map[string]any{
+		"query": "delete xyzzy", "limit": float64(30),
+	})
+	if search.IsError {
+		t.Fatalf("search errored: %s", resultText(t, search))
+	}
+	var out struct {
+		Total       int      `json:"total"`
+		Suggestions []string `json:"suggestions"`
+		Hint        string   `json:"hint"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, search)), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.Total != 0 {
+		t.Fatalf("expected 0 exact matches, got %d", out.Total)
+	}
+	if len(out.Suggestions) == 0 {
+		t.Fatal("zero-match search must surface closest-op suggestions, got none")
+	}
+	if out.Suggestions[0] != "delete_nodes" {
+		t.Errorf("top suggestion = %q, want delete_nodes (best name relevance)", out.Suggestions[0])
+	}
+	if out.Hint == "" {
+		t.Error("zero-match search must include a do-not-give-up hint")
+	}
+}
+
+// suggestedBatchOps ranks by NAME relevance — a singular/plural typo surfaces the
+// real op FIRST, not an alphabetical match buried in some description.
+func TestSuggestedBatchOps_RanksByNameRelevance(t *testing.T) {
+	got := suggestedBatchOps("delete_node", 5)
+	if len(got) == 0 || got[0] != "delete_nodes" {
+		t.Fatalf("suggestedBatchOps(\"delete_node\") = %#v, want delete_nodes first", got)
+	}
+	// A query with no meaningful terms (filler only) suggests nothing — never a
+	// dump of arbitrary ops.
+	if s := suggestedBatchOps("op tool", 5); len(s) != 0 {
+		t.Errorf("filler-only query should suggest nothing, got %#v", s)
 	}
 }
 
@@ -442,6 +500,14 @@ func TestBatchCatalogSpecExamplesAndUnknownOp(t *testing.T) {
 	}
 	if txt := resultText(t, unknown); !strings.Contains(txt, "unknown batch op") {
 		t.Fatalf("expected unknown-op message, got %q", txt)
+	}
+
+	singular := callToolResult(t, s, "get_batch_op_spec", map[string]any{"op": "delete_node"})
+	if !singular.IsError {
+		t.Fatalf("singular op alias should still be an exact-spec error, got %s", resultText(t, singular))
+	}
+	if txt := resultText(t, singular); !strings.Contains(txt, "Did you mean: delete_nodes") {
+		t.Fatalf("expected unknown-op suggestion for singular/plural mismatch, got %q", txt)
 	}
 }
 
