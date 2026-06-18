@@ -194,6 +194,52 @@ func TestBridgePresenceQueue_CancelledWaiterClears(t *testing.T) {
 	}
 }
 
+// When the serial slot is acquired and the waiter cleared, the clearing
+// presence_queue frame ([] empty) MUST still reach the plugin even if an op write
+// is holding entry.wmu at the instant the broadcast fires. Once the queue has
+// drained to empty there is NO "later change" to ride a re-broadcast on, so a
+// single dropped attempt leaves the plugin's queued list stale forever — the agent
+// shows "queued" permanently and its row keeps re-stamping to "Just now" on every
+// sweep (never decaying to away). Regression for the stuck-queued bug.
+func TestBridgePresenceQueue_ClearFrameSurvivesWriteContention(t *testing.T) {
+	b, clientConn := setupBridgeWithClient(t)
+	entry := soleConnEntry(t, b)
+
+	queues := make(chan []string, 64)
+	go func() {
+		for {
+			var f readFrame
+			if err := wsjson.Read(context.Background(), clientConn, &f); err != nil {
+				return
+			}
+			if f.Type == presenceQueueType {
+				origins := append([]string(nil), f.Origins...)
+				sort.Strings(origins)
+				queues <- origins
+			}
+		}
+	}()
+
+	// Register a waiter, then simulate the acquiring op write holding wmu at the exact
+	// instant the clearing broadcast fires — broadcastQueue's TryLock loses the race.
+	tok := "wait-1"
+	entry.addWaitingOrigin(tok, "grace")
+
+	entry.wmu.Lock() // stand in for the op write that holds the write mutex
+	entry.removeWaitingOrigin(tok)
+	b.broadcastQueue("test-channel", entry) // clear → [] ; its goroutine must not give up
+	// Hold the lock long enough that a single TryLock attempt is guaranteed to lose,
+	// then release so a retry can deliver the cleared state.
+	time.Sleep(40 * time.Millisecond)
+	entry.wmu.Unlock()
+
+	// The plugin MUST eventually receive the empty clearing frame. With drop-on-first-
+	// contention it never arrives (no later change re-broadcasts an empty queue).
+	if !sawQueueFrame(t, queues, []string{}, 2*time.Second) {
+		t.Fatal("plugin never received the empty clearing presence_queue frame after wmu contention")
+	}
+}
+
 // ── test helpers ──────────────────────────────────────────────────────────────
 
 func snapshotForTest(e *connEntry) []string { return e.snapshotWaitingOrigins() }

@@ -1240,3 +1240,43 @@ describe("get_design_context dedupeComponents — bounded serialization", () => 
     expect(res?.data.context[0].children[0].children).toHaveLength(3);
   });
 });
+
+// ── get_design_context: nodeId scoping (issue #34) ───────────────────────────
+describe("get_design_context — nodeId scoping (issue #34)", () => {
+  it("scopes to params.nodeId regardless of the current selection", async () => {
+    const root = makeFlatTree("page:root", 3); // children child:0..child:2
+    setupFigma(root);
+    // Select a DIFFERENT child than the one we will request.
+    (globalThis as any).figma.currentPage.selection = [root.children[0]];
+
+    const res = await handleReadDocumentRequest(
+      makeRequest("get_design_context", { nodeId: "child:2", depth: 1 }),
+    );
+
+    expect(res?.data.context).toHaveLength(1);
+    expect(res?.data.context[0].id).toBe("child:2");
+  });
+
+  it("falls back to the selection when nodeId is omitted", async () => {
+    const root = makeFlatTree("page:root", 2);
+    setupFigma(root);
+    (globalThis as any).figma.currentPage.selection = [root.children[1]];
+
+    const res = await handleReadDocumentRequest(
+      makeRequest("get_design_context", { depth: 1 }),
+    );
+
+    expect(res?.data.context[0].id).toBe("child:1");
+  });
+
+  it("throws when params.nodeId does not resolve", async () => {
+    const root = makeFlatTree("page:root", 1);
+    setupFigma(root);
+
+    await expect(
+      handleReadDocumentRequest(
+        makeRequest("get_design_context", { nodeId: "missing:999" }),
+      ),
+    ).rejects.toThrow(/not found/i);
+  });
+});

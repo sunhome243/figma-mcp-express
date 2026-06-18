@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
@@ -17,6 +18,23 @@ func makeTestPDF(t *testing.T) []byte {
 		t.Fatalf("makeTestPDF: %v", err)
 	}
 	return buf.Bytes()
+}
+
+// Regression for issue #28: save_screenshots returned a silent
+// {succeeded:0,total:0} when items was empty/unparseable, with no reason. It must
+// surface an actionable error instead.
+func TestSaveScreenshots_EmptyItemsReturnsError(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	res := callToolResult(t, s, "save_screenshots", map[string]any{
+		"items": []any{},
+	})
+	if !res.IsError {
+		t.Fatalf("save_screenshots with empty items must return an error, got: %s", resultText(t, res))
+	}
+	if txt := resultText(t, res); !strings.Contains(txt, "items") {
+		t.Fatalf("error must explain that items is required, got: %s", txt)
+	}
 }
 
 // ── extractFramePDFs ──────────────────────────────────────────────────────────

@@ -359,11 +359,12 @@ figma.ui.onmessage = async (message) => {
         });
 
         // This op COMPLETED → the agent is no longer waiting on the serial slot, so
-        // clear it from the server-reported queue LOCALLY. The server's clear-broadcast
-        // is best-effort and TryLock-dropped when the op's own write holds the socket
-        // (the common case), and if this was the last op no later broadcast re-fires —
-        // which is exactly how a row gets stuck showing "queued" forever. Clearing on
-        // activity here is reliable and independent of that dropped frame.
+        // clear it from the server-reported queue LOCALLY. Defense-in-depth behind the
+        // server's queue broadcast: that clear-broadcast is best-effort and TryLock-
+        // dropped when the op's own write holds the socket (and the server now retries
+        // it — see broadcastQueue), but clearing on activity here is reliable and
+        // independent of any dropped frame, so an actively-working agent can never stay
+        // pinned to "queued".
         const wasQueued = queuedOrigins.includes(origin);
         if (wasQueued) queuedOrigins = queuedOrigins.filter((o) => o !== origin);
 
@@ -374,6 +375,7 @@ figma.ui.onmessage = async (message) => {
         const meaningful =
           !prev ||
           prev.status !== status ||
+          wasQueued ||
           !!explicitStatus ||
           isPresencePing ||
           wasQueued ||

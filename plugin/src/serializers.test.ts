@@ -117,6 +117,23 @@ describe("serializePaints", () => {
     ];
     expect(serializePaints(paints)).toEqual(["#ff0000", "#00ff00"]);
   });
+  it("surfaces a color variable binding as {color, variableId} (issue #27)", () => {
+    const paints = [
+      {
+        type: "SOLID",
+        color: { r: 0, g: 0, b: 0 },
+        opacity: 1,
+        boundVariables: { color: { type: "VARIABLE_ALIAS", id: "VariableID:1:2" } },
+      },
+    ];
+    expect(serializePaints(paints)).toEqual([
+      { color: "#000000", variableId: "VariableID:1:2" },
+    ]);
+  });
+  it("keeps an unbound fill as a bare hex string", () => {
+    const paints = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }];
+    expect(serializePaints(paints)).toEqual(["#000000"]);
+  });
 });
 
 // ── getBounds ─────────────────────────────────────────────────────────────────

@@ -72,6 +72,39 @@ func TestBatchOpCatalogEveryPluginOpHasInspectableSchema(t *testing.T) {
 	}
 }
 
+// Regression for issue #36: get_batch_op_spec returned 0 results for valid ops
+// like set_text / set_opacity. These are plugin-supported batch ops whose schemas
+// are synced from the registered top-level tools; assert the live spec lookup
+// returns a populated paramKeys + inputSchema for the exact reported ops.
+func TestGetBatchOpSpecReturnsSchemaForReportedOps(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	for _, op := range []string{"set_text", "set_opacity"} {
+		op := op
+		t.Run(op, func(t *testing.T) {
+			spec := callToolResult(t, s, "get_batch_op_spec", map[string]any{"op": op})
+			if spec.IsError {
+				t.Fatalf("get_batch_op_spec(%s) returned error: %s", op, resultText(t, spec))
+			}
+			structured, ok := spec.StructuredContent.(map[string]any)
+			if !ok {
+				t.Fatalf("get_batch_op_spec(%s) structuredContent = %T", op, spec.StructuredContent)
+			}
+			paramKeys, ok := structured["paramKeys"].([]any)
+			if !ok || len(paramKeys) == 0 {
+				t.Fatalf("get_batch_op_spec(%s) must expose non-empty paramKeys, got %#v", op, structured["paramKeys"])
+			}
+			inputSchema, ok := structured["inputSchema"].(map[string]any)
+			if !ok {
+				t.Fatalf("get_batch_op_spec(%s) missing inputSchema: %#v", op, structured)
+			}
+			if props, ok := inputSchema["properties"].(map[string]any); !ok || len(props) == 0 {
+				t.Fatalf("get_batch_op_spec(%s) inputSchema has no properties: %#v", op, inputSchema)
+			}
+		})
+	}
+}
+
 func TestBatchCatalogMetaTools(t *testing.T) {
 	s, _ := newTestServer(t)
 

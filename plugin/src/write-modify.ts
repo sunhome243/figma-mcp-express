@@ -456,11 +456,20 @@ export const handleWriteModifyRequest = async (request: any) => {
         : figma.currentPage;
       if (!root) throw new Error(`Root node not found: ${rootNodeId}`);
       const textNodes: any[] = [];
-      const collect = (node: any) => {
+      // Never edit TEXT inside a component master — a master edit propagates to
+      // every instance on the page (issue #33). Skip COMPONENT/COMPONENT_SET
+      // subtrees unless the caller explicitly scoped the root to one. Editing TEXT
+      // inside an INSTANCE stays a local override, so instances are safe to walk.
+      const collect = (node: any, isRoot: boolean) => {
+        if (!isRoot && (node.type === "COMPONENT" || node.type === "COMPONENT_SET")) {
+          return;
+        }
         if (node.type === "TEXT") textNodes.push(node);
-        if ("children" in node) (node.children as any[]).forEach(collect);
+        if ("children" in node) {
+          (node.children as any[]).forEach((c) => collect(c, false));
+        }
       };
-      collect(root);
+      collect(root, true);
       const tick = makeProgress(request.requestId, request.type, WRITE_PROGRESS_EVERY);
       const results: any[] = [];
       for (const tn of textNodes) {
