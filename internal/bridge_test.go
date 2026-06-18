@@ -1228,3 +1228,76 @@ func TestBridgeSend_ConnectionDropResolvesPendingImmediately(t *testing.T) {
 		t.Fatal("pending request did not resolve after connection drop — must not wait for inactivity ceiling")
 	}
 }
+
+// ── Heartbeat: dead transport with no FIN (issue #32) ─────────────────────────
+
+// setupBridgeWithDeadClient connects a client that NEVER reads, so it never
+// auto-pongs — simulating a half-open / partitioned transport that sends no TCP
+// FIN. The bridge's heartbeat is dialed to a few ms so the test is fast.
+func setupBridgeWithDeadClient(t *testing.T) (*Bridge, *websocket.Conn) {
+	t.Helper()
+	b := NewBridge()
+	b.heartbeatInterval = 20 * time.Millisecond
+	b.heartbeatTimeout = 50 * time.Millisecond
+
+	srv := httptest.NewServer(http.HandlerFunc(b.HandleUpgrade))
+	t.Cleanup(srv.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	clientConn, _, err := websocket.Dial(context.Background(), wsURL, nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	t.Cleanup(func() { clientConn.Close(websocket.StatusNormalClosure, "") })
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if b.IsConnected() {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !b.IsConnected() {
+		t.Fatal("bridge not connected after 500ms")
+	}
+	return b, clientConn
+}
+
+// A transport that stops responding (no pong, no FIN) must be detected by the
+// heartbeat and torn down — not left registered until a request's inactivity
+// ceiling fires. Mechanism test only: it proves the heartbeat path, NOT that a
+// JS-frozen-but-connected plugin is covered (a browser auto-pongs at the protocol
+// layer, so that case is intentionally out of scope).
+func TestBridge_HeartbeatDropsDeadTransport(t *testing.T) {
+	b, _ := setupBridgeWithDeadClient(t)
+
+	// The client never reads → never pongs → heartbeat ping times out → conn closed.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !b.IsConnected() {
+			return // detected and dropped — pass
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("heartbeat did not drop the unresponsive transport within 2s")
+}
+
+// The real payoff: an in-flight request on a dead transport must fail FAST via the
+// heartbeat-triggered drain (~heartbeat window), not wait the ~120s ceiling.
+func TestBridge_HeartbeatDrainsInflightRequestFast(t *testing.T) {
+	b, _ := setupBridgeWithDeadClient(t)
+
+	start := time.Now()
+	_, err := b.Send(context.Background(), "get_node", []string{"1:1"}, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error from the drained in-flight request, got nil")
+	}
+	if !strings.Contains(err.Error(), "connection closed") {
+		t.Errorf("err = %v, want a 'connection closed' drain error", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("Send took %v — heartbeat drain too slow (should be ~heartbeat window, not the request ceiling)", elapsed)
+	}
+}
