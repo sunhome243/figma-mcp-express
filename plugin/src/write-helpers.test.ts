@@ -289,6 +289,25 @@ describe("applyAutoLayout", () => {
     expect(frame.itemReverseZIndex).toBe(true);
   });
 
+  it("skips flex-only itemSpacing in GRID mode", async () => {
+    const frame = makeFrame();
+    applyAutoLayout(frame as any, {
+      layoutMode: "GRID",
+      itemSpacing: 16,        // flex-only — must be ignored in GRID
+      gridColumnGap: 12,      // the correct GRID gap
+    });
+    expect(frame.itemSpacing).toBe(0);     // unchanged from default
+    expect(frame.gridColumnGap).toBe(12);
+  });
+
+  it("skips itemSpacing variable binding in GRID mode", async () => {
+    const bound: Record<string, any> = {};
+    const frame = { ...makeFrame(), setBoundVariable: (f: string, v: any) => { bound[f] = v; } };
+    (globalThis as any).figma.variables.getVariableByIdAsync = async (id: string) => ({ id });
+    await applyAutoLayout(frame as any, { layoutMode: "GRID", itemSpacingVariableId: "var:gap" });
+    expect(bound.itemSpacing).toBeUndefined();
+  });
+
   it("binds grid gap variables", async () => {
     const bound: Record<string, any> = {};
     const frame = { ...makeFrame(), layoutMode: "GRID", setBoundVariable: (f: string, v: any) => { bound[f] = v; } };

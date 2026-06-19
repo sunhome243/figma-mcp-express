@@ -205,12 +205,23 @@ export const handleWriteModifyRequest = async (request: any) => {
           }
         }
         // Responsive min/max constraints (null clears). Valid on frames and on
-        // auto-layout children; ignored by nodes that don't expose the field.
-        const num = (v: any) => { const x = Number(v); return Number.isFinite(x) ? x : null; };
-        if (p.minWidth !== undefined && "minWidth" in n) n.minWidth = p.minWidth === null ? null : num(p.minWidth);
-        if (p.maxWidth !== undefined && "maxWidth" in n) n.maxWidth = p.maxWidth === null ? null : num(p.maxWidth);
-        if (p.minHeight !== undefined && "minHeight" in n) n.minHeight = p.minHeight === null ? null : num(p.minHeight);
-        if (p.maxHeight !== undefined && "maxHeight" in n) n.maxHeight = p.maxHeight === null ? null : num(p.maxHeight);
+        // auto-layout children; Figma throws if the value is non-positive or the node
+        // isn't in an auto-layout context — keep that per-node so one bad node doesn't
+        // abort the whole bulk request (matches the per-node error model above).
+        const hasMinMax = p.minWidth !== undefined || p.maxWidth !== undefined
+          || p.minHeight !== undefined || p.maxHeight !== undefined;
+        if (hasMinMax) {
+          const num = (v: any) => { const x = Number(v); return Number.isFinite(x) ? x : null; };
+          try {
+            if (p.minWidth !== undefined && "minWidth" in n) n.minWidth = p.minWidth === null ? null : num(p.minWidth);
+            if (p.maxWidth !== undefined && "maxWidth" in n) n.maxWidth = p.maxWidth === null ? null : num(p.maxWidth);
+            if (p.minHeight !== undefined && "minHeight" in n) n.minHeight = p.minHeight === null ? null : num(p.minHeight);
+            if (p.maxHeight !== undefined && "maxHeight" in n) n.maxHeight = p.maxHeight === null ? null : num(p.maxHeight);
+          } catch (e) {
+            results.push({ nodeId: nid, error: `min/max constraint failed (must be positive; node must be an auto-layout frame or child): ${String(e)}` });
+            continue;
+          }
+        }
         results.push({ nodeId: nid, width: n.width, height: n.height });
         await tick(nodeIds.length);
       }

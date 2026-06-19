@@ -113,13 +113,15 @@ export const applyAutoLayout = async (frame: FrameNode, p: any): Promise<void> =
   if (p.paddingRight != null) { const v = n(p.paddingRight); if (v !== null) frame.paddingRight = v; }
   if (p.paddingBottom != null) { const v = n(p.paddingBottom); if (v !== null) frame.paddingBottom = v; }
   if (p.paddingLeft != null) { const v = n(p.paddingLeft); if (v !== null) frame.paddingLeft = v; }
-  if (p.itemSpacing != null) { const v = n(p.itemSpacing); if (v !== null) frame.itemSpacing = v; }
+  // itemSpacing is flex-only — GRID uses gridRowGap/gridColumnGap instead, and writing
+  // itemSpacing in GRID mode is out-of-mode. Gate it (padding IS valid in GRID).
+  if (p.itemSpacing != null && frame.layoutMode !== "GRID") { const v = n(p.itemSpacing); if (v !== null) frame.itemSpacing = v; }
   // Variable bindings (additive — only when *VariableId params are provided).
   if (p.paddingTopVariableId) await bindSpacingVariable(frame, "paddingTop", p.paddingTopVariableId);
   if (p.paddingRightVariableId) await bindSpacingVariable(frame, "paddingRight", p.paddingRightVariableId);
   if (p.paddingBottomVariableId) await bindSpacingVariable(frame, "paddingBottom", p.paddingBottomVariableId);
   if (p.paddingLeftVariableId) await bindSpacingVariable(frame, "paddingLeft", p.paddingLeftVariableId);
-  if (p.itemSpacingVariableId) await bindSpacingVariable(frame, "itemSpacing", p.itemSpacingVariableId);
+  if (p.itemSpacingVariableId && frame.layoutMode !== "GRID") await bindSpacingVariable(frame, "itemSpacing", p.itemSpacingVariableId);
   if (frame.layoutMode === "GRID") {
     // CSS-grid auto-layout: row/column counts + per-axis gaps replace itemSpacing.
     if (p.gridRowCount != null) { const v = n(p.gridRowCount); if (v !== null) frame.gridRowCount = v; }

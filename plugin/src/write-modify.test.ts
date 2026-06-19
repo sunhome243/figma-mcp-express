@@ -441,6 +441,21 @@ describe("resize_nodes — min/max constraints", () => {
     expect(res?.data.results[0].nodeId).toBe("1:1");
     expect("minWidth" in mockNodes["1:1"]).toBe(false);
   });
+
+  it("reports a per-node error (does not abort) when a min/max assignment throws", async () => {
+    // Node A: minWidth setter throws (Figma rejects non-positive / non-auto-layout).
+    const throwing: any = { id: "1:1", width: 100, height: 100, resize() {}, get minWidth() { return null; }, set minWidth(_v: any) { throw new Error("minWidth must be positive"); } };
+    // Node B: valid.
+    const ok: any = { id: "2:2", width: 100, height: 100, resize() {}, minWidth: null };
+    mockNodes["1:1"] = throwing;
+    mockNodes["2:2"] = ok;
+    const res = await handleWriteModifyRequest(makeRequest("resize_nodes", ["1:1", "2:2"], { minWidth: 50 }));
+    // The whole request must still resolve, with a per-node error for A and success for B.
+    expect(res?.data.results).toHaveLength(2);
+    expect(res?.data.results[0].error).toContain("min/max constraint failed");
+    expect(res?.data.results[1].nodeId).toBe("2:2");
+    expect(ok.minWidth).toBe(50);
+  });
 });
 
 describe("set_blend_mode", () => {

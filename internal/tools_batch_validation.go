@@ -655,6 +655,13 @@ func schemaRequired(schema map[string]any) []string {
 }
 
 func validateBatchSchemaValue(op, name string, value interface{}, prop map[string]any, allowedNamedRefs map[string]bool) error {
+	// JSON null is a deliberate "clear / restore default" signal for optional params
+	// (e.g. maxLines, minWidth/maxWidth, hyperlink) — the plugin handlers treat it as
+	// such. Allow it through so the batch path matches top-level forwarding, which
+	// forwards nil via presence checks rather than rejecting it.
+	if value == nil {
+		return nil
+	}
 	if s, ok := value.(string); ok {
 		if isBatchRefLike(s) || isAllowedNamedBindingRef(s, allowedNamedRefs) {
 			return nil
