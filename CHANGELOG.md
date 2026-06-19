@@ -6,6 +6,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.3] — 2026-06-19
+
+### Fixed
+
+- **`batch` `import_image` ignoring `imagePath`** — `prepareBatchImportOpParams` now handles `import_image` ops the same way the standalone tool handler does: reads the file at `imagePath` and converts it to base64 `imageData` before sending to the plugin. Previously, `imagePath` was forwarded raw and the plugin (which only speaks `imageData`) returned `"imageData (base64) is required"`.
+
 ## [2.5.2] — 2026-06-18
 
 ### Changed
