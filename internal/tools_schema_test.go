@@ -489,10 +489,13 @@ func TestToolSchemas_DescriptionSpillGuidance(t *testing.T) {
 		return ""
 	}
 
-	// get_local_components must mention pageId guidance.
+	// get_local_components must mention pageId guidance and the file-local recovery use case.
 	glcDesc := descOf("get_local_components")
 	if !strings.Contains(glcDesc, "pageId") {
 		t.Errorf("get_local_components description must mention pageId, got: %q", glcDesc)
+	}
+	if !strings.Contains(glcDesc, "file-local") || !strings.Contains(glcDesc, "create_instance") {
+		t.Errorf("get_local_components description must mention file-local create_instance recovery, got: %q", glcDesc)
 	}
 
 	// get_design_context must mention spill guidance.
