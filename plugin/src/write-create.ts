@@ -49,7 +49,6 @@ const applyMediaPaintFields = (paint: any, p: any, transformField: "imageTransfo
   }
   if (Object.keys(filters).length > 0) paint.filters = filters;
 };
-
 export const handleWriteCreateRequest = async (request: any) => {
   switch (request.type) {
     case "create_frame": {

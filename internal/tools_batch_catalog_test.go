@@ -512,7 +512,7 @@ func TestBatchCatalogSpecExamplesAndUnknownOp(t *testing.T) {
 	}
 }
 
-func TestBatchCatalogSpecsDoNotExposePerOpChannel(t *testing.T) {
+func TestBatchCatalogSpecsDoNotExposeOuterToolParams(t *testing.T) {
 	s, _ := newTestServer(t)
 
 	for _, op := range []string{"set_fills", "create_text", "rename_node", "set_corner_radius"} {
@@ -525,6 +525,9 @@ func TestBatchCatalogSpecsDoNotExposePerOpChannel(t *testing.T) {
 			txt := resultText(t, spec)
 			if strings.Contains(txt, `"channel"`) {
 				t.Fatalf("batch op spec must not expose per-op channel; route channel on outer batch only: %s", txt)
+			}
+			if strings.Contains(txt, `"origin"`) {
+				t.Fatalf("batch op spec must not expose per-op origin; route origin on outer batch only: %s", txt)
 			}
 		})
 	}

@@ -338,7 +338,7 @@ func syncBatchCatalogFromRegisteredTools(s *server.MCPServer) {
 		}
 		keys := make([]string, 0, len(st.Tool.InputSchema.Properties))
 		for k := range st.Tool.InputSchema.Properties {
-			if k == "channel" {
+			if isOuterToolParam(k) {
 				continue
 			}
 			keys = append(keys, k)
@@ -346,6 +346,7 @@ func syncBatchCatalogFromRegisteredTools(s *server.MCPServer) {
 		sort.Strings(keys)
 		props, _ := cloneCatalogValue(st.Tool.InputSchema.Properties).(map[string]any)
 		delete(props, "channel")
+		delete(props, "origin")
 		spec.ParamKeys = keys
 		spec.InputSchema = map[string]any{
 			"type":       st.Tool.InputSchema.Type,
@@ -474,7 +475,7 @@ func schemaParamKeys(schema map[string]any) []string {
 	props, _ := schema["properties"].(map[string]any)
 	out := make([]string, 0, len(props))
 	for k := range props {
-		if k == "channel" {
+		if isOuterToolParam(k) {
 			continue
 		}
 		out = append(out, k)
@@ -486,11 +487,15 @@ func schemaParamKeys(schema map[string]any) []string {
 func batchSchemaRequiredWithoutOuterParams(required []string) []string {
 	out := make([]string, 0, len(required))
 	for _, name := range required {
-		if name != "channel" {
+		if !isOuterToolParam(name) {
 			out = append(out, name)
 		}
 	}
 	return out
+}
+
+func isOuterToolParam(name string) bool {
+	return name == "channel" || name == "origin"
 }
 
 func schemaObject(required []string, props map[string]any) map[string]any {

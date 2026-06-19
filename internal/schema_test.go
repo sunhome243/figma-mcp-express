@@ -64,7 +64,10 @@ func TestNormalizeRPCNodeReferences(t *testing.T) {
 		"parentId":    "3-4",
 		"pageId":      "0-1",
 		"componentId": "5-6",
-		"key":         "abc-def",
+		"hyperlink": map[string]interface{}{
+			"nodeId": "7-8",
+		},
+		"key": "abc-def",
 	}
 
 	normalizeRPCNodeReferences(nodeIDs, params)
@@ -88,6 +91,10 @@ func TestNormalizeRPCNodeReferences(t *testing.T) {
 		if got, _ := params[key].(string); got != want {
 			t.Fatalf("params[%q] = %q, want %q", key, got, want)
 		}
+	}
+	hyperlink, _ := params["hyperlink"].(map[string]interface{})
+	if got, _ := hyperlink["nodeId"].(string); got != "7:8" {
+		t.Fatalf("hyperlink.nodeId = %q, want %q", got, "7:8")
 	}
 }
 
@@ -368,6 +375,45 @@ func TestValidateRPC_SetAutoLayout_GridAndExtras(t *testing.T) {
 	}
 }
 
+func TestValidateRPC_LayoutMinMaxRejectsNonPositiveValues(t *testing.T) {
+	cases := []struct {
+		name    string
+		tool    string
+		nodeIDs []string
+		params  map[string]interface{}
+	}{
+		{
+			name:   "create_frame_minWidth_zero",
+			tool:   "create_frame",
+			params: map[string]interface{}{"minWidth": float64(0)},
+		},
+		{
+			name:    "set_auto_layout_maxHeight_negative",
+			tool:    "set_auto_layout",
+			nodeIDs: []string{"1:1"},
+			params:  map[string]interface{}{"maxHeight": float64(-1)},
+		},
+		{
+			name:    "resize_nodes_minHeight_zero",
+			tool:    "resize_nodes",
+			nodeIDs: []string{"1:1"},
+			params:  map[string]interface{}{"minHeight": float64(0)},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if msg := ValidateRPC(tc.tool, tc.nodeIDs, tc.params); msg == "" {
+				t.Fatalf("expected %s to reject non-positive min/max value", tc.tool)
+			} else if !strings.Contains(msg, "must be positive") {
+				t.Fatalf("expected positivity error, got %q", msg)
+			}
+		})
+	}
+	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{"minWidth": nil}); msg != "" {
+		t.Fatalf("nil minWidth should still clear the constraint, got %q", msg)
+	}
+}
+
 func TestValidateRPC_ImportImage_Filters(t *testing.T) {
 	// valid filter values within -1..1
 	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
@@ -397,6 +443,25 @@ func TestValidateRPC_ResizeNodes_MinMaxOnly(t *testing.T) {
 		"minWidth": float64(50), "maxWidth": float64(300),
 	}); msg != "" {
 		t.Errorf("resize_nodes with min/max only should be valid, got: %s", msg)
+	}
+}
+
+func TestValidateRPC_SetTextRangeHyperlinkNodeID(t *testing.T) {
+	valid := map[string]interface{}{
+		"startOffset": float64(0),
+		"endOffset":   float64(3),
+		"hyperlink":   map[string]interface{}{"nodeId": "2:3"},
+	}
+	if msg := ValidateRPC("set_text_range", []string{"1:1"}, valid); msg != "" {
+		t.Fatalf("valid in-file hyperlink nodeId should pass, got %q", msg)
+	}
+	invalid := map[string]interface{}{
+		"startOffset": float64(0),
+		"endOffset":   float64(3),
+		"hyperlink":   map[string]interface{}{"nodeId": "not-a-node-id"},
+	}
+	if msg := ValidateRPC("set_text_range", []string{"1:1"}, invalid); msg == "" {
+		t.Fatal("expected invalid in-file hyperlink nodeId to be rejected")
 	}
 }
 
@@ -945,11 +1010,35 @@ func TestValidateRPC_EffectAndLayoutGridVariableHelpers(t *testing.T) {
 	if msg := ValidateRPC("create_variable_alias", nil, map[string]interface{}{"variableId": "v1"}); msg != "" {
 		t.Errorf("unexpected error for create_variable_alias: %s", msg)
 	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{
+		"variableId": "v1",
+		"codeSyntax": map[string]interface{}{"WEB": "colorPrimary"},
+	}); msg != "" {
+		t.Errorf("unexpected error for valid codeSyntax: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{
+		"variableId": "v1",
+		"codeSyntax": map[string]interface{}{"WEB": map[string]interface{}{}},
+	}); msg == "" {
+		t.Error("expected error for non-string codeSyntax value")
+	}
 	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{"variableId": "v1", "removeCodeSyntax": []interface{}{"WEB", "iOS"}}); msg != "" {
 		t.Errorf("unexpected error for removeCodeSyntax: %s", msg)
 	}
 	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{"variableId": "v1", "removeCodeSyntax": []interface{}{"MAC"}}); msg == "" {
 		t.Error("expected error for invalid removeCodeSyntax platform")
+	}
+	if msg := ValidateRPC("update_variable_collection", nil, map[string]interface{}{
+		"collectionId": "c1",
+		"renameMode":   map[string]interface{}{"modeId": "m1", "newName": "Dark"},
+	}); msg != "" {
+		t.Errorf("unexpected error for valid renameMode: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable_collection", nil, map[string]interface{}{
+		"collectionId": "c1",
+		"renameMode":   map[string]interface{}{"modeId": "m1", "newName": map[string]interface{}{}},
+	}); msg == "" {
+		t.Error("expected error for non-string renameMode.newName")
 	}
 	if msg := ValidateRPC("bind_variable_to_effect", nil, map[string]interface{}{
 		"effect": map[string]interface{}{"type": "DROP_SHADOW", "radius": float64(8)}, "field": "radius", "variableId": "v1",

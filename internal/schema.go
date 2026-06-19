@@ -48,6 +48,11 @@ func normalizeRPCNodeReferences(nodeIDs []string, params map[string]interface{})
 			params[key] = NormalizeNodeID(v)
 		}
 	}
+	if hyperlink, ok := params["hyperlink"].(map[string]interface{}); ok {
+		if v, ok := hyperlink["nodeId"].(string); ok {
+			hyperlink["nodeId"] = NormalizeNodeID(v)
+		}
+	}
 }
 
 // ValidNodeID reports whether s is a valid Figma node ID.
@@ -486,6 +491,9 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		if msg := validateAutoLayoutParams(params); msg != "" {
 			return msg
 		}
+		if msg := validateLayoutSizingParams(params); msg != "" {
+			return msg
+		}
 
 	case "create_rectangle", "create_ellipse":
 		if w, ok := params["width"].(float64); ok && w <= 0 {
@@ -630,6 +638,16 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 				default:
 					return fmt.Sprintf("listOptions.type must be ORDERED, UNORDERED, or NONE, got: %s", t)
 				}
+			}
+		}
+		if link, ok := params["hyperlink"].(map[string]interface{}); ok {
+			nodeID, hasNodeID := link["nodeId"].(string)
+			_, hasURL := link["url"]
+			if hasNodeID && hasURL {
+				return "hyperlink must provide url or nodeId, not both"
+			}
+			if hasNodeID && nodeID != "" && !ValidNodeID(nodeID) {
+				return fmt.Sprintf("hyperlink.nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
 			}
 		}
 
@@ -1049,7 +1067,12 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 				if msg := validateCodeSyntaxPlatform(k); msg != "" {
 					return msg
 				}
+				if _, ok := cs[k].(string); !ok {
+					return fmt.Sprintf("codeSyntax.%s must be a string", k)
+				}
 			}
+		} else if raw, ok := params["codeSyntax"]; ok && raw != nil {
+			return "codeSyntax must be an object"
 		}
 		if raw, ok := params["removeCodeSyntax"].([]interface{}); ok {
 			for _, p := range raw {
@@ -1065,12 +1088,14 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return "collectionId is required"
 		}
 		if rm, ok := params["renameMode"].(map[string]interface{}); ok {
-			if mid, _ := rm["modeId"].(string); mid == "" {
+			if mid, ok := rm["modeId"].(string); !ok || mid == "" {
 				return "renameMode requires a modeId"
 			}
-			if _, hasNew := rm["newName"]; !hasNew {
+			if newName, ok := rm["newName"].(string); !ok || newName == "" {
 				return "renameMode requires a newName"
 			}
+		} else if raw, ok := params["renameMode"]; ok && raw != nil {
+			return "renameMode must be an object"
 		}
 
 	// ── Linked tools ─────────────────────────────────────────────────────────
@@ -1700,6 +1725,13 @@ func validateTextStyleParams(params map[string]interface{}) string {
 // validateLayoutSizingParams checks the optional sizing-within-parent enums
 // (resize_nodes, create_frame).
 func validateLayoutSizingParams(params map[string]interface{}) string {
+	for _, k := range []string{"minWidth", "maxWidth", "minHeight", "maxHeight"} {
+		if v, ok := params[k]; ok && v != nil {
+			if n, ok := v.(float64); ok && n <= 0 {
+				return fmt.Sprintf("%s must be positive", k)
+			}
+		}
+	}
 	for _, k := range []string{"layoutSizingHorizontal", "layoutSizingVertical"} {
 		if v, ok := params[k].(string); ok && v != "" {
 			switch v {

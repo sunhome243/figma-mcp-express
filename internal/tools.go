@@ -29,6 +29,7 @@ func RegisterTools(s *server.MCPServer, node *Node) {
 	registerBatchTools(s, node)
 	registerBatchCatalogTools(s)
 	registerPresenceTools(s, node)
+	addOriginParamToPluginTools(s)
 	// Snapshot every tool's declared param keys so the schema-derived unknown-param
 	// allowlist (registeredParamKeys) is available to ValidateRPC + the batch loop.
 	recordToolParamKeys(s)
@@ -132,6 +133,66 @@ func originParam() mcp.ToolOption {
 		mcp.Enum(rosterOrigins...),
 		mcp.Description("Presence label: the acting agent's identity (from the roster enum). Pass the SAME value on every call from one agent so the Figma plugin's Watch-agent panel shows who is working where."),
 	)
+}
+
+var originExemptTools = map[string]bool{
+	"list_channels":         true,
+	"search_batch_ops":      true,
+	"get_batch_op_spec":     true,
+	"fetch_library_catalog": true,
+}
+
+func originExemptTool(name string) bool {
+	return originExemptTools[name]
+}
+
+func addOriginParamToPluginTools(s *server.MCPServer) {
+	listed := s.ListTools()
+	if len(listed) == 0 {
+		return
+	}
+
+	tools := make([]server.ServerTool, 0, len(listed))
+	for _, st := range listed {
+		if st == nil {
+			continue
+		}
+		tool := st.Tool
+		if !originExemptTool(tool.Name) {
+			ensureOriginParam(&tool)
+		}
+		tools = append(tools, server.ServerTool{
+			Tool:    tool,
+			Handler: st.Handler,
+		})
+	}
+	s.SetTools(tools...)
+}
+
+func ensureOriginParam(tool *mcp.Tool) {
+	if tool.InputSchema.Type == "" {
+		tool.InputSchema.Type = "object"
+	}
+	if tool.InputSchema.Properties == nil {
+		tool.InputSchema.Properties = map[string]any{}
+	}
+	tool.InputSchema.Properties["origin"] = map[string]any{
+		"type":        "string",
+		"enum":        rosterOrigins,
+		"description": "Presence label: the acting agent's identity from the fixed roster. Pass the same value on every call from one agent.",
+	}
+	if !stringSliceContains(tool.InputSchema.Required, "origin") {
+		tool.InputSchema.Required = append(tool.InputSchema.Required, "origin")
+	}
+}
+
+func stringSliceContains(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 // pickOrigin returns the request's `origin` arg only when it is a known roster
