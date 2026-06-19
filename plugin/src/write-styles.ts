@@ -1,5 +1,79 @@
 import { makeSolidPaint, hexToRgb, bulkApply } from "./write-helpers";
 
+// Native advanced effects (Figma 2025): GLASS, NOISE, TEXTURE. These have no shadow/blur
+// geometry — we pass them through to node.effects / style.effects with sane defaults so a
+// caller can request REAL frosted glass, grain, or texture instead of faking it with a
+// background-blur + translucent-fill recipe. Field shapes follow @figma/plugin-typings.
+const buildGlassEffect = (e: any): Effect => ({
+  type: "GLASS",
+  lightIntensity: Number(e.lightIntensity ?? 0.5), // 0–1, specular highlight brightness
+  lightAngle: Number(e.lightAngle ?? 130),         // degrees, highlight direction
+  refraction: Number(e.refraction ?? 0.3),         // 0–1, edge distortion
+  depth: Number(e.depth ?? 10),                    // >= 1, how far the curved edge reaches in
+  dispersion: Number(e.dispersion ?? 0.1),         // 0–1, chromatic split at edges
+  radius: Number(e.radius ?? 12),                  // frost (background blur) radius
+  visible: e.visible ?? true,
+} as unknown as Effect);
+
+const buildTextureEffect = (e: any): Effect => ({
+  type: "TEXTURE",
+  noiseSize: Number(e.noiseSize ?? 1),
+  radius: Number(e.radius ?? 4),
+  clipToShape: e.clipToShape ?? true,
+  visible: e.visible ?? true,
+} as unknown as Effect);
+
+const buildNoiseEffect = (e: any): Effect => {
+  const noiseType = e.noiseType || "MONOTONE"; // MONOTONE | DUOTONE | MULTITONE
+  const { r, g, b, a } = hexToRgb(e.color || "#000000");
+  const base: any = {
+    type: "NOISE",
+    noiseType,
+    color: { r, g, b, a },
+    blendMode: (e.blendMode || "NORMAL") as BlendMode,
+    noiseSize: Number(e.noiseSize ?? 1),
+    density: Number(e.density ?? 0.5),
+    visible: e.visible ?? true,
+  };
+  if (noiseType === "DUOTONE") {
+    const s = hexToRgb(e.secondaryColor || "#FFFFFF");
+    base.secondaryColor = { r: s.r, g: s.g, b: s.b, a: s.a };
+  } else if (noiseType === "MULTITONE") {
+    base.opacity = Number(e.opacity ?? 0.5);
+  }
+  return base as unknown as Effect;
+};
+
+// Returns a built advanced effect for GLASS/NOISE/TEXTURE, or null for the classic
+// shadow/blur types (which the callers build inline).
+const buildAdvancedEffect = (e: any): Effect | null => {
+  switch (e.type) {
+    case "GLASS": return buildGlassEffect(e);
+    case "TEXTURE": return buildTextureEffect(e);
+    case "NOISE": return buildNoiseEffect(e);
+    default: return null;
+  }
+};
+
+// LAYER_BLUR / BACKGROUND_BLUR — uniform (NORMAL) or PROGRESSIVE (gradual: blur ramps from
+// startRadius at startOffset to radius at endOffset; offsets are normalized 0–1 in object space,
+// so a top→bottom gradual blur is startOffset {0.5,0} → endOffset {0.5,1}). Pass blurType:"PROGRESSIVE"
+// to opt in; otherwise a single uniform blur is built.
+const buildBlurEffect = (e: any, eType: "LAYER_BLUR" | "BACKGROUND_BLUR"): Effect => {
+  if (e.blurType === "PROGRESSIVE") {
+    return {
+      type: eType,
+      blurType: "PROGRESSIVE",
+      radius: Number(e.radius ?? e.endRadius ?? 8),
+      startRadius: Number(e.startRadius ?? 0),
+      startOffset: e.startOffset ?? { x: 0.5, y: 0 },
+      endOffset: e.endOffset ?? { x: 0.5, y: 1 },
+      visible: e.visible ?? true,
+    } as unknown as Effect;
+  }
+  return { type: eType, blurType: "NORMAL", radius: Number(e.radius ?? 4), visible: e.visible ?? true } as BlurEffect;
+};
+
 export const handleWriteStyleRequest = async (request: any) => {
   switch (request.type) {
     case "create_paint_style": {
@@ -70,12 +144,11 @@ export const handleWriteStyleRequest = async (request: any) => {
       // Effect builder — shared with set_effects to keep reconstruction logic in one place.
       const buildEffect = (e: any): Effect => {
         const eType = e.type || "DROP_SHADOW";
-        if (eType === "LAYER_BLUR") {
-          // BlurEffect is a discriminated union (BlurEffectNormal | BlurEffectProgressive);
-          // blurType is the required discriminant. We only support uniform NORMAL blur here.
-          return { type: "LAYER_BLUR", blurType: "NORMAL", radius: Number(e.radius ?? 4), visible: e.visible ?? true } as BlurEffect;
-        } else if (eType === "BACKGROUND_BLUR") {
-          return { type: "BACKGROUND_BLUR", blurType: "NORMAL", radius: Number(e.radius ?? 4), visible: e.visible ?? true } as BlurEffect;
+        if (eType === "LAYER_BLUR" || eType === "BACKGROUND_BLUR") {
+          // Uniform or PROGRESSIVE (gradual) blur — see buildBlurEffect.
+          return buildBlurEffect(e, eType);
+        } else if (eType === "GLASS" || eType === "NOISE" || eType === "TEXTURE") {
+          return buildAdvancedEffect({ ...e, type: eType })!;
         } else {
           // DROP_SHADOW or INNER_SHADOW
           const { r, g, b, a } = hexToRgb(e.color || "#000000");
@@ -273,16 +346,15 @@ export const handleWriteStyleRequest = async (request: any) => {
           }
           case "LAYER_BLUR":
           case "BACKGROUND_BLUR":
-            // blurType is the required discriminant of the BlurEffect union; only uniform
-            // NORMAL blur is exposed here (PROGRESSIVE needs a start/end the API can't infer).
-            return {
-              type: e.type as "LAYER_BLUR" | "BACKGROUND_BLUR",
-              blurType: "NORMAL",
-              radius: Number(e.radius ?? 4),
-              visible: e.visible ?? true,
-            } as BlurEffect;
+            // Uniform (NORMAL) or PROGRESSIVE (gradual) blur — see buildBlurEffect.
+            return buildBlurEffect(e, e.type);
+          case "GLASS":
+          case "NOISE":
+          case "TEXTURE":
+            // Native advanced effects — passed through with defaults (see buildAdvancedEffect).
+            return buildAdvancedEffect(e)!;
           default:
-            throw new Error(`Unknown effect type: ${e.type}. Must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, or BACKGROUND_BLUR`);
+            throw new Error(`Unknown effect type: ${e.type}. Must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE`);
         }
       });
       // Use bulkApply so the same effects array is written to every nodeId in the request,

@@ -366,3 +366,28 @@ Route files at the outer call: `batch(channel:"auto-2", ops:[...])`. Never put `
 - named binding refs outside `map.do`, unknown map bindings, named binding projections, nested `map`
 
 **No raw Plugin API JS in batch.** If a future script-like UX is added, it must compile to declarative FigmaPlan JSON and pass the same catalog validation before execution.
+
+## Effects — `set_effects` / `create_effect_style`
+
+`type` ∈ `DROP_SHADOW | INNER_SHADOW | LAYER_BLUR | BACKGROUND_BLUR | GLASS | NOISE | TEXTURE`
+(GLASS/NOISE/TEXTURE are Figma's native 2025 effects). All fields optional + defaulted — pass only
+overrides. This is the mechanics; whether/where to apply an effect is a design call.
+
+| type | fields (default) |
+|---|---|
+| `DROP_SHADOW` / `INNER_SHADOW` | `color`(#000000) · `opacity`(0.25) · `offsetX`(0) · `offsetY`(4) · `radius`(8/4) · `spread`(0) · `showShadowBehindNode`(DROP only) |
+| `LAYER_BLUR` / `BACKGROUND_BLUR` | `radius`(4) |
+| `GLASS` | `lightIntensity` 0–1 (0.5) · `lightAngle` deg (130) · `refraction` 0–1 (0.3) · `depth` ≥1 (10) · `dispersion` 0–1 (0.1) · `radius` frost (12) |
+| `TEXTURE` | `noiseSize`(1) · `radius`(4) · `clipToShape`(true) |
+| `NOISE` | `noiseType` `MONOTONE`\|`DUOTONE`\|`MULTITONE` · `color` · `secondaryColor`(duotone) · `opacity`(multitone) · `noiseSize`(1) · `density`(0.5) |
+
+```jsonc
+{ "type": "set_effects", "nodeIds": ["<id>"], "params": { "effects": [
+  { "type": "GLASS", "lightIntensity": 0.6, "refraction": 0.35, "depth": 8, "dispersion": 0.12, "radius": 14 }
+] } }
+```
+
+`set_effects` **replaces** all effects on the node (pass `[]` to clear). Mechanics note: `GLASS`
+refracts the layers *behind* it, so it only reads over a (semi-)transparent fill with content behind —
+not over an opaque fill. Older plugin builds reject the three native type literals with a
+`must be DROP_SHADOW…` validation error.

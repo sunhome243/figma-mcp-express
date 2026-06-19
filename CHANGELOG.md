@@ -6,6 +6,22 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Native `GLASS` / `NOISE` / `TEXTURE` effects** in `set_effects` and `create_effect_style`
+  (top-level tools + `batch` ops). Previously only `DROP_SHADOW`/`INNER_SHADOW`/`LAYER_BLUR`/
+  `BACKGROUND_BLUR` were accepted, forcing callers to fake frosted glass with a background-blur +
+  translucent-fill recipe. Now a caller can request Figma's real 2025 **Glass** effect
+  (`{type:"GLASS", lightIntensity, lightAngle, refraction, depth, dispersion, radius}` — all
+  defaulted), plus `TEXTURE` (`noiseSize, radius, clipToShape`) and `NOISE`
+  (`noiseType MONOTONE|DUOTONE|MULTITONE, color, secondaryColor, opacity, noiseSize, density`).
+  The plugin builds the effect via `buildAdvancedEffect` and assigns it to `node.effects` /
+  `style.effects`; the Go schema validator accepts the three new type literals.
+- **PROGRESSIVE (gradual) blur** for `LAYER_BLUR` / `BACKGROUND_BLUR`. Pass `blurType:"PROGRESSIVE"`
+  (with optional `startRadius`, `radius` end, and normalized `startOffset`/`endOffset` vectors,
+  defaulting to a top→bottom ramp `{0.5,0}`→`{0.5,1}`) to get an iOS-style gradual blur instead of a
+  uniform one. Omitting `blurType` still builds a uniform `NORMAL` blur (unchanged default).
+
 ## [2.5.3] — 2026-06-19
 
 ### Fixed

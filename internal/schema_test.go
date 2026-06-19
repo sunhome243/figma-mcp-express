@@ -625,7 +625,7 @@ func TestValidateRPC_CreateEffectStyle(t *testing.T) {
 	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{"name": "Shadow", "type": "GLOW"}); msg == "" {
 		t.Error("expected error for invalid type")
 	}
-	for _, et := range []string{"DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR"} {
+	for _, et := range []string{"DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR", "GLASS", "NOISE", "TEXTURE"} {
 		if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{"name": "S", "type": et}); msg != "" {
 			t.Errorf("unexpected error for type %s: %s", et, msg)
 		}
