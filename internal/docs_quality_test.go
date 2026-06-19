@@ -166,6 +166,64 @@ func TestToolsDocDoesNotExposeChannelInsideCatalogBackedBatchOps(t *testing.T) {
 	}
 }
 
+func TestDocsTrackAPIGapCoverageSurface(t *testing.T) {
+	tools := readTestFile(t, filepath.Join("..", "TOOLS.md"))
+	for _, heading := range []string{
+		"### create_line",
+		"### create_polygon",
+		"### create_star",
+		"### import_svg",
+		"### create_table",
+		"### set_text_range",
+		"### update_variable",
+		"### update_variable_collection",
+		"### set_constraints",
+	} {
+		if !strings.Contains(tools, heading) {
+			t.Fatalf("TOOLS.md must document new API-gap surface %q", heading)
+		}
+	}
+	if strings.Contains(tools, "### set_constraints [BATCH OP]") {
+		t.Fatal("TOOLS.md must document promoted set_constraints as a top-level tool, not batch-only")
+	}
+
+	gotchas := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "gotchas.md"))
+	for _, forbidden := range []string{
+		"NO `import_svg`",
+		"create_vector_from_svg",
+		"Plugin runtime required",
+		"use_figma",
+	} {
+		if strings.Contains(gotchas, forbidden) {
+			t.Fatalf("gotchas.md must not describe SVG import as missing now that import_svg exists; found %q", forbidden)
+		}
+	}
+	for _, required := range []string{"SVG", "`import_svg`", "batch"} {
+		if !strings.Contains(gotchas, required) {
+			t.Fatalf("gotchas.md must document SVG ingestion through import_svg; missing %q", required)
+		}
+	}
+}
+
+func TestToolsDocTracksNativeEffectsSurface(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "TOOLS.md"))
+	for _, required := range []string{
+		"### set_effects",
+		"### create_effect_style",
+		"GLASS",
+		"NOISE",
+		"TEXTURE",
+		"PROGRESSIVE",
+		"noiseSizeVector",
+		"startOffset",
+		"endOffset",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("TOOLS.md must document native/progressive effect surface; missing %q", required)
+		}
+	}
+}
+
 func TestNpmReadmeHasSingleLimitationsSection(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "npm", "README.md"))
 	count := strings.Count(body, "\n## Limitations\n") + strings.Count(body, "\n## Known limitations\n")
@@ -352,7 +410,7 @@ func TestToolsDocDocumentsCoreSurfaceContract(t *testing.T) {
 		"get_batch_op_spec",
 		"batch(validateOnly:true)",
 		"FIGMA_MCP_TOOL_PROFILE=full",
-		"legacy top-level compatibility surface",
+		"full top-level compatibility surface",
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("TOOLS.md must document production tool-surface contract; missing %q", required)

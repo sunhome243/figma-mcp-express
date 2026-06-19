@@ -35,6 +35,20 @@ func NormalizeNodeID(s string) string {
 	return s
 }
 
+func normalizeRPCNodeReferences(nodeIDs []string, params map[string]interface{}) {
+	for i, id := range nodeIDs {
+		nodeIDs[i] = NormalizeNodeID(id)
+	}
+	if params == nil {
+		return
+	}
+	for _, key := range []string{"nodeId", "parentId", "pageId", "componentId"} {
+		if v, ok := params[key].(string); ok {
+			params[key] = NormalizeNodeID(v)
+		}
+	}
+}
+
 // ValidNodeID reports whether s is a valid Figma node ID.
 func ValidNodeID(s string) bool {
 	return nodeIDPattern.MatchString(s)
@@ -368,6 +382,61 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
 		}
 
+	case "create_polygon", "create_star":
+		if w, ok := params["width"].(float64); ok && w <= 0 {
+			return "width must be positive"
+		}
+		if h, ok := params["height"].(float64); ok && h <= 0 {
+			return "height must be positive"
+		}
+		if pc, ok := params["pointCount"].(float64); ok && pc < 3 {
+			return "pointCount must be at least 3"
+		}
+		if tool == "create_star" {
+			if ir, ok := params["innerRadius"].(float64); ok && (ir < 0 || ir > 1) {
+				return "innerRadius must be between 0 and 1"
+			}
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "create_line":
+		if l, ok := params["length"].(float64); ok && l <= 0 {
+			return "length must be positive"
+		}
+		if sc, ok := params["strokeCap"].(string); ok && sc != "" {
+			switch sc {
+			case "NONE", "ROUND", "SQUARE", "ARROW_LINES", "ARROW_EQUILATERAL", "DIAMOND_FILLED", "TRIANGLE_FILLED", "CIRCLE_FILLED":
+			default:
+				return fmt.Sprintf("strokeCap %q is not a valid Figma stroke cap", sc)
+			}
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "import_svg":
+		if svg, _ := params["svg"].(string); svg == "" {
+			return "svg (raw SVG markup string) is required"
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "create_table":
+		nr, hasNR := params["numRows"].(float64)
+		if !hasNR || nr < 1 {
+			return "numRows is required and must be at least 1"
+		}
+		nc, hasNC := params["numColumns"].(float64)
+		if !hasNC || nc < 1 {
+			return "numColumns is required and must be at least 1"
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
 	case "create_text":
 		if text, _ := params["text"].(string); text == "" {
 			return "text is required"
@@ -404,6 +473,48 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		}
 		if !hasText && !hasStyle {
 			return "set_text requires `text` or at least one styling param (e.g. textAlignHorizontal, textAutoResize)"
+		}
+
+	case "set_text_range":
+		if len(nodeIDs) == 0 || nodeIDs[0] == "" {
+			return "nodeId is required"
+		}
+		if !ValidNodeID(nodeIDs[0]) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeIDs[0])
+		}
+		start, hasStart := params["startOffset"].(float64)
+		if !hasStart {
+			return "startOffset is required"
+		}
+		end, hasEnd := params["endOffset"].(float64)
+		if !hasEnd {
+			return "endOffset is required"
+		}
+		if start < 0 || end <= start {
+			return fmt.Sprintf("invalid range: need 0 <= startOffset < endOffset, got [%v, %v)", start, end)
+		}
+		if v, ok := params["textCase"].(string); ok && v != "" {
+			switch v {
+			case "ORIGINAL", "UPPER", "LOWER", "TITLE", "SMALL_CAPS", "SMALL_CAPS_FORCED":
+			default:
+				return fmt.Sprintf("textCase must be ORIGINAL, UPPER, LOWER, TITLE, SMALL_CAPS, or SMALL_CAPS_FORCED, got: %s", v)
+			}
+		}
+		if v, ok := params["textDecoration"].(string); ok && v != "" {
+			switch v {
+			case "NONE", "UNDERLINE", "STRIKETHROUGH":
+			default:
+				return fmt.Sprintf("textDecoration must be NONE, UNDERLINE, or STRIKETHROUGH, got: %s", v)
+			}
+		}
+		if lo, ok := params["listOptions"].(map[string]interface{}); ok {
+			if t, ok := lo["type"].(string); ok && t != "" {
+				switch t {
+				case "ORDERED", "UNORDERED", "NONE":
+				default:
+					return fmt.Sprintf("listOptions.type must be ORDERED, UNORDERED, or NONE, got: %s", t)
+				}
+			}
 		}
 
 	case "set_fills":
@@ -545,6 +656,12 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 				return fmt.Sprintf("scaleMode must be FILL, FIT, CROP, or TILE, got: %s", sm)
 			}
 		}
+		// ImageFilters fields are each constrained to -1..1.
+		for _, k := range []string{"exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"} {
+			if v, ok := params[k].(float64); ok && (v < -1 || v > 1) {
+				return fmt.Sprintf("%s must be between -1 and 1, got: %v", k, v)
+			}
+		}
 		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
 		}
@@ -680,6 +797,41 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		cid, _ := params["collectionId"].(string)
 		if vid == "" && cid == "" {
 			return "variableId or collectionId is required"
+		}
+
+	case "update_variable":
+		if vid, _ := params["variableId"].(string); vid == "" {
+			return "variableId is required"
+		}
+		if raw, ok := params["scopes"].([]interface{}); ok {
+			for _, s := range raw {
+				sv, _ := s.(string)
+				if !validVariableScopes[sv] {
+					return fmt.Sprintf("invalid variable scope: %q", sv)
+				}
+			}
+		}
+		if cs, ok := params["codeSyntax"].(map[string]interface{}); ok {
+			for k := range cs {
+				switch k {
+				case "WEB", "ANDROID", "iOS":
+				default:
+					return fmt.Sprintf("codeSyntax platform must be WEB, ANDROID, or iOS, got: %s", k)
+				}
+			}
+		}
+
+	case "update_variable_collection":
+		if cid, _ := params["collectionId"].(string); cid == "" {
+			return "collectionId is required"
+		}
+		if rm, ok := params["renameMode"].(map[string]interface{}); ok {
+			if mid, _ := rm["modeId"].(string); mid == "" {
+				return "renameMode requires a modeId"
+			}
+			if _, hasNew := rm["newName"]; !hasNew {
+				return "renameMode requires a newName"
+			}
 		}
 
 	// ── Linked tools ─────────────────────────────────────────────────────────
@@ -966,6 +1118,7 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		validBlendModes := map[string]bool{
 			"NORMAL": true, "MULTIPLY": true, "SCREEN": true, "OVERLAY": true,
 			"DARKEN": true, "LIGHTEN": true, "COLOR_DODGE": true, "COLOR_BURN": true,
+			"LINEAR_DODGE": true, "LINEAR_BURN": true,
 			"HARD_LIGHT": true, "SOFT_LIGHT": true, "DIFFERENCE": true, "EXCLUSION": true,
 			"HUE": true, "SATURATION": true, "COLOR": true, "LUMINOSITY": true,
 			"PASS_THROUGH": true,
@@ -1130,6 +1283,18 @@ var validTriggerTypes = map[string]bool{
 	"ON_KEY_DOWN": true, "ON_MEDIA_HIT": true, "ON_MEDIA_END": true,
 }
 
+// validVariableScopes is the Figma VariableScope union (publishing scopes that
+// restrict where a variable is surfaced in the UI). WEB/ANDROID code-syntax scopes
+// are configured via codeSyntax, not here.
+var validVariableScopes = map[string]bool{
+	"ALL_SCOPES": true, "TEXT_CONTENT": true, "CORNER_RADIUS": true,
+	"WIDTH_HEIGHT": true, "GAP": true, "ALL_FILLS": true, "FRAME_FILL": true,
+	"SHAPE_FILL": true, "TEXT_FILL": true, "STROKE_COLOR": true, "STROKE_FLOAT": true,
+	"EFFECT_FLOAT": true, "EFFECT_COLOR": true, "OPACITY": true, "FONT_FAMILY": true,
+	"FONT_STYLE": true, "FONT_WEIGHT": true, "FONT_SIZE": true, "LINE_HEIGHT": true,
+	"LETTER_SPACING": true, "PARAGRAPH_SPACING": true, "PARAGRAPH_INDENT": true,
+}
+
 func validateReaction(idx int, r map[string]any) string {
 	if trigger, ok := r["trigger"].(map[string]any); ok {
 		if msg := validateTriggerType(idx, trigger); msg != "" {
@@ -1254,6 +1419,20 @@ func validateTextStyleParams(params map[string]interface{}) string {
 			return fmt.Sprintf("letterSpacingUnit must be PIXELS or PERCENT, got: %s", v)
 		}
 	}
+	if v, ok := params["textTruncation"].(string); ok && v != "" {
+		switch v {
+		case "DISABLED", "ENDING":
+		default:
+			return fmt.Sprintf("textTruncation must be DISABLED or ENDING, got: %s", v)
+		}
+	}
+	if v, ok := params["leadingTrim"].(string); ok && v != "" {
+		switch v {
+		case "CAP_HEIGHT", "NONE":
+		default:
+			return fmt.Sprintf("leadingTrim must be CAP_HEIGHT or NONE, got: %s", v)
+		}
+	}
 	return ""
 }
 
@@ -1289,9 +1468,9 @@ func validateLayoutSizingParams(params map[string]interface{}) string {
 func validateAutoLayoutParams(params map[string]interface{}) string {
 	if lm, ok := params["layoutMode"].(string); ok && lm != "" {
 		switch lm {
-		case "HORIZONTAL", "VERTICAL", "NONE":
+		case "HORIZONTAL", "VERTICAL", "GRID", "NONE":
 		default:
-			return fmt.Sprintf("layoutMode must be HORIZONTAL, VERTICAL, or NONE, got: %s", lm)
+			return fmt.Sprintf("layoutMode must be HORIZONTAL, VERTICAL, GRID, or NONE, got: %s", lm)
 		}
 	}
 	if v, ok := params["primaryAxisAlignItems"].(string); ok && v != "" {
@@ -1320,6 +1499,20 @@ func validateAutoLayoutParams(params map[string]interface{}) string {
 		case "FIXED", "AUTO":
 		default:
 			return fmt.Sprintf("counterAxisSizingMode must be FIXED or AUTO, got: %s", v)
+		}
+	}
+	if v, ok := params["counterAxisAlignContent"].(string); ok && v != "" {
+		switch v {
+		case "AUTO", "SPACE_BETWEEN":
+		default:
+			return fmt.Sprintf("counterAxisAlignContent must be AUTO or SPACE_BETWEEN, got: %s", v)
+		}
+	}
+	if v, ok := params["overflowDirection"].(string); ok && v != "" {
+		switch v {
+		case "NONE", "HORIZONTAL", "VERTICAL", "BOTH":
+		default:
+			return fmt.Sprintf("overflowDirection must be NONE, HORIZONTAL, VERTICAL, or BOTH, got: %s", v)
 		}
 	}
 	if v, ok := params["layoutWrap"].(string); ok && v != "" {

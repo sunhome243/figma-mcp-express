@@ -33,6 +33,52 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 			return renderResponse(resp, err)
 		})
 
+	s.AddTool(mcp.NewTool("set_text_range",
+		mcp.WithDescription("Apply styling to a CHARACTER RANGE within a TEXT node (per-span formatting): mixed fonts/sizes, per-span color, hyperlinks, lists, indentation, decoration. Offsets are character indices with 0 <= startOffset < endOffset <= text length. Fonts covering the range are loaded automatically. Use set_text for whole-node changes."),
+		mcp.WithString("nodeId",
+			mcp.Required(),
+			mcp.Description("TEXT node ID in colon format e.g. '4029:12345'"),
+		),
+		mcp.WithNumber("startOffset",
+			mcp.Required(),
+			mcp.Description("Start character index (inclusive, 0-based)"),
+		),
+		mcp.WithNumber("endOffset",
+			mcp.Required(),
+			mcp.Description("End character index (exclusive). Must be > startOffset and <= text length."),
+		),
+		mcp.WithString("fontFamily", mcp.Description("Font family for the range (e.g. 'Inter'). Loaded automatically.")),
+		mcp.WithString("fontStyle", mcp.Description("Font style for the range (e.g. 'Bold', 'Italic'). Loaded automatically.")),
+		mcp.WithNumber("fontSize", mcp.Description("Font size in pixels for the range")),
+		mcp.WithString("color", mcp.Description("Text color for the range as hex e.g. #FF0000 (sets a solid fill on the span)")),
+		mcp.WithString("textCase", mcp.Description("Text case for the range: ORIGINAL, UPPER, LOWER, TITLE, SMALL_CAPS, or SMALL_CAPS_FORCED")),
+		mcp.WithString("textDecoration", mcp.Description("Decoration for the range: NONE, UNDERLINE, or STRIKETHROUGH")),
+		mcp.WithNumber("letterSpacingValue", mcp.Description("Letter spacing value for the range (unit via letterSpacingUnit)")),
+		mcp.WithString("letterSpacingUnit", mcp.Description("Letter spacing unit: PIXELS (default) or PERCENT")),
+		mcp.WithNumber("lineHeightValue", mcp.Description("Line height value for the range (unit via lineHeightUnit)")),
+		mcp.WithString("lineHeightUnit", mcp.Description("Line height unit: PIXELS (default), PERCENT, or AUTO")),
+		mcp.WithObject("hyperlink",
+			mcp.Description("Hyperlink for the range: {url:\"https://…\"} for a web link, or {nodeId:\"1:23\"} for an in-file link. Omit to leave unchanged; pass null to clear."),
+		),
+		mcp.WithObject("listOptions",
+			mcp.Description("List formatting for the range: {type:\"ORDERED\"|\"UNORDERED\"|\"NONE\"}"),
+		),
+		mcp.WithNumber("indentation", mcp.Description("Indentation level for the range (0-based)")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		nodeID, _ := args["nodeId"].(string)
+		nodeID = NormalizeNodeID(nodeID)
+		params := map[string]interface{}{}
+		for _, k := range setTextRangeKeys {
+			if v, ok := args[k]; ok {
+				params[k] = v
+			}
+		}
+		resp, err := node.Send(ctx, "set_text_range", []string{nodeID}, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
 	s.AddTool(mcp.NewTool("set_fills",
 		mcp.WithDescription("Set the fill color on a single node (this top-level tool takes one nodeId, not an array). Returns {results:[{nodeId,…}]}, a 1-element array. PREFER variableId over a raw hex — bind a design token, don't bake a raw color (the project invariant). Use mode='append' to stack a new fill on top of existing fills instead of replacing them. "+
 			"Also a `batch` op type — and in `batch` it accepts nodeIds[] (all→all bulk: the same fill applied to every node) and returns {results:[{nodeId,…}]}. Fan a scan into it in ONE round-trip with the projection ref nodeIds:[\"$0.matchingNodes[*].id\"]."),
@@ -275,7 +321,7 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 			mcp.Required(),
 			mcp.Description("Frame node ID in colon format e.g. '4029:12345'"),
 		),
-		mcp.WithString("layoutMode", mcp.Description("Auto-layout direction: HORIZONTAL, VERTICAL, or NONE")),
+		mcp.WithString("layoutMode", mcp.Description("Auto-layout direction: HORIZONTAL, VERTICAL, GRID, or NONE. GRID = CSS-grid layout (use gridRowCount/gridColumnCount/gridRowGap/gridColumnGap).")),
 		mcp.WithNumber("paddingTop", mcp.Description("Top padding")),
 		mcp.WithNumber("paddingRight", mcp.Description("Right padding")),
 		mcp.WithNumber("paddingBottom", mcp.Description("Bottom padding")),
@@ -292,6 +338,21 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 		mcp.WithString("counterAxisSizingMode", mcp.Description("Cross-axis sizing: FIXED or AUTO (hug)")),
 		mcp.WithString("layoutWrap", mcp.Description("Wrap behaviour: NO_WRAP or WRAP")),
 		mcp.WithNumber("counterAxisSpacing", mcp.Description("Gap between wrapped rows/columns (only when layoutWrap is WRAP)")),
+		mcp.WithString("counterAxisSpacingVariableId", mcp.Description("Design variable ID to bind to counterAxisSpacing (wrapped-track gap; only when layoutWrap is WRAP).")),
+		mcp.WithString("counterAxisAlignContent", mcp.Description("Wrapped-track distribution: AUTO or SPACE_BETWEEN (only when layoutWrap is WRAP)")),
+		mcp.WithNumber("gridRowCount", mcp.Description("Number of rows (GRID layoutMode only)")),
+		mcp.WithNumber("gridColumnCount", mcp.Description("Number of columns (GRID layoutMode only)")),
+		mcp.WithNumber("gridRowGap", mcp.Description("Gap between grid rows (GRID layoutMode only)")),
+		mcp.WithNumber("gridColumnGap", mcp.Description("Gap between grid columns (GRID layoutMode only)")),
+		mcp.WithString("gridRowGapVariableId", mcp.Description("Design variable ID to bind to gridRowGap (GRID layoutMode only).")),
+		mcp.WithString("gridColumnGapVariableId", mcp.Description("Design variable ID to bind to gridColumnGap (GRID layoutMode only).")),
+		mcp.WithNumber("minWidth", mcp.Description("Minimum frame width in px (null clears). Responsive constraint on auto-layout frames.")),
+		mcp.WithNumber("maxWidth", mcp.Description("Maximum frame width in px (null clears).")),
+		mcp.WithNumber("minHeight", mcp.Description("Minimum frame height in px (null clears).")),
+		mcp.WithNumber("maxHeight", mcp.Description("Maximum frame height in px (null clears).")),
+		mcp.WithString("overflowDirection", mcp.Description("Scroll overflow: NONE, HORIZONTAL, VERTICAL, or BOTH")),
+		mcp.WithBoolean("strokesIncludedInLayout", mcp.Description("Whether strokes count toward layout size (auto-layout frames only)")),
+		mcp.WithBoolean("itemReverseZIndex", mcp.Description("Reverse the stacking order of children (auto-layout frames only)")),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nodeID, _ := req.GetArguments()["nodeId"].(string)
@@ -336,7 +397,7 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
-	// LEVER 4 (tool demotion) — lock_nodes, unlock_nodes, rotate_nodes, reorder_nodes, set_blend_mode, set_constraints are DEMOTED to batch-only ops. Registrations commented out (off tools/list); batch relays each type to the untouched plugin handlers. Uncomment to restore.
+	// LEVER 4 (tool demotion) — lock_nodes, unlock_nodes, rotate_nodes, reorder_nodes, set_blend_mode are DEMOTED to batch-only ops. Registrations commented out (off tools/list); batch relays each type to the untouched plugin handlers. Uncomment to restore. (set_constraints was promoted back to a top-level tool.)
 	// s.AddTool(mcp.NewTool("lock_nodes",
 	// 	mcp.WithDescription("Lock one or more nodes to prevent accidental edits in Figma. Also a `batch` op type."),
 	// 	mcp.WithArray("nodeIds",
@@ -427,29 +488,29 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 	// 	return renderResponse(resp, err)
 	// })
 
-	// s.AddTool(mcp.NewTool("set_constraints",
-	// 	mcp.WithDescription("Set layout constraints (pinning behaviour) on one or more nodes relative to their parent. Also a `batch` op type."),
-	// 	mcp.WithArray("nodeIds",
-	// 		mcp.Required(),
-	// 		mcp.Description("Node IDs in colon format e.g. ['4029:12345']"),
-	// 		mcp.WithStringItems(),
-	// 	),
-	// 	mcp.WithString("horizontal", mcp.Description("Horizontal constraint: MIN (left), MAX (right), CENTER, STRETCH, or SCALE")),
-	// 	mcp.WithString("vertical", mcp.Description("Vertical constraint: MIN (top), MAX (bottom), CENTER, STRETCH, or SCALE")),
-	// 	channelParam(),
-	// ), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// 	raw, _ := req.GetArguments()["nodeIds"].([]interface{})
-	// 	nodeIDs := toStringSlice(raw)
-	// 	params := map[string]interface{}{}
-	// 	if h, ok := req.GetArguments()["horizontal"].(string); ok && h != "" {
-	// 		params["horizontal"] = h
-	// 	}
-	// 	if v, ok := req.GetArguments()["vertical"].(string); ok && v != "" {
-	// 		params["vertical"] = v
-	// 	}
-	// 	resp, err := node.Send(ctx, "set_constraints", nodeIDs, withChannel(req, params))
-	// 	return renderResponse(resp, err)
-	// })
+	s.AddTool(mcp.NewTool("set_constraints",
+		mcp.WithDescription("Set layout constraints (pinning behaviour) on one or more nodes relative to their parent — how a node resizes/repositions when its parent resizes. For non-auto-layout parents. Also a `batch` op type."),
+		mcp.WithArray("nodeIds",
+			mcp.Required(),
+			mcp.Description("Node IDs in colon format e.g. ['4029:12345']"),
+			mcp.WithStringItems(),
+		),
+		mcp.WithString("horizontal", mcp.Description("Horizontal constraint: MIN (left), MAX (right), CENTER, STRETCH, or SCALE")),
+		mcp.WithString("vertical", mcp.Description("Vertical constraint: MIN (top), MAX (bottom), CENTER, STRETCH, or SCALE")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		raw, _ := req.GetArguments()["nodeIds"].([]interface{})
+		nodeIDs := toStringSlice(raw)
+		params := map[string]interface{}{}
+		if h, ok := req.GetArguments()["horizontal"].(string); ok && h != "" {
+			params["horizontal"] = h
+		}
+		if v, ok := req.GetArguments()["vertical"].(string); ok && v != "" {
+			params["vertical"] = v
+		}
+		resp, err := node.Send(ctx, "set_constraints", nodeIDs, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
 
 	s.AddTool(mcp.NewTool("reparent_nodes",
 		mcp.WithDescription("Move one or more nodes to a different parent frame, group, or section. By default (preserveAbsolutePosition=true) the node's canvas position is preserved after reparenting by adjusting its parent-local x/y. Set preserveAbsolutePosition=false to keep the raw x/y values unchanged (node will visually jump to a new location relative to the new parent)."),
