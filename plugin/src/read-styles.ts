@@ -86,6 +86,17 @@ export const handleReadStyleRequest = async (request: any) => {
       };
     }
 
+    case "get_selection_colors": {
+      if (typeof figma.getSelectionColors !== "function") {
+        throw new Error("getSelectionColors is unavailable in this Figma host");
+      }
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { colors: figma.getSelectionColors() },
+      };
+    }
+
     case "get_local_components": {
       const pageId = request.params && request.params.pageId;
 

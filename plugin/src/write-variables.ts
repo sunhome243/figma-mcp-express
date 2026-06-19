@@ -121,6 +121,17 @@ export const handleWriteVariableRequest = async (request: any) => {
       };
     }
 
+    case "create_variable_alias": {
+      const p = request.params || {};
+      if (!p.variableId) throw new Error("variableId is required");
+      const alias = await figma.variables.createVariableAliasByIdAsync(String(p.variableId));
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { alias },
+      };
+    }
+
     case "delete_variable": {
       const p = request.params || {};
       if (p.variableId) {
@@ -161,6 +172,11 @@ export const handleWriteVariableRequest = async (request: any) => {
           if (p.codeSyntax[platform] != null) {
             variable.setVariableCodeSyntax(platform, String(p.codeSyntax[platform]));
           }
+        }
+      }
+      if (Array.isArray(p.removeCodeSyntax)) {
+        for (const platform of p.removeCodeSyntax) {
+          variable.removeVariableCodeSyntax(String(platform) as CodeSyntaxPlatform);
         }
       }
       figma.commitUndo();

@@ -265,6 +265,56 @@ export const handleWriteModifyRequest = async (request: any) => {
       };
     }
 
+    case "set_file_thumbnail": {
+      const p = request.params || {};
+      if (typeof figma.setFileThumbnailNodeAsync !== "function") {
+        throw new Error("setFileThumbnailNodeAsync is unavailable in this Figma host");
+      }
+      let node: any = null;
+      if (p.nodeId != null) {
+        node = await figma.getNodeByIdAsync(String(p.nodeId));
+        if (!node) throw new Error(`Node not found: ${p.nodeId}`);
+        if (!["FRAME", "COMPONENT", "COMPONENT_SET", "SECTION"].includes(node.type)) {
+          throw new Error("file thumbnail node must be FRAME, COMPONENT, COMPONENT_SET, SECTION, or null");
+        }
+      }
+      await figma.setFileThumbnailNodeAsync(node);
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: node ? { nodeId: node.id, name: node.name, type: node.type } : { nodeId: null, cleared: true },
+      };
+    }
+
+    case "add_dev_resource":
+    case "edit_dev_resource":
+    case "delete_dev_resource": {
+      const p = request.params || {};
+      if (!p.nodeId) throw new Error("nodeId is required");
+      const node = await figma.getNodeByIdAsync(String(p.nodeId)) as any;
+      if (!node) throw new Error(`Node not found: ${p.nodeId}`);
+      if (request.type === "add_dev_resource") {
+        if (!p.url) throw new Error("url is required");
+        if (typeof node.addDevResourceAsync !== "function") throw new Error(`Node ${p.nodeId} does not support dev resources`);
+        await node.addDevResourceAsync(String(p.url), p.name != null ? String(p.name) : undefined);
+      } else if (request.type === "edit_dev_resource") {
+        if (!p.currentUrl) throw new Error("currentUrl is required");
+        if (typeof node.editDevResourceAsync !== "function") throw new Error(`Node ${p.nodeId} does not support dev resources`);
+        const next: any = {};
+        if (p.url != null) next.url = String(p.url);
+        if (p.name != null) next.name = String(p.name);
+        if (Object.keys(next).length === 0) throw new Error("edit_dev_resource requires url or name");
+        await node.editDevResourceAsync(String(p.currentUrl), next);
+      } else {
+        if (!p.url) throw new Error("url is required");
+        if (typeof node.deleteDevResourceAsync !== "function") throw new Error(`Node ${p.nodeId} does not support dev resources`);
+        await node.deleteDevResourceAsync(String(p.url));
+      }
+      figma.commitUndo();
+      return { type: request.type, requestId: request.requestId, data: { nodeId: node.id, ok: true } };
+    }
+
     case "set_opacity": {
       const p = request.params || {};
       if (p.opacity == null) throw new Error("opacity is required");

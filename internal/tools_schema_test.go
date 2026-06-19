@@ -134,8 +134,9 @@ func TestToolSchemas_AllToolsRegistered(t *testing.T) {
 	// catalog meta-tools used for progressive discovery. Count includes the
 	// prototype additions get_prototype + set_prototype_start, plus set_presence,
 	// and the node-creation additions create_line/create_polygon/create_star/import_svg/create_table,
-	// plus set_text_range, update_variable, update_variable_collection, and the promoted set_constraints.
-	const want = 84
+	// plus set_text_range, update_variable, update_variable_collection, promoted set_constraints,
+	// and the API-gap media/dev-resource/style-variable helper surface.
+	const want = 105
 	got := len(resp.Result.Tools)
 	if got != want {
 		t.Errorf("expected %d registered tools, got %d — update the constant if tools were intentionally added or removed", want, got)

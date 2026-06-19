@@ -115,6 +115,37 @@ func TestFigmaMCPExpressSkillKeepsProductionRules(t *testing.T) {
 	}
 }
 
+func TestMultiAgentSkillDocumentsOriginRosterAndOrchestrator(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "multi-agent.md"))
+	for _, required := range []string{
+		"`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`",
+		"not a free-form string",
+		"sessionId+origin",
+		"orchestrator's own origin is `wolfgang`",
+		"Do not use `sunho` for the orchestrator",
+		"Do not reuse one `origin` across concurrent agents",
+		"Agent 3 -> owns frame C -> origin: \"zoe\"",
+		"status is optional in the schema, not optional in the workflow",
+		"Do not skip `set_presence` because `status` is optional",
+		"Actively call `set_presence` at dispatch and workflow transitions",
+		"Pass `origin` on every `batch` call",
+		"batch(channel:\"auto-2\", origin:\"theo\", ops:[create_frame...])",
+		"Use exactly the origin assigned to you",
+		"Do not pick a random roster enum",
+		"`origin` works on reads, writes, and batch",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("multi-agent.md missing origin roster/orchestrator rule %q", required)
+		}
+	}
+	if strings.Contains(body, "Agent 3 → owns frame C → origin: \"sunho\"") {
+		t.Fatal("multi-agent.md must not model the orchestrator/third worker as sunho; use wolfgang for orchestrator and distinct worker origins")
+	}
+	if strings.Contains(body, "batch(channel:\"auto-2\", ops:[create_frame") {
+		t.Fatal("multi-agent.md must not show batch examples without outer origin")
+	}
+}
+
 func TestBatchRecipesDocumentValidationAndErgonomics(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "batch-recipes.md"))
 	for _, required := range []string{
@@ -178,6 +209,27 @@ func TestDocsTrackAPIGapCoverageSurface(t *testing.T) {
 		"### update_variable",
 		"### update_variable_collection",
 		"### set_constraints",
+		"### get_image_by_hash",
+		"### get_file_thumbnail",
+		"### get_dev_resources",
+		"### resolve_variable_for_consumer",
+		"### get_selection_colors",
+		"### create_video",
+		"### create_gif",
+		"### create_link_preview",
+		"### create_vector",
+		"### create_slice",
+		"### create_page_divider",
+		"### create_text_path",
+		"### set_file_thumbnail",
+		"### add_dev_resource",
+		"### edit_dev_resource",
+		"### delete_dev_resource",
+		"### reorder_local_style",
+		"### reorder_local_style_folder",
+		"### create_variable_alias",
+		"### bind_variable_to_effect",
+		"### bind_variable_to_layout_grid",
 	} {
 		if !strings.Contains(tools, heading) {
 			t.Fatalf("TOOLS.md must document new API-gap surface %q", heading)
