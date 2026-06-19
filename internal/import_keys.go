@@ -1,6 +1,9 @@
 package internal
 
 import (
+	"encoding/base64"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 )
@@ -117,12 +120,41 @@ func prepareBatchImportOpParams(op map[string]interface{}) {
 		}
 		return
 	}
-	if t != "import_component_by_key" {
-		return
-	}
 	params, ok := op["params"].(map[string]interface{})
 	if !ok {
 		return
 	}
-	prepareImportComponentByKeyParams(params)
+	switch t {
+	case "import_component_by_key":
+		prepareImportComponentByKeyParams(params)
+	case "import_image":
+		resolveImagePath(params)
+	}
+}
+
+// resolveImagePath converts imagePath → imageData (base64) in place so the
+// plugin (which only speaks imageData) receives the encoded bytes. Mirrors the
+// same logic in the standalone import_image tool handler.
+func resolveImagePath(params map[string]interface{}) {
+	imagePath, _ := params["imagePath"].(string)
+	if imagePath == "" {
+		return
+	}
+	if _, hasData := params["imageData"].(string); hasData {
+		return // imageData already present; standalone handler precedence applies
+	}
+	abs := imagePath
+	if !filepath.IsAbs(abs) {
+		wd, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		abs = filepath.Join(wd, imagePath)
+	}
+	raw, err := os.ReadFile(abs)
+	if err != nil {
+		return // plugin will surface the missing-imageData error with context
+	}
+	params["imageData"] = base64.StdEncoding.EncodeToString(raw)
+	delete(params, "imagePath")
 }
