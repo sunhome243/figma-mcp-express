@@ -103,4 +103,41 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 	// 	resp, err := node.Send(ctx, "delete_variable", nil, withChannel(req, params))
 	// 	return renderResponse(resp, err)
 	// })
+
+	s.AddTool(mcp.NewTool("update_variable",
+		mcp.WithDescription("Update an existing variable's metadata: rename, set publishing scopes, hide from publishing, or set per-platform code syntax. Does not change the variable's value (use set_variable_value)."),
+		mcp.WithString("variableId",
+			mcp.Required(),
+			mcp.Description("Variable ID to update (from get_variable_defs)"),
+		),
+		mcp.WithString("name", mcp.Description("New variable name (use slash notation to group, e.g. 'color/primary')")),
+		mcp.WithArray("scopes",
+			mcp.Description("Publishing scopes restricting where the variable is offered. Values: ALL_SCOPES, TEXT_CONTENT, CORNER_RADIUS, WIDTH_HEIGHT, GAP, ALL_FILLS, FRAME_FILL, SHAPE_FILL, TEXT_FILL, STROKE_COLOR, STROKE_FLOAT, EFFECT_FLOAT, EFFECT_COLOR, OPACITY, FONT_FAMILY, FONT_STYLE, FONT_WEIGHT, FONT_SIZE, LINE_HEIGHT, LETTER_SPACING, PARAGRAPH_SPACING, PARAGRAPH_INDENT."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithBoolean("hiddenFromPublishing", mcp.Description("Hide this variable when the file is published as a library")),
+		mcp.WithObject("codeSyntax", mcp.Description("Per-platform code names: {WEB?, ANDROID?, iOS?}. Each provided platform is set; others are left unchanged.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "update_variable", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("update_variable_collection",
+		mcp.WithDescription("Update a variable collection: rename it, hide it from publishing, rename a mode, or remove a mode. A collection must always keep at least one mode."),
+		mcp.WithString("collectionId",
+			mcp.Required(),
+			mcp.Description("Variable collection ID to update"),
+		),
+		mcp.WithString("name", mcp.Description("New collection name")),
+		mcp.WithBoolean("hiddenFromPublishing", mcp.Description("Hide this collection when the file is published as a library")),
+		mcp.WithObject("renameMode", mcp.Description("Rename a mode: {modeId, newName}")),
+		mcp.WithString("removeMode", mcp.Description("modeId of a mode to remove (cannot remove the last remaining mode)")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "update_variable_collection", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
 }

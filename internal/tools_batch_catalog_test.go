@@ -30,8 +30,8 @@ func TestBatchOpCatalogCoversPluginHandlers(t *testing.T) {
 			pluginOps[m[1]] = true
 		}
 	}
-	if len(pluginOps) != 94 {
-		t.Fatalf("plugin lowercase handler op count = %d, want 94", len(pluginOps))
+	if len(pluginOps) != 96 {
+		t.Fatalf("plugin lowercase handler op count = %d, want 96", len(pluginOps))
 	}
 
 	var missing []string

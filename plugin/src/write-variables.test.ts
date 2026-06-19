@@ -379,3 +379,80 @@ describe("get_remote_variable_collection", () => {
     expect(res).toBeNull();
   });
 });
+
+// ── update_variable ───────────────────────────────────────────────────────────
+
+describe("update_variable", () => {
+  it("renames, sets scopes, hides, and sets codeSyntax", async () => {
+    const syntaxCalls: any[] = [];
+    mockVariables["var:1"] = {
+      id: "var:1", name: "old", resolvedType: "COLOR",
+      scopes: ["ALL_SCOPES"], hiddenFromPublishing: false, codeSyntax: {},
+      setVariableCodeSyntax(platform: string, value: string) { syntaxCalls.push({ platform, value }); this.codeSyntax[platform] = value; },
+    };
+    const res = await handleWriteRequest(makeRequest("update_variable", [], {
+      variableId: "var:1", name: "color/primary", scopes: ["TEXT_FILL", "FRAME_FILL"],
+      hiddenFromPublishing: true, codeSyntax: { WEB: "colorPrimary", iOS: "ColorPrimary" },
+    }));
+    expect(mockVariables["var:1"].name).toBe("color/primary");
+    expect(mockVariables["var:1"].scopes).toEqual(["TEXT_FILL", "FRAME_FILL"]);
+    expect(mockVariables["var:1"].hiddenFromPublishing).toBe(true);
+    expect(syntaxCalls).toContainEqual({ platform: "WEB", value: "colorPrimary" });
+    expect(syntaxCalls).toContainEqual({ platform: "iOS", value: "ColorPrimary" });
+    expect(res?.data.variableId).toBe("var:1");
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("throws when the variable is not found", async () => {
+    await expect(handleWriteRequest(makeRequest("update_variable", [], { variableId: "nope" })))
+      .rejects.toThrow("Variable not found");
+  });
+
+  it("throws when variableId missing", async () => {
+    await expect(handleWriteRequest(makeRequest("update_variable", [], {})))
+      .rejects.toThrow("variableId is required");
+  });
+});
+
+// ── update_variable_collection ────────────────────────────────────────────────
+
+describe("update_variable_collection", () => {
+  it("renames the collection, hides it, and renames a mode", async () => {
+    const col: any = makeCollection("col:1", "Tokens");
+    col.hiddenFromPublishing = false;
+    mockCollections["col:1"] = col;
+    const res = await handleWriteRequest(makeRequest("update_variable_collection", [], {
+      collectionId: "col:1", name: "Design Tokens", hiddenFromPublishing: true,
+      renameMode: { modeId: "mode:default", newName: "Light" },
+    }));
+    expect(col.name).toBe("Design Tokens");
+    expect(col.hiddenFromPublishing).toBe(true);
+    expect(col.modes[0].name).toBe("Light");
+    expect(res?.data.collectionId).toBe("col:1");
+  });
+
+  it("removes a mode", async () => {
+    const col: any = makeCollection("col:1", "Tokens");
+    col.addMode("Dark");
+    col.removeMode = function (modeId: string) { this.modes = this.modes.filter((m: any) => m.modeId !== modeId); };
+    mockCollections["col:1"] = col;
+    await handleWriteRequest(makeRequest("update_variable_collection", [], {
+      collectionId: "col:1", removeMode: "mode:1",
+    }));
+    expect(col.modes.find((m: any) => m.modeId === "mode:1")).toBeUndefined();
+  });
+
+  it("throws a clear error when removing the last mode fails", async () => {
+    const col: any = makeCollection("col:1", "Tokens");
+    col.removeMode = () => { throw new Error("cannot remove last mode"); };
+    mockCollections["col:1"] = col;
+    await expect(handleWriteRequest(makeRequest("update_variable_collection", [], {
+      collectionId: "col:1", removeMode: "mode:default",
+    }))).rejects.toThrow("must keep at least one mode");
+  });
+
+  it("throws when the collection is not found", async () => {
+    await expect(handleWriteRequest(makeRequest("update_variable_collection", [], { collectionId: "nope" })))
+      .rejects.toThrow("Collection not found");
+  });
+});

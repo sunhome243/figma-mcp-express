@@ -785,6 +785,41 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return "variableId or collectionId is required"
 		}
 
+	case "update_variable":
+		if vid, _ := params["variableId"].(string); vid == "" {
+			return "variableId is required"
+		}
+		if raw, ok := params["scopes"].([]interface{}); ok {
+			for _, s := range raw {
+				sv, _ := s.(string)
+				if !validVariableScopes[sv] {
+					return fmt.Sprintf("invalid variable scope: %q", sv)
+				}
+			}
+		}
+		if cs, ok := params["codeSyntax"].(map[string]interface{}); ok {
+			for k := range cs {
+				switch k {
+				case "WEB", "ANDROID", "iOS":
+				default:
+					return fmt.Sprintf("codeSyntax platform must be WEB, ANDROID, or iOS, got: %s", k)
+				}
+			}
+		}
+
+	case "update_variable_collection":
+		if cid, _ := params["collectionId"].(string); cid == "" {
+			return "collectionId is required"
+		}
+		if rm, ok := params["renameMode"].(map[string]interface{}); ok {
+			if mid, _ := rm["modeId"].(string); mid == "" {
+				return "renameMode requires a modeId"
+			}
+			if _, hasNew := rm["newName"]; !hasNew {
+				return "renameMode requires a newName"
+			}
+		}
+
 	// ── Linked tools ─────────────────────────────────────────────────────────
 
 	case "apply_style_to_node":
@@ -1232,6 +1267,18 @@ var validTriggerTypes = map[string]bool{
 	"AFTER_TIMEOUT": true, "MOUSE_ENTER": true, "MOUSE_LEAVE": true,
 	"MOUSE_UP": true, "MOUSE_DOWN": true,
 	"ON_KEY_DOWN": true, "ON_MEDIA_HIT": true, "ON_MEDIA_END": true,
+}
+
+// validVariableScopes is the Figma VariableScope union (publishing scopes that
+// restrict where a variable is surfaced in the UI). WEB/ANDROID code-syntax scopes
+// are configured via codeSyntax, not here.
+var validVariableScopes = map[string]bool{
+	"ALL_SCOPES": true, "TEXT_CONTENT": true, "CORNER_RADIUS": true,
+	"WIDTH_HEIGHT": true, "GAP": true, "ALL_FILLS": true, "FRAME_FILL": true,
+	"SHAPE_FILL": true, "TEXT_FILL": true, "STROKE_COLOR": true, "STROKE_FLOAT": true,
+	"EFFECT_FLOAT": true, "EFFECT_COLOR": true, "OPACITY": true, "FONT_FAMILY": true,
+	"FONT_STYLE": true, "FONT_WEIGHT": true, "FONT_SIZE": true, "LINE_HEIGHT": true,
+	"LETTER_SPACING": true, "PARAGRAPH_SPACING": true, "PARAGRAPH_INDENT": true,
 }
 
 func validateReaction(idx int, r map[string]any) string {

@@ -8,6 +8,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`update_variable` / `update_variable_collection` — variable & collection metadata management.**
+  `update_variable`: rename, set publishing `scopes` (validated against the 22-value VariableScope
+  enum), `hiddenFromPublishing`, and per-platform `codeSyntax` (`WEB`/`ANDROID`/`iOS`).
+  `update_variable_collection`: rename, `hiddenFromPublishing`, `renameMode`, `removeMode` (with a
+  clear error when removing the last remaining mode). Both are also `batch` ops.
+- **`set_constraints` promoted to a top-level tool.** Previously batch-only (LEVER 4 demotion);
+  now a first-class tool for pinning behaviour on non-auto-layout children. Still a `batch` op.
 - **`set_text_range` — per-span (character-range) text styling.** Apply mixed fonts/sizes,
   per-span color, hyperlinks (`{url}` or `{nodeId}`), list options (`ORDERED`/`UNORDERED`/`NONE`),
   indentation, decoration, and per-range spacing to a `[startOffset, endOffset)` slice of a TEXT node.

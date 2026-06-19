@@ -125,6 +125,8 @@ var pluginSupportedBatchOps = []string{
 	"ungroup_nodes",
 	"unlock_nodes",
 	"update_paint_style",
+	"update_variable",
+	"update_variable_collection",
 }
 
 var demotedBatchOnlyInputSchemas = map[string]map[string]any{
@@ -166,10 +168,6 @@ var demotedBatchOnlyInputSchemas = map[string]map[string]any{
 	"set_blend_mode": schemaObject([]string{"blendMode"}, map[string]any{
 		"blendMode": enumProp("NORMAL", "MULTIPLY", "SCREEN", "OVERLAY", "DARKEN", "LIGHTEN", "COLOR_DODGE", "COLOR_BURN", "HARD_LIGHT", "SOFT_LIGHT", "DIFFERENCE", "EXCLUSION", "HUE", "SATURATION", "COLOR", "LUMINOSITY", "PASS_THROUGH"),
 	}),
-	"set_constraints": schemaObject(nil, map[string]any{
-		"horizontal": enumProp("MIN", "MAX", "CENTER", "STRETCH", "SCALE"),
-		"vertical":   enumProp("MIN", "MAX", "CENTER", "STRETCH", "SCALE"),
-	}),
 	"set_corner_radius": schemaObject(nil, map[string]any{
 		"cornerRadius":      numberProp(),
 		"topLeftRadius":     numberProp(),
@@ -199,7 +197,6 @@ var demotedBatchOpDescriptions = map[string]string{
 	"delete_page":              "Delete a page by pageId or exact pageName.",
 	"delete_variable":          "Delete a variable by variableId, or a collection by collectionId.",
 	"rename_page":              "Rename a page by pageId or exact pageName.",
-	"set_constraints":          "Set horizontal and/or vertical constraints on nodes.",
 	"set_corner_radius":        "Set uniform or per-corner radius values on nodes.",
 	"set_blend_mode":           "Set Figma blend mode on nodes.",
 	"rename_node":              "Rename one node.",

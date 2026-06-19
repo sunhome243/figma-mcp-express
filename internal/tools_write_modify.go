@@ -397,7 +397,7 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
-	// LEVER 4 (tool demotion) — lock_nodes, unlock_nodes, rotate_nodes, reorder_nodes, set_blend_mode, set_constraints are DEMOTED to batch-only ops. Registrations commented out (off tools/list); batch relays each type to the untouched plugin handlers. Uncomment to restore.
+	// LEVER 4 (tool demotion) — lock_nodes, unlock_nodes, rotate_nodes, reorder_nodes, set_blend_mode are DEMOTED to batch-only ops. Registrations commented out (off tools/list); batch relays each type to the untouched plugin handlers. Uncomment to restore. (set_constraints was promoted back to a top-level tool.)
 	// s.AddTool(mcp.NewTool("lock_nodes",
 	// 	mcp.WithDescription("Lock one or more nodes to prevent accidental edits in Figma. Also a `batch` op type."),
 	// 	mcp.WithArray("nodeIds",
@@ -488,29 +488,29 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 	// 	return renderResponse(resp, err)
 	// })
 
-	// s.AddTool(mcp.NewTool("set_constraints",
-	// 	mcp.WithDescription("Set layout constraints (pinning behaviour) on one or more nodes relative to their parent. Also a `batch` op type."),
-	// 	mcp.WithArray("nodeIds",
-	// 		mcp.Required(),
-	// 		mcp.Description("Node IDs in colon format e.g. ['4029:12345']"),
-	// 		mcp.WithStringItems(),
-	// 	),
-	// 	mcp.WithString("horizontal", mcp.Description("Horizontal constraint: MIN (left), MAX (right), CENTER, STRETCH, or SCALE")),
-	// 	mcp.WithString("vertical", mcp.Description("Vertical constraint: MIN (top), MAX (bottom), CENTER, STRETCH, or SCALE")),
-	// 	channelParam(),
-	// ), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// 	raw, _ := req.GetArguments()["nodeIds"].([]interface{})
-	// 	nodeIDs := toStringSlice(raw)
-	// 	params := map[string]interface{}{}
-	// 	if h, ok := req.GetArguments()["horizontal"].(string); ok && h != "" {
-	// 		params["horizontal"] = h
-	// 	}
-	// 	if v, ok := req.GetArguments()["vertical"].(string); ok && v != "" {
-	// 		params["vertical"] = v
-	// 	}
-	// 	resp, err := node.Send(ctx, "set_constraints", nodeIDs, withChannel(req, params))
-	// 	return renderResponse(resp, err)
-	// })
+	s.AddTool(mcp.NewTool("set_constraints",
+		mcp.WithDescription("Set layout constraints (pinning behaviour) on one or more nodes relative to their parent — how a node resizes/repositions when its parent resizes. For non-auto-layout parents. Also a `batch` op type."),
+		mcp.WithArray("nodeIds",
+			mcp.Required(),
+			mcp.Description("Node IDs in colon format e.g. ['4029:12345']"),
+			mcp.WithStringItems(),
+		),
+		mcp.WithString("horizontal", mcp.Description("Horizontal constraint: MIN (left), MAX (right), CENTER, STRETCH, or SCALE")),
+		mcp.WithString("vertical", mcp.Description("Vertical constraint: MIN (top), MAX (bottom), CENTER, STRETCH, or SCALE")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		raw, _ := req.GetArguments()["nodeIds"].([]interface{})
+		nodeIDs := toStringSlice(raw)
+		params := map[string]interface{}{}
+		if h, ok := req.GetArguments()["horizontal"].(string); ok && h != "" {
+			params["horizontal"] = h
+		}
+		if v, ok := req.GetArguments()["vertical"].(string); ok && v != "" {
+			params["vertical"] = v
+		}
+		resp, err := node.Send(ctx, "set_constraints", nodeIDs, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
 
 	s.AddTool(mcp.NewTool("reparent_nodes",
 		mcp.WithDescription("Move one or more nodes to a different parent frame, group, or section. By default (preserveAbsolutePosition=true) the node's canvas position is preserved after reparenting by adjusting its parent-local x/y. Set preserveAbsolutePosition=false to keep the raw x/y values unchanged (node will visually jump to a new location relative to the new parent)."),
