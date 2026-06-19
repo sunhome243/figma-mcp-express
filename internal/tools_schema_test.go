@@ -144,6 +144,47 @@ func TestToolSchemas_AllToolsRegistered(t *testing.T) {
 	}
 }
 
+func TestToolSchemas_CreateEffectStyleExposesAdvancedShorthandParams(t *testing.T) {
+	resp := listTools(t)
+	var props map[string]propertySchema
+	for _, tool := range resp.Result.Tools {
+		if tool.Name == "create_effect_style" {
+			props = tool.InputSchema.Properties
+			break
+		}
+	}
+	if props == nil {
+		t.Fatal("create_effect_style tool not found")
+	}
+
+	want := map[string]string{
+		"blurType":        "string",
+		"startRadius":     "number",
+		"startOffset":     "object",
+		"endOffset":       "object",
+		"lightIntensity":  "number",
+		"lightAngle":      "number",
+		"refraction":      "number",
+		"depth":           "number",
+		"dispersion":      "number",
+		"noiseType":       "string",
+		"secondaryColor":  "string",
+		"noiseSize":       "number",
+		"noiseSizeVector": "object",
+		"density":         "number",
+		"clipToShape":     "boolean",
+	}
+	for name, wantType := range want {
+		prop, ok := props[name]
+		if !ok {
+			t.Fatalf("create_effect_style missing advanced shorthand param %q", name)
+		}
+		if prop.Type != wantType {
+			t.Fatalf("create_effect_style.%s type = %q, want %q", name, prop.Type, wantType)
+		}
+	}
+}
+
 func TestToolSchemas_PluginFacingToolsExposeRequiredOrigin(t *testing.T) {
 	resp := listTools(t)
 

@@ -603,6 +603,57 @@ describe("create_effect_style — multi-effect array", () => {
     expect((globalThis as any)._capturedEffectStyle.effects).toHaveLength(1);
     expect((globalThis as any)._capturedEffectStyle.effects[0].type).toBe("DROP_SHADOW");
   });
+
+  it("single-effect shorthand creates native GLASS effects", async () => {
+    await handleWriteRequest(makeRequest("create_effect_style", [], {
+      name: "Glass/Frosted",
+      type: "GLASS",
+      lightIntensity: 0.7,
+      lightAngle: 120,
+      refraction: 0.4,
+      depth: 12,
+      dispersion: 0.2,
+      radius: 18,
+    }));
+    const effect = (globalThis as any)._capturedEffectStyle.effects[0];
+    expect(effect.type).toBe("GLASS");
+    expect(effect.lightIntensity).toBe(0.7);
+    expect(effect.depth).toBe(12);
+  });
+
+  it("effects[] creates native NOISE and TEXTURE effects with noiseSizeVector", async () => {
+    await handleWriteRequest(makeRequest("create_effect_style", [], {
+      name: "Noise/Texture",
+      effects: [
+        { type: "TEXTURE", noiseSize: 2, noiseSizeVector: { x: 2, y: 5 }, clipToShape: false },
+        { type: "NOISE", noiseType: "MULTITONE", opacity: 0.4, noiseSizeVector: { x: 3, y: 7 } },
+      ],
+    }));
+    const [texture, noise] = (globalThis as any)._capturedEffectStyle.effects;
+    expect(texture.type).toBe("TEXTURE");
+    expect(texture.noiseSizeVector).toEqual({ x: 2, y: 5 });
+    expect(texture.clipToShape).toBe(false);
+    expect(noise.type).toBe("NOISE");
+    expect(noise.noiseType).toBe("MULTITONE");
+    expect(noise.noiseSizeVector).toEqual({ x: 3, y: 7 });
+  });
+
+  it("single-effect shorthand creates PROGRESSIVE blur styles", async () => {
+    await handleWriteRequest(makeRequest("create_effect_style", [], {
+      name: "Blur/Progressive",
+      type: "BACKGROUND_BLUR",
+      blurType: "PROGRESSIVE",
+      startRadius: 2,
+      radius: 20,
+      startOffset: { x: 0.5, y: 0 },
+      endOffset: { x: 0.5, y: 1 },
+    }));
+    const effect = (globalThis as any)._capturedEffectStyle.effects[0];
+    expect(effect.type).toBe("BACKGROUND_BLUR");
+    expect(effect.blurType).toBe("PROGRESSIVE");
+    expect(effect.startRadius).toBe(2);
+    expect(effect.endOffset).toEqual({ x: 0.5, y: 1 });
+  });
 });
 
 // ── create_paint_style / update_paint_style (multi-paint paints[]) ───────────
