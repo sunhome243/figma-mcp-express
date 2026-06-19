@@ -405,6 +405,32 @@ describe("handleBatchRequest — resolved semantic validation", () => {
     expect(getNodeCalls).toBe(0);
   });
 
+  it("accepts set_effects with a native GLASS effect type", async () => {
+    const node: any = { id: "10:1", name: "Rect", type: "RECTANGLE", effects: [] };
+    (globalThis as any).figma = {
+      getNodeByIdAsync: async () => node,
+      commitUndo: () => {},
+      ui: noopUi,
+    };
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-glass-ok",
+      params: {
+        continueOnError: false,
+        ops: [
+          {
+            type: "set_effects",
+            nodeIds: ["10:1"],
+            params: { effects: [{ type: "GLASS", refraction: 0.4, radius: 14 }] },
+          },
+        ],
+      },
+    });
+    expect(res.data.results[0].error).toBeUndefined();
+    expect(node.effects[0].type).toBe("GLASS");
+    expect(node.effects[0].refraction).toBe(0.4);
+  });
+
   it("rejects map inner ops after named refs resolve to bad concrete values", async () => {
     let getNodeCalls = 0;
     (globalThis as any).figma = {

@@ -22,7 +22,7 @@ reads under `## Read — Document` not named above (`get_document`, `get_reactio
 `get_viewport`, `get_fonts`, `get_annotations`, `get_screenshot`) are
 full-profile-only — use `get_metadata` / `get_node` / `save_screenshots` in `core`.
 
-Plugin-facing top-level tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. For `batch`, pass `channel` on the outer `batch` call only; per-op `params.channel` is rejected because op contracts come from `BatchOpCatalog`. Node IDs are documented and returned in colon format, e.g. `4029:12345`; the runtime normalizes common Figma URL hyphen IDs before validation as a recovery path.
+Plugin-facing top-level tools expose optional `channel` routing and required `origin` presence params (omitted from most param tables for brevity — see the Channel and multi-agent skill docs). Local/meta tools (`list_channels`, `search_batch_ops`, `get_batch_op_spec`, and REST-backed `fetch_library_catalog`) do not expose `origin`. For `batch`, pass `channel` and `origin` on the outer `batch` call only; per-op `params.channel` and `params.origin` are rejected because op contracts come from `BatchOpCatalog`. Node IDs are documented and returned in colon format, e.g. `4029:12345`; the runtime normalizes common Figma URL hyphen IDs before validation as a recovery path.
 
 ---
 
@@ -72,6 +72,43 @@ Get the nodes currently selected in Figma. Returns an empty array if nothing is 
 | Name    | Type   | Required | Description                                     |
 | ------- | ------ | -------- | ----------------------------------------------- |
 | channel | string | No       | Target a specific connected file by channel id. |
+
+### get_image_by_hash
+
+Get image metadata and bytes for an existing Figma image hash using `figma.getImageByHash`. Returns `{hash, image:null}` when the hash is not in the file.
+
+| Name    | Type   | Required | Description                                     |
+| ------- | ------ | -------- | ----------------------------------------------- |
+| hash    | string | Yes      | Image hash from an IMAGE paint                  |
+| channel | string | No       | Target a specific connected file by channel id. |
+
+### get_file_thumbnail
+
+Get the node currently assigned as the file thumbnail, if any.
+
+| Name    | Type   | Required | Description                                     |
+| ------- | ------ | -------- | ----------------------------------------------- |
+| channel | string | No       | Target a specific connected file by channel id. |
+
+### get_dev_resources
+
+Read Dev Mode resource links attached to a node via the node DevResourcesMixin. This covers node-level resource CRUD; the private partner-only `figma.devResources` host API is not exposed.
+
+| Name            | Type    | Required | Description                                      |
+| --------------- | ------- | -------- | ------------------------------------------------ |
+| nodeId          | string  | Yes      | Node ID in colon format                          |
+| includeChildren | boolean | No       | Include resources attached to descendants        |
+| channel         | string  | No       | Target a specific connected file by channel id.  |
+
+### resolve_variable_for_consumer
+
+Resolve a variable's effective value for a specific scene node using `Variable.resolveForConsumer`.
+
+| Name       | Type   | Required | Description                                     |
+| ---------- | ------ | -------- | ----------------------------------------------- |
+| variableId | string | Yes      | Variable ID to resolve                          |
+| nodeId     | string | Yes      | Consumer scene node ID in colon format          |
+| channel    | string | No       | Target a specific connected file by channel id. |
 
 ### get_node
 
@@ -183,6 +220,14 @@ Get all local styles in the document (paint, text, effect, and grid). Returns `{
 ### get_variable_defs
 
 Get all local variable definitions: collections, modes, and values. Variables are Figma's design token system.
+
+| Name    | Type   | Required | Description                                     |
+| ------- | ------ | -------- | ----------------------------------------------- |
+| channel | string | No       | Target a specific connected file by channel id. |
+
+### get_selection_colors
+
+Get Figma's computed colors from the current selection using `getSelectionColors`.
 
 | Name    | Type   | Required | Description                                     |
 | ------- | ------ | -------- | ----------------------------------------------- |
@@ -472,6 +517,57 @@ Convert an existing node (frame, group, or shape) into a reusable local COMPONEN
 | name    | string | No       | Optional name for the component. Defaults to the node's current name.            |
 | channel | string | No       | Target a specific connected file by channel id.                                  |
 
+### create_vector
+
+Create an editable VECTOR node with optional `vectorPaths`, size, fill color, and parent.
+
+| Name        | Type     | Required | Description                                                   |
+| ----------- | -------- | -------- | ------------------------------------------------------------- |
+| x           | number   | No       | X position (default 0)                                        |
+| y           | number   | No       | Y position (default 0)                                        |
+| width       | number   | No       | Width in pixels (default 100)                                 |
+| height      | number   | No       | Height in pixels (default 100)                                |
+| name        | string   | No       | Vector node name                                              |
+| vectorPaths | object[] | No       | Figma VectorPath objects                                      |
+| fillColor   | string   | No       | Solid fill color as hex e.g. `#3B82F6`                        |
+| parentId    | string   | No       | Parent node ID. Defaults to current page.                     |
+| channel     | string   | No       | Target a specific connected file by channel id.               |
+
+### create_slice
+
+Create a Slice node for export regions.
+
+| Name     | Type   | Required | Description                                      |
+| -------- | ------ | -------- | ------------------------------------------------ |
+| x        | number | No       | X position (default 0)                           |
+| y        | number | No       | Y position (default 0)                           |
+| width    | number | No       | Width in pixels (default 100)                    |
+| height   | number | No       | Height in pixels (default 100)                   |
+| name     | string | No       | Slice name                                       |
+| parentId | string | No       | Parent node ID. Defaults to current page.        |
+| channel  | string | No       | Target a specific connected file by channel id.  |
+
+### create_page_divider
+
+Create a page divider node using `figma.createPageDivider`. The optional name must be divider-only text, such as `---` or `***`.
+
+| Name    | Type   | Required | Description                                     |
+| ------- | ------ | -------- | ----------------------------------------------- |
+| name    | string | No       | All hyphens, asterisks, spaces, en dashes, or em dashes |
+| channel | string | No       | Target a specific connected file by channel id. |
+
+### create_text_path
+
+Create a TextPath node from an existing vector-like node (`VECTOR`, `RECTANGLE`, `ELLIPSE`, `POLYGON`, `STAR`, or `LINE`).
+
+| Name          | Type   | Required | Description                                     |
+| ------------- | ------ | -------- | ----------------------------------------------- |
+| nodeId        | string | Yes      | Vector-like node ID in colon format             |
+| startSegment  | number | No       | Non-negative vector path segment index          |
+| startPosition | number | No       | Normalized start position on the segment, 0 to 1 |
+| name          | string | No       | Text path node name                             |
+| channel       | string | No       | Target a specific connected file by channel id. |
+
 ### create_section
 
 Create a Figma Section node on the current page. Sections are the modern way to organize frames and groups on a page.
@@ -487,20 +583,74 @@ Create a Figma Section node on the current page. Sections are the modern way to 
 
 ### import_image
 
-Import an image file from disk (or raw base64 data) into Figma as a new image-fill rectangle. The server reads `imagePath` from the local filesystem and base64-encodes it automatically — prefer this over passing raw `imageData`. Returns the new node ID and bounds.
+Import an image from disk, raw base64, or a remote URL into Figma as a new image-fill rectangle. The server reads `imagePath` from the local filesystem and base64-encodes it automatically; `imageUrl` uses Figma's `createImageAsync`. Returns the new node ID and bounds.
 
 | Name        | Type   | Required | Description                                                                              |
 | ----------- | ------ | -------- | ---------------------------------------------------------------------------------------- |
-| imagePath   | string | No       | Absolute path to an image file on the server's filesystem (PNG, JPG, GIF, SVG, WEBP). Preferred over `imageData`. |
+| imagePath   | string | No       | Local image file path on the server's filesystem. Preferred over `imageData`.                 |
 | imageData   | string | No       | Raw base64-encoded image data. Use only when `imagePath` is unavailable.                 |
+| imageUrl    | string | No       | Remote image URL loaded by Figma's `createImageAsync`                                   |
 | x           | number | No       | X position (default 0)                                                                   |
 | y           | number | No       | Y position (default 0)                                                                   |
 | width       | number | No       | Width in pixels (default 200)                                                            |
 | height      | number | No       | Height in pixels (default 200)                                                           |
 | name        | string | No       | Node name shown in the layers panel                                                      |
 | scaleMode   | string | No       | Image fill scale mode: `FILL` (default), `FIT`, `CROP`, or `TILE`                        |
+| rotation    | number | No       | Image fill rotation for `FILL`/`FIT`/`TILE`                                               |
+| scalingFactor | number | No     | Tile density / repeat scale for `TILE`                                                    |
+| imageTransform | array | No     | 2x3 crop transform matrix for `CROP`                                                      |
+| exposure, contrast, saturation, temperature, tint, highlights, shadows | number | No | ImageFilters fields, each -1..1 |
 | parentId    | string | No       | Parent node ID. Defaults to current page.                                                |
 | channel     | string | No       | Target a specific connected file by channel id.                                          |
+
+### create_video
+
+Create a rectangle with a VIDEO fill from `videoPath` or base64 `videoData` using Figma's `createVideoAsync`.
+
+| Name        | Type   | Required | Description                                                     |
+| ----------- | ------ | -------- | --------------------------------------------------------------- |
+| videoPath   | string | No       | Local video file path; the server reads and base64-encodes it   |
+| videoData   | string | No       | Base64-encoded video bytes                                      |
+| x           | number | No       | X position (default 0)                                          |
+| y           | number | No       | Y position (default 0)                                          |
+| width       | number | No       | Width in pixels (default 200)                                   |
+| height      | number | No       | Height in pixels (default 200)                                  |
+| name        | string | No       | Node name                                                       |
+| scaleMode   | string | No       | Video scale mode: `FILL` (default), `FIT`, `CROP`, or `TILE`    |
+| rotation    | number | No       | Video fill rotation for `FILL`/`FIT`/`TILE`                     |
+| scalingFactor | number | No     | Tile density / repeat scale for `TILE`                          |
+| videoTransform | array | No     | 2x3 video crop transform matrix for `CROP`                       |
+| exposure, contrast, saturation, temperature, tint, highlights, shadows | number | No | Video filter fields, each -1..1 |
+| parentId    | string | No       | Parent node ID. Defaults to current page.                       |
+| channel     | string | No       | Target a specific connected file by channel id.                 |
+
+### create_gif
+
+Create a FigJam GIF media node from an existing `imageHash` using `figma.createGif`. This API is host/editor dependent.
+
+| Name      | Type   | Required | Description                                     |
+| --------- | ------ | -------- | ----------------------------------------------- |
+| imageHash | string | Yes      | Image hash to convert to a GIF media node       |
+| x         | number | No       | X position (default 0)                          |
+| y         | number | No       | Y position (default 0)                          |
+| width     | number | No       | Width in pixels                                 |
+| height    | number | No       | Height in pixels                                |
+| name      | string | No       | Node name                                       |
+| parentId  | string | No       | Parent node ID. Defaults to current page.       |
+| channel   | string | No       | Target a specific connected file by channel id. |
+
+### create_link_preview
+
+Create a FigJam link preview node from a URL using `figma.createLinkPreviewAsync`. This API is host/editor dependent.
+
+| Name     | Type   | Required | Description                                     |
+| -------- | ------ | -------- | ----------------------------------------------- |
+| url      | string | Yes      | URL to render as a link preview                 |
+| x        | number | No       | X position (default 0)                          |
+| y        | number | No       | Y position (default 0)                          |
+| name     | string | No       | Node name                                       |
+| parentId | string | No       | Parent node ID. Defaults to current page.       |
+| channel  | string | No       | Target a specific connected file by channel id. |
 
 ### clone_node
 
@@ -519,6 +669,48 @@ Clone an existing node, optionally repositioning it or placing it in a new paren
 ## Write — Modify
 
 > **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as full-profile top-level tools.
+
+### set_file_thumbnail
+
+Set or clear the current file thumbnail node. Omit `nodeId` to clear the thumbnail.
+
+| Name    | Type   | Required | Description                                     |
+| ------- | ------ | -------- | ----------------------------------------------- |
+| nodeId  | string | No       | FRAME, COMPONENT, COMPONENT_SET, or SECTION ID  |
+| channel | string | No       | Target a specific connected file by channel id. |
+
+### add_dev_resource
+
+Attach a Dev Mode resource link to a node using `addDevResourceAsync`.
+
+| Name    | Type   | Required | Description                                     |
+| ------- | ------ | -------- | ----------------------------------------------- |
+| nodeId  | string | Yes      | Node ID in colon format                         |
+| url     | string | Yes      | Resource URL                                    |
+| name    | string | No       | Optional display name                           |
+| channel | string | No       | Target a specific connected file by channel id. |
+
+### edit_dev_resource
+
+Edit a node Dev Mode resource link by its current URL. Provide `url`, `name`, or both as the replacement.
+
+| Name       | Type   | Required | Description                                     |
+| ---------- | ------ | -------- | ----------------------------------------------- |
+| nodeId     | string | Yes      | Node ID in colon format                         |
+| currentUrl | string | Yes      | Existing resource URL to edit                   |
+| url        | string | No       | Replacement URL                                 |
+| name       | string | No       | Replacement display name                        |
+| channel    | string | No       | Target a specific connected file by channel id. |
+
+### delete_dev_resource
+
+Delete a Dev Mode resource link from a node by URL.
+
+| Name    | Type   | Required | Description                                     |
+| ------- | ------ | -------- | ----------------------------------------------- |
+| nodeId  | string | Yes      | Node ID in colon format                         |
+| url     | string | Yes      | Resource URL to delete                          |
+| channel | string | No       | Target a specific connected file by channel id. |
 
 ### rename_node [BATCH OP]
 
@@ -745,13 +937,13 @@ Set the stroke color and weight on a single node. Use `mode='append'` to stack. 
 
 ### set_effects
 
-Apply one or more effects (drop shadow, inner shadow, layer blur, background blur) directly to a node. Replaces all existing effects. Pass an empty array to clear all effects.
+Apply one or more effects directly to a node. Supports shadows, normal/progressive blurs, and native `GLASS`, `NOISE`, and `TEXTURE` effects. Replaces all existing effects. Pass an empty array to clear all effects.
 
-| Name    | Type     | Required | Description                                                                                                                                                 |
-| ------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| nodeId  | string   | Yes      | Target node ID                                                                                                                                              |
-| effects | object[] | Yes      | Array of effect objects. Each has: `type`, `radius`, `color` (hex, shadows only), `opacity` (0–1), `offsetX`, `offsetY`, `spread`, `visible` (default true) |
-| channel | string   | No       | Target a specific connected file by channel id.                                                                                                             |
+| Name    | Type     | Required | Description                                                                                                                                                                                                 |
+| ------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| nodeId  | string   | Yes      | Target node ID                                                                                                                                                                                              |
+| effects | object[] | Yes      | Array of effect objects. `type`: `DROP_SHADOW`, `INNER_SHADOW`, `LAYER_BLUR`, `BACKGROUND_BLUR`, `GLASS`, `NOISE`, or `TEXTURE`. Shadows use `color`, `opacity`, `offsetX`, `offsetY`, `spread`, and `radius`. Blurs use `radius`, optional `blurType:"PROGRESSIVE"`, `startRadius`, `startOffset`, and `endOffset`. Native effects use their Figma fields; `NOISE`/`TEXTURE` support `noiseSizeVector:{x,y}`. |
+| channel | string   | No       | Target a specific connected file by channel id.                                                                                                                                                             |
 
 ### set_blend_mode [BATCH OP]
 
@@ -953,19 +1145,34 @@ Create a new local text style (typography preset). Returns the new style's ID.
 
 ### create_effect_style
 
-Create a new local effect style (drop shadow, inner shadow, or blur). Pass `effects[]` for full control over multiple effects including `blendMode` and `showShadowBehindNode` — takes precedence over the individual shorthand params when provided.
+Create a new local effect style. Supports shadows, normal/progressive blurs, and native `GLASS`, `NOISE`, and `TEXTURE` effects. Pass `effects[]` for full control over multiple effects; it takes precedence over the single-effect shorthand params.
 
 | Name                | Type     | Required | Description                                                                                                                                                  |
 | ------------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | name                | string   | Yes      | Style name e.g. `Shadow/Card`                                                                                                                                |
-| type                | string   | No       | `DROP_SHADOW` (default), `INNER_SHADOW`, `LAYER_BLUR`, or `BACKGROUND_BLUR`                                                                                 |
+| type                | string   | No       | `DROP_SHADOW` (default), `INNER_SHADOW`, `LAYER_BLUR`, `BACKGROUND_BLUR`, `GLASS`, `NOISE`, or `TEXTURE`                                                     |
 | color               | string   | No       | Shadow color as hex (default `#000000`, shadows only)                                                                                                        |
 | opacity             | number   | No       | Shadow color opacity 0–1 (default 0.25, shadows only)                                                                                                        |
-| radius              | number   | No       | Blur radius in pixels                                                                                                                                        |
+| radius              | number   | No       | Shadow, blur, or native effect radius in pixels                                                                                                              |
 | offsetX             | number   | No       | Shadow X offset (shadows only)                                                                                                                               |
 | offsetY             | number   | No       | Shadow Y offset (default 4, shadows only)                                                                                                                    |
 | spread              | number   | No       | Shadow spread (default 0, shadows only)                                                                                                                      |
-| effects             | object[] | No       | Full effect array (Figma Effect objects). Takes precedence over shorthand params. Each object supports `type`, `radius`, `color`, `opacity`, `offsetX`, `offsetY`, `spread`, `visible`, `blendMode`, `showShadowBehindNode`. |
+| blurType            | string   | No       | For `LAYER_BLUR`/`BACKGROUND_BLUR`: `NORMAL` or `PROGRESSIVE`                                                                                                |
+| startRadius         | number   | No       | Start radius for `PROGRESSIVE` blur                                                                                                                          |
+| startOffset         | object   | No       | Normalized `{x,y}` start point for `PROGRESSIVE` blur                                                                                                        |
+| endOffset           | object   | No       | Normalized `{x,y}` end point for `PROGRESSIVE` blur                                                                                                          |
+| lightIntensity      | number   | No       | `GLASS` light intensity, 0-1                                                                                                                                  |
+| lightAngle          | number   | No       | `GLASS` light angle in degrees                                                                                                                               |
+| refraction          | number   | No       | `GLASS` refraction, 0-1                                                                                                                                       |
+| depth               | number   | No       | `GLASS` depth                                                                                                                                                |
+| dispersion          | number   | No       | `GLASS` dispersion, 0-1                                                                                                                                       |
+| noiseType           | string   | No       | `NOISE` type: `MONOTONE`, `DUOTONE`, or `MULTITONE`                                                                                                          |
+| secondaryColor      | string   | No       | Secondary color for `NOISE` duotone effects                                                                                                                  |
+| noiseSize           | number   | No       | `NOISE`/`TEXTURE` noise size                                                                                                                                  |
+| noiseSizeVector     | object   | No       | Optional anisotropic `{x,y}` noise size for `NOISE`/`TEXTURE`                                                                                                |
+| density             | number   | No       | `NOISE` density, 0-1                                                                                                                                          |
+| clipToShape         | boolean  | No       | `TEXTURE` clip-to-shape flag                                                                                                                                  |
+| effects             | object[] | No       | Full effect array. Each object supports the shadow, blur, `GLASS`, `NOISE`, and `TEXTURE` fields above.                                                       |
 | description         | string   | No       | Optional style description                                                                                                                                   |
 | channel             | string   | No       | Target a specific connected file by channel id.                                                                                                              |
 
@@ -999,6 +1206,28 @@ Update an existing paint style's name, color, or description. Only paint styles 
 | paints      | object[] | No       | Full paint array (Figma Paint objects). Takes precedence over `color`. Supports gradients and images. |
 | description | string   | No       | New style description                                                                                |
 | channel     | string   | No       | Target a specific connected file by channel id.                                                      |
+
+### reorder_local_style
+
+Move a local paint/text/effect/grid style after another style of the same type. Omit `afterStyleId` to move the target first.
+
+| Name         | Type   | Required | Description                                     |
+| ------------ | ------ | -------- | ----------------------------------------------- |
+| styleType    | string | Yes      | `PAINT`, `TEXT`, `EFFECT`, or `GRID`            |
+| styleId      | string | Yes      | Target local style ID to move                   |
+| afterStyleId | string | No       | Reference style ID of the same type             |
+| channel      | string | No       | Target a specific connected file by channel id. |
+
+### reorder_local_style_folder
+
+Move a local style folder after another folder for paint/text/effect/grid styles. Omit `afterFolder` to move the target first.
+
+| Name        | Type   | Required | Description                                     |
+| ----------- | ------ | -------- | ----------------------------------------------- |
+| styleType   | string | Yes      | `PAINT`, `TEXT`, `EFFECT`, or `GRID`            |
+| folder      | string | Yes      | Target folder path/name                         |
+| afterFolder | string | No       | Reference folder path/name of the same type     |
+| channel     | string | No       | Target a specific connected file by channel id. |
 
 ### delete_style [BATCH OP]
 
@@ -1048,6 +1277,15 @@ Create a new variable (design token) inside an existing collection. Returns the 
 | values       | object | No       | Map of `{modeId: value}` to set values for multiple modes at creation time. Takes precedence over `value`. Use `get_variable_defs` to obtain modeIds. |
 | channel      | string | No       | Target a specific connected file by channel id.                                                                                                       |
 
+### create_variable_alias
+
+Create a variable alias value from an existing variable ID using `createVariableAliasByIdAsync`. Use the returned alias as a variable value.
+
+| Name       | Type   | Required | Description                                     |
+| ---------- | ------ | -------- | ----------------------------------------------- |
+| variableId | string | Yes      | Variable ID to alias                            |
+| channel    | string | No       | Target a specific connected file by channel id. |
+
 ### add_variable_mode
 
 Add a new mode to an existing variable collection (e.g. Light/Dark, Desktop/Mobile). Requires a paid Figma plan — free plan returns `Limited to 1 modes only`.
@@ -1091,6 +1329,7 @@ Update an existing variable's metadata. This does not change values; use `set_va
 | scopes               | string[] | No       | Publishing scopes such as `ALL_SCOPES`, `ALL_FILLS`, `GAP`, `FONT_SIZE` |
 | hiddenFromPublishing | boolean  | No       | Hide this variable when the file is published as a library             |
 | codeSyntax           | object   | No       | Per-platform code names: `{WEB?, ANDROID?, iOS?}`                      |
+| removeCodeSyntax     | string[] | No       | Code syntax platforms to remove: `WEB`, `ANDROID`, or `iOS`            |
 | channel              | string   | No       | Target a specific connected file by channel id.                        |
 
 ### update_variable_collection
@@ -1116,6 +1355,28 @@ Bind a local variable to a node property so the property is driven by the variab
 | variableId | string | Yes      | Variable ID to bind (from `get_variable_defs`)                                                                                                                                                                                                                                                                                                                                                                                                               |
 | field      | string | Yes      | Property to bind: `fillColor`, `strokeColor`, `visible`, `characters`, `opacity`, `width`, `height`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight`, `topLeftRadius`, `topRightRadius`, `bottomLeftRadius`, `bottomRightRadius`, `strokeWeight`, `strokeTopWeight`, `strokeRightWeight`, `strokeBottomWeight`, `strokeLeftWeight`, `itemSpacing`, `counterAxisSpacing`, `gridRowGap`, `gridColumnGap`, `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft`. NOT bindable: `cornerRadius`, `rotation`, `x`, `y`. |
 | channel    | string | No       | Target a specific connected file by channel id.                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+### bind_variable_to_effect
+
+Bind a variable to a field on an Effect object using `setBoundVariableForEffect`. This is Figma's pure object helper: it returns an updated effect object and does not mutate any node or style by itself. Apply the returned object with `set_effects` or `create_effect_style`.
+
+| Name       | Type   | Required | Description                                     |
+| ---------- | ------ | -------- | ----------------------------------------------- |
+| effect     | object | Yes      | Effect object to bind                           |
+| field      | string | Yes      | Effect field to bind, e.g. `radius` or `color`  |
+| variableId | string | Yes      | Variable ID to bind                             |
+| channel    | string | No       | Target a specific connected file by channel id. |
+
+### bind_variable_to_layout_grid
+
+Bind a variable to a field on a LayoutGrid object using `setBoundVariableForLayoutGrid`. This is Figma's pure object helper: it returns an updated grid object and does not mutate any node or style by itself. Apply the returned object with layout-grid style/node APIs.
+
+| Name       | Type   | Required | Description                                                |
+| ---------- | ------ | -------- | ---------------------------------------------------------- |
+| layoutGrid | object | Yes      | LayoutGrid object to bind                                  |
+| field      | string | Yes      | Grid field to bind, e.g. `sectionSize`, `gutterSize`, or `color` |
+| variableId | string | Yes      | Variable ID to bind                                        |
+| channel    | string | No       | Target a specific connected file by channel id.            |
 
 ### delete_variable [BATCH OP]
 
@@ -1339,7 +1600,7 @@ Reads inside a batch are always live and bypass the singleflight cache. Do not u
 
 **Channel routing.** Put `channel` on the outer `batch` call only. Do not include `channel` in `ops[*].params`; per-op params are validated against `BatchOpCatalog` and `channel` is not part of any op schema.
 
-**Agent presence (2.3.0+).** `origin` is a required enum label (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`) the acting agent stamps on the outer `batch` call (and on read tools) so the plugin's multi-agent "Watch agent" panel can show who is working where (avatar + last action + status); it's a schema requirement that schema-respecting clients enforce — the server doesn't hard-reject a missing value, it just isn't attributed. An optional `status` enum (`thinking`/`waiting_review`/`reviewing`/`approved`/`escalated`/`done`) lets the orchestrator announce non-editing workflow transitions; most statuses are auto-derived from the op and cost nothing. Pass the SAME `origin` on every call from one agent. Both are display-only — not routing metadata. (A server predating 2.3.0 rejects unknown top-level params, so only send these to a 2.3.0+ server.) See `references/multi-agent.md § 7`.
+**Agent presence (2.3.0+).** `origin` is a required enum label (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`) the acting agent stamps on plugin-facing tools so the plugin's multi-agent "Watch agent" panel can show who is working where (avatar + last action + status); it's a schema requirement that schema-respecting clients enforce — the server doesn't hard-reject a missing value, it just isn't attributed. An optional `status` enum (`thinking`/`waiting_review`/`reviewing`/`approved`/`escalated`/`done`) lets the orchestrator announce non-editing workflow transitions; most statuses are auto-derived from the op and cost nothing. Pass the SAME `origin` on every call from one agent. Both are display-only — not routing metadata. (A server predating 2.3.0 rejects unknown top-level params, so only send these to a 2.3.0+ server.) See `references/multi-agent.md § 7`.
 
 **Stop policy.** If any op uses a `$N` ref, the batch stops at the first failure (dependent chain). With no refs, it continues past failures (independent bulk). Override with `continueOnError`.
 

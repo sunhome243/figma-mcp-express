@@ -69,11 +69,25 @@ func TestResolveImagePath(t *testing.T) {
 		}
 	})
 
-	t.Run("imageData already present — no overwrite", func(t *testing.T) {
-		params := map[string]interface{}{"imagePath": imgPath, "imageData": "existing-data"}
+	t.Run("imagePath wins over existing imageData and imageUrl", func(t *testing.T) {
+		params := map[string]interface{}{"imagePath": imgPath, "imageData": "existing-data", "imageUrl": "https://example.com/remote.png"}
+		resolveImagePath(params)
+		if got := params["imageData"].(string); got != want {
+			t.Fatalf("imageData = %q; want %q", got, want)
+		}
+		if _, still := params["imageUrl"]; still {
+			t.Fatal("imageUrl should be removed when imagePath is resolved")
+		}
+	})
+
+	t.Run("imageData wins over imageUrl when no imagePath", func(t *testing.T) {
+		params := map[string]interface{}{"imageData": "existing-data", "imageUrl": "https://example.com/remote.png"}
 		resolveImagePath(params)
 		if got := params["imageData"].(string); got != "existing-data" {
-			t.Fatalf("imageData overwritten; got %q", got)
+			t.Fatalf("imageData = %q; want existing-data", got)
+		}
+		if _, still := params["imageUrl"]; still {
+			t.Fatal("imageUrl should be removed when imageData is present")
 		}
 	})
 

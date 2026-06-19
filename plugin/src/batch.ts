@@ -307,14 +307,17 @@ function validateMode(type: string, params: any): void {
 
 function validateResolvedEffects(params: any): void {
   if (!Array.isArray(params?.effects)) throw new Error("set_effects: effects array is required");
-  const valid = new Set(["DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR"]);
+  const valid = new Set([
+    "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR",
+    "GLASS", "NOISE", "TEXTURE",
+  ]);
   params.effects.forEach((effect: any, index: number) => {
     if (!effect || typeof effect !== "object") {
       throw new Error(`set_effects: effects[${index}] must be an object`);
     }
     if (!valid.has(effect.type)) {
       throw new Error(
-        `set_effects: effects[${index}].type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, or BACKGROUND_BLUR`,
+        `set_effects: effects[${index}].type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE`,
       );
     }
   });

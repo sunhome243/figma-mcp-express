@@ -1,7 +1,8 @@
 # Multi-Agent Orchestration with figma-mcp-express
 
 Deep reference for safely driving this MCP with multiple parallel agents.
-Read `SKILL.md § Workflow 5` first; this document is the full spec it points to.
+Read `SKILL.md` first; this document expands the multi-file/channel and
+parallel-agent guidance referenced from its Reference Router.
 
 ---
 
@@ -110,11 +111,13 @@ If you find yourself reaching for a lock, it means two agents are competing on t
 ```
 list_channels → auto-1 (Library), auto-2 (Product App)
 
-Agent 1: get_local_components(channel="auto-1")  → runs in parallel with Agent 2
-Agent 2: batch(channel:"auto-2", ops:[create_frame...])  → truly parallel, own sem
+Agent 1: get_local_components(channel:"auto-1", origin:"grace")  → runs in parallel with Agent 2
+Agent 2: batch(channel:"auto-2", origin:"theo", ops:[create_frame...])  → truly parallel, own sem
 ```
 
 Pass `channel: "auto-N"` explicitly on every call. Missing `channel:` defaults to whichever file is active — wrong in a multi-file session.
+Pass `origin` on every `batch` call as a top-level argument next to `channel`, never
+inside an individual op. Inner ops do not carry agent identity; the outer batch does.
 
 ---
 
@@ -176,37 +179,35 @@ A live "who is working where" view for humans watching the file. When the plugin
 panel (avatar + last action + status). Shipped in **2.3.0** — available on the
 published/production server (`npx figma-mcp-express`, port 1994) and the plugin.
 
-> **Give every agent a name.** When you dispatch an agent to use these tools, assign it
-> one roster `origin` (the enum lists them) and pass it on every call — `origin` is
-> required so the Watch-agent panel attributes the work to a named agent. Its manual
-> workflow `status` and one-sentence `task` are set separately via the **`set_presence`**
-> tool (typically by the orchestrator at dispatch — see below); two orchestrators can
-> reuse the same roster names without colliding (per-session `sessionId`, automatic).
+> **Hard rule:** `origin` is not a free-form string. Use exactly the origin assigned to you; never substitute, infer, or rotate it. Do not pick a random roster enum. Valid origins are `grace`, `theo`, `sunho`,
+> `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`. The Watch-agent identity key
+> is `sessionId+origin`, so concurrent agents in one session must use distinct
+> origins. The orchestrator's own origin is `wolfgang`.
 
 ### Why a label, not auto-detection
 
 The transport cannot tell agents apart on its own: parallel subagents in one Claude
 Code session share **one** MCP process (one WebSocket), and process identity is
 unstable across restarts. So the acting agent must self-identify. `origin` is an
-**enum** (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`) so each label
-maps deterministically to a name/color/avatar. It flows verbatim to the plugin (the
+**enum** (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`)
+so each label maps deterministically to a name/color/avatar. It flows verbatim to the plugin (the
 bridge strips only `channel`); unknown/empty values are dropped server-side and the
 plugin fails safe.
 
 ### Orchestrator convention
 
-Assign each subagent ONE roster name and bake it into the prompt, so the identity
-persists across all of that subagent's calls (each subagent is an independent
-context). Partition + presence compose cleanly: one agent per region, one `origin`
-per agent.
+Do not use `sunho` for the orchestrator; `sunho` is just another worker roster name.
+Assign each worker one distinct origin at dispatch and bake it into the prompt. The
+worker must keep that origin on every read/write/batch call. Do not reuse one `origin` across concurrent agents in the same session; it collapses follow/attribution into one row.
 
 ```
-Agent 1 → owns frame A → origin: "grace"
-Agent 2 → owns frame B → origin: "theo"
-Agent 3 → owns frame C → origin: "sunho"
+Orchestrator/self -> origin: "wolfgang"
+Agent 1 -> owns frame A -> origin: "grace"
+Agent 2 -> owns frame B -> origin: "theo"
+Agent 3 -> owns frame C -> origin: "zoe"
 ```
 
-Each then stamps it on every batch call, e.g.
+Each worker then stamps its assigned origin on every batch call, e.g.
 `batch(channel:"auto-1", origin:"grace", ops:[create_frame…])`.
 
 ### What presence does and does NOT do
@@ -262,6 +263,17 @@ set_presence(origin:"grace", task:"...", status:"thinking")            ← both 
 Use it for the manual statuses (`thinking`, `waiting_review`, `reviewing`, `approved`,
 `escalated`, `done`) and for `task`. Manual `status` is **not accepted on `batch`** — send
 it via `set_presence`; operational tools (incl. `batch`) carry only the required `origin`.
+In plain terms: status is optional in the schema, not optional in the workflow. Do not skip `set_presence` because `status` is optional. Actively call `set_presence` at dispatch and workflow transitions, not on every operation.
+
+Minimum cadence:
+
+```
+set_presence(origin:"grace", task:"registration form", status:"thinking")       ← dispatch
+set_presence(origin:"grace", status:"waiting_review")                           ← worker returned
+set_presence(origin:"wolfgang", task:"reviewing registration form", status:"reviewing") ← orchestrator review
+set_presence(origin:"grace", status:"approved")                                 ← worker passed
+set_presence(origin:"grace", status:"done")                                     ← section complete
+```
 
 ### `task` — the agent's one-sentence narration
 
@@ -284,8 +296,9 @@ apart by a per-`(sessionId, origin)` avatar (distinct face) and a per-session ac
 colour (shown only when ≥2 sessions are live). You don't pass `sessionId` — it's
 injected for you. So you may freely reuse roster names across separate orchestrators.
 
-### `origin` works on read tools too
+### `origin` works on reads, writes, and batch
 
-`origin` is not batch-only — the read tools (`get_`/`scan_`/`search_`/`list_`/`fetch_`)
-accept it as well, so an agent's reads are attributed (this powers the `scanning` auto
-status). Pass `origin` on reads the same way you pass it on `batch`.
+`origin` is not batch-only. Pass the assigned `origin` on reads
+(`get_`/`scan_`/`search_`/`list_`/`fetch_`), writes, and outer `batch` calls so the
+panel can attribute both exploration and mutation. For `batch`, `origin` is a
+top-level argument next to `channel`; do not put it inside individual ops.

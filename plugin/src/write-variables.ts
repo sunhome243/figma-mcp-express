@@ -1,5 +1,12 @@
 import { hexToRgb } from "./write-helpers";
 
+const requireStringField = (field: string, value: unknown): string => {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${field} must be a string`);
+  }
+  return value;
+};
+
 const parseVariableValue = (type: string, value: any): VariableValue => {
   // VARIABLE_ALIAS must be passed through unchanged before any type coercion: the other
   // branches would corrupt it (FLOAT → NaN, STRING → "[object Object]", BOOLEAN → false).
@@ -121,6 +128,17 @@ export const handleWriteVariableRequest = async (request: any) => {
       };
     }
 
+    case "create_variable_alias": {
+      const p = request.params || {};
+      if (!p.variableId) throw new Error("variableId is required");
+      const alias = await figma.variables.createVariableAliasByIdAsync(String(p.variableId));
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { alias },
+      };
+    }
+
     case "delete_variable": {
       const p = request.params || {};
       if (p.variableId) {
@@ -159,8 +177,13 @@ export const handleWriteVariableRequest = async (request: any) => {
       if (p.codeSyntax != null && typeof p.codeSyntax === "object") {
         for (const platform of ["WEB", "ANDROID", "iOS"] as const) {
           if (p.codeSyntax[platform] != null) {
-            variable.setVariableCodeSyntax(platform, String(p.codeSyntax[platform]));
+            variable.setVariableCodeSyntax(platform, requireStringField(`codeSyntax.${platform}`, p.codeSyntax[platform]));
           }
+        }
+      }
+      if (Array.isArray(p.removeCodeSyntax)) {
+        for (const platform of p.removeCodeSyntax) {
+          variable.removeVariableCodeSyntax(String(platform) as CodeSyntaxPlatform);
         }
       }
       figma.commitUndo();
@@ -188,7 +211,9 @@ export const handleWriteVariableRequest = async (request: any) => {
         if (!p.renameMode.modeId || p.renameMode.newName == null) {
           throw new Error("renameMode requires { modeId, newName }");
         }
-        collection.renameMode(p.renameMode.modeId, String(p.renameMode.newName));
+        const modeId = requireStringField("renameMode.modeId", p.renameMode.modeId);
+        const newName = requireStringField("renameMode.newName", p.renameMode.newName);
+        collection.renameMode(modeId, newName);
       }
       if (p.removeMode != null) {
         // Figma throws if you remove the last remaining mode — surface a clear message.

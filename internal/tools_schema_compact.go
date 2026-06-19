@@ -43,7 +43,7 @@ func compactToolSchemas(s *server.MCPServer) {
 	for _, st := range listed {
 		tool := st.Tool
 		tool.Description = compactToolDescription(tool.Name, tool.Description)
-		compactDescriptions(tool.InputSchema.Properties, 72)
+		compactDescriptions(tool.InputSchema.Properties, 64)
 		tools = append(tools, server.ServerTool{
 			Tool:    tool,
 			Handler: st.Handler,

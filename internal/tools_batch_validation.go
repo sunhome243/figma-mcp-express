@@ -551,6 +551,12 @@ func semanticParamValueForBatch(tool, key string, value interface{}, prop map[st
 	if s, ok := value.(string); ok && (isBatchRefLike(s) || isAllowedNamedBindingRef(s, allowedNamedRefs)) {
 		return semanticPlaceholderForBatch(tool, key, prop)
 	}
+	if s, ok := value.(string); ok {
+		switch key {
+		case "nodeId", "parentId", "pageId", "componentId":
+			return NormalizeNodeID(s)
+		}
+	}
 	if key == "effects" {
 		return semanticEffectsForBatch(value, allowedNamedRefs)
 	}

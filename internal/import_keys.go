@@ -132,16 +132,16 @@ func prepareBatchImportOpParams(op map[string]interface{}) {
 	}
 }
 
-// resolveImagePath converts imagePath → imageData (base64) in place so the
-// plugin (which only speaks imageData) receives the encoded bytes. Mirrors the
-// same logic in the standalone import_image tool handler.
+// resolveImagePath applies import_image precedence for batch params: imagePath
+// resolves to imageData when readable, and local/base64 input wins over imageUrl.
+// Mirrors the standalone import_image tool handler.
 func resolveImagePath(params map[string]interface{}) {
 	imagePath, _ := params["imagePath"].(string)
 	if imagePath == "" {
+		if imageData, _ := params["imageData"].(string); imageData != "" {
+			delete(params, "imageUrl")
+		}
 		return
-	}
-	if _, hasData := params["imageData"].(string); hasData {
-		return // imageData already present; standalone handler precedence applies
 	}
 	abs := imagePath
 	if !filepath.IsAbs(abs) {
@@ -157,4 +157,5 @@ func resolveImagePath(params map[string]interface{}) {
 	}
 	params["imageData"] = base64.StdEncoding.EncodeToString(raw)
 	delete(params, "imagePath")
+	delete(params, "imageUrl")
 }

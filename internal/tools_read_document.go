@@ -42,6 +42,56 @@ func registerReadDocumentTools(s *server.MCPServer, node *Node) {
 		originParam(),
 	), makeHandler(node, "get_selection", nil, nil))
 
+	s.AddTool(mcp.NewTool("get_image_by_hash",
+		mcp.WithDescription("Get image metadata and bytes for an existing Figma image hash using figma.getImageByHash. Returns null image data when the hash is not in the file."),
+		mcp.WithString("hash", mcp.Required(), mcp.Description("Figma image hash from an IMAGE paint.")),
+		channelParam(),
+		originParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := map[string]interface{}{"hash": req.GetArguments()["hash"]}
+		applyOrigin(req, params)
+		resp, err := node.Send(ctx, "get_image_by_hash", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("get_file_thumbnail",
+		mcp.WithDescription("Get the node currently assigned as the file thumbnail, if any."),
+		channelParam(),
+		originParam(),
+	), makeHandler(node, "get_file_thumbnail", nil, nil))
+
+	s.AddTool(mcp.NewTool("get_dev_resources",
+		mcp.WithDescription("Read Dev Mode resource links attached to a node via the node DevResourcesMixin. Optionally includes child resources."),
+		mcp.WithString("nodeId", mcp.Required(), mcp.Description("Node ID in colon format e.g. '4029:12345'.")),
+		mcp.WithBoolean("includeChildren", mcp.Description("When true, include dev resources attached to descendants.")),
+		channelParam(),
+		originParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := map[string]interface{}{"nodeId": NormalizeNodeID(req.GetArguments()["nodeId"].(string))}
+		if v, ok := req.GetArguments()["includeChildren"].(bool); ok {
+			params["includeChildren"] = v
+		}
+		applyOrigin(req, params)
+		resp, err := node.Send(ctx, "get_dev_resources", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("resolve_variable_for_consumer",
+		mcp.WithDescription("Resolve a variable's effective value for a specific scene node using Variable.resolveForConsumer."),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to resolve.")),
+		mcp.WithString("nodeId", mcp.Required(), mcp.Description("Consumer scene node ID in colon format.")),
+		channelParam(),
+		originParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := map[string]interface{}{
+			"variableId": req.GetArguments()["variableId"],
+			"nodeId":     NormalizeNodeID(req.GetArguments()["nodeId"].(string)),
+		}
+		applyOrigin(req, params)
+		resp, err := node.Send(ctx, "resolve_variable_for_consumer", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
 	s.AddTool(mcp.NewTool("get_node",
 		mcp.WithDescription("Get one node by ID with full detail (fills, strokes, text, layout, boundVariables). "+
 			"PREFER A SIBLING WHEN: you need several nodes → get_nodes_info (one round-trip, not a get_node loop); you only want the structure/id map → get_metadata; you want a token-efficient overview of a whole selection/page → get_design_context; you're searching by name/type rather than a known id → search_nodes / scan_nodes_by_types. "+

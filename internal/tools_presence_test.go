@@ -54,6 +54,39 @@ func TestSetPresence_DropsUnknownStatus_OriginOnly(t *testing.T) {
 	}
 }
 
+func TestPluginWriteToolsForwardOriginThroughCommonParams(t *testing.T) {
+	rec := newRecordedRPCServer(t)
+	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
+
+	callTool(t, s, "import_image", map[string]any{
+		"imageData": "abc123",
+		"origin":    "theo",
+	})
+
+	req := rec.lastRequest(t)
+	if req.Tool != "import_image" {
+		t.Fatalf("tool = %q, want import_image", req.Tool)
+	}
+	if got, _ := req.Params["origin"].(string); got != "theo" {
+		t.Fatalf("origin = %q, want theo", got)
+	}
+}
+
+func TestPluginWriteToolsDropUnknownOrigin(t *testing.T) {
+	rec := newRecordedRPCServer(t)
+	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
+
+	callTool(t, s, "import_image", map[string]any{
+		"imageData": "abc123",
+		"origin":    "random-agent",
+	})
+
+	req := rec.lastRequest(t)
+	if _, present := req.Params["origin"]; present {
+		t.Fatalf("unknown origin must be dropped before plugin forwarding, got %v", req.Params["origin"])
+	}
+}
+
 // Regression for the follower /rpc path: the leader RE-VALIDATES proxied calls, and
 // `sessionId` is INJECTED by Node.Send (never declared in any tool schema). It must
 // pass param validation or every follower (2nd+ session) call 400s — the exact

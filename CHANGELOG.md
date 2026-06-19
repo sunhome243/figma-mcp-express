@@ -8,6 +8,35 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Figma Plugin API gap coverage for media/link, dev resources, style organization, and variable helpers.**
+  Added top-level tools plus validated `batch` op support for:
+  `import_image(imageUrl)` via `createImageAsync`, `create_video` via `createVideoAsync`,
+  `create_gif`, `create_link_preview`, `create_vector`, `create_slice`, `create_page_divider`,
+  `create_text_path`, `get_image_by_hash`, `get_file_thumbnail` / `set_file_thumbnail`,
+  node-level Dev Resource CRUD (`get_dev_resources`, `add_dev_resource`, `edit_dev_resource`,
+  `delete_dev_resource`), `get_selection_colors`, local style and style-folder reordering
+  (`reorder_local_style`, `reorder_local_style_folder`), `create_variable_alias`,
+  `resolve_variable_for_consumer`, `update_variable(removeCodeSyntax)`,
+  `bind_variable_to_effect`, and `bind_variable_to_layout_grid`.
+- **Multi-agent origin discipline in the bundled skill docs.** The multi-agent reference now states
+  that `origin` is a fixed roster enum, agents must use the origin assigned to them, random enum
+  selection is forbidden, the orchestrator origin is `wolfgang`, `sessionId+origin` is the identity
+  key, `set_presence` should be called at dispatch/workflow transitions, and `batch` carries
+  `origin` as a top-level argument.
+- **Native `GLASS` / `NOISE` / `TEXTURE` effects** in `set_effects` and `create_effect_style`
+  (top-level tools + `batch` ops). Previously only `DROP_SHADOW`/`INNER_SHADOW`/`LAYER_BLUR`/
+  `BACKGROUND_BLUR` were accepted, forcing callers to fake frosted glass with a background-blur +
+  translucent-fill recipe. Now a caller can request Figma's real 2025 **Glass** effect
+  (`{type:"GLASS", lightIntensity, lightAngle, refraction, depth, dispersion, radius}` — all
+  defaulted), plus `TEXTURE` (`noiseSize, radius, clipToShape`) and `NOISE`
+  (`noiseType MONOTONE|DUOTONE|MULTITONE, color, secondaryColor, opacity, noiseSize, density`).
+  `TEXTURE` and `NOISE` also preserve optional anisotropic `noiseSizeVector:{x,y}` when provided.
+  The plugin builds the effect via `buildAdvancedEffect` and assigns it to `node.effects` /
+  `style.effects`; the Go schema validator accepts the three new type literals.
+- **PROGRESSIVE (gradual) blur** for `LAYER_BLUR` / `BACKGROUND_BLUR`. Pass `blurType:"PROGRESSIVE"`
+  (with optional `startRadius`, `radius` end, and normalized `startOffset`/`endOffset` vectors,
+  defaulting to a top→bottom ramp `{0.5,0}`→`{0.5,1}`) to get an iOS-style gradual blur instead of a
+  uniform one. Omitting `blurType` still builds a uniform `NORMAL` blur (unchanged default).
 - **`update_variable` / `update_variable_collection` — variable & collection metadata management.**
   `update_variable`: rename, set publishing `scopes` (validated against the 22-value VariableScope
   enum), `hiddenFromPublishing`, and per-platform `codeSyntax` (`WEB`/`ANDROID`/`iOS`).

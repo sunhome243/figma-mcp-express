@@ -55,16 +55,16 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 	})
 
 	s.AddTool(mcp.NewTool("create_effect_style",
-		mcp.WithDescription("Create a new local effect style (drop shadow, inner shadow, or blur). Supply either a single-effect shorthand (type + color/radius/etc.) or an effects[] array for multi-effect styles."),
+		mcp.WithDescription("Create a new local effect style (drop shadow, inner shadow, blur, GLASS, NOISE, or TEXTURE). Supply either a single-effect shorthand (type + color/radius/etc.) or an effects[] array for multi-effect styles."),
 		mcp.WithString("name",
 			mcp.Required(),
 			mcp.Description("Style name e.g. 'Shadow/Card'"),
 		),
 		mcp.WithArray("effects",
-			mcp.Description("Array of effect objects for multi-effect styles. When provided, takes precedence over the single-effect shorthand fields. Each effect: {type, color?, opacity?, offsetX?, offsetY?, radius?, spread?, visible?, blendMode?, showShadowBehindNode?}"),
+			mcp.Description("Array of effect objects for multi-effect styles. When provided, takes precedence over the single-effect shorthand fields. Shadows: color/opacity/offset/radius/spread. Blurs: radius/blurType/startRadius/startOffset/endOffset. Native effects: GLASS fields, plus TEXTURE/NOISE noiseSize and optional noiseSizeVector."),
 			mcp.Items(map[string]any{"type": "object"}),
 		),
-		mcp.WithString("type", mcp.Description("Single-effect shorthand: DROP_SHADOW (default), INNER_SHADOW, LAYER_BLUR, or BACKGROUND_BLUR. Ignored when effects[] is provided.")),
+		mcp.WithString("type", mcp.Description("Single-effect shorthand: DROP_SHADOW (default), INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, or the native advanced effects GLASS, NOISE, TEXTURE. Ignored when effects[] is provided.")),
 		mcp.WithString("color", mcp.Description("Shadow color as hex e.g. #000000 (default #000000, shadows only)")),
 		mcp.WithNumber("opacity", mcp.Description("Shadow color opacity 0–1 (default 0.25, shadows only)")),
 		mcp.WithNumber("radius", mcp.Description("Blur radius in pixels (default 8 for shadows, 4 for blurs)")),
@@ -121,6 +121,30 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
+	s.AddTool(mcp.NewTool("reorder_local_style",
+		mcp.WithDescription("Move a local paint/text/effect/grid style after another style of the same type. Omit afterStyleId to move it to the top of its style list."),
+		mcp.WithString("styleType", mcp.Required(), mcp.Description("Style type: PAINT, TEXT, EFFECT, or GRID.")),
+		mcp.WithString("styleId", mcp.Required(), mcp.Description("Target local style ID to move.")),
+		mcp.WithString("afterStyleId", mcp.Description("Reference local style ID of the same type. Omit to move target first.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "reorder_local_style", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("reorder_local_style_folder",
+		mcp.WithDescription("Move a local style folder after another folder for paint/text/effect/grid styles. Omit afterFolder to move it first."),
+		mcp.WithString("styleType", mcp.Required(), mcp.Description("Style type: PAINT, TEXT, EFFECT, or GRID.")),
+		mcp.WithString("folder", mcp.Required(), mcp.Description("Target folder path/name to move.")),
+		mcp.WithString("afterFolder", mcp.Description("Reference folder path/name of the same style type. Omit to move target first.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "reorder_local_style_folder", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
 	// LEVER 4 (tool demotion) — delete_style is DEMOTED to a batch-only op. Registration commented out (off tools/list); batch relays type "delete_style" to the untouched plugin handler. Uncomment to restore.
 	// s.AddTool(mcp.NewTool("delete_style",
 	// 	mcp.WithDescription("Delete a style (paint, text, effect, or grid) by its ID."),
@@ -162,14 +186,14 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 	})
 
 	s.AddTool(mcp.NewTool("set_effects",
-		mcp.WithDescription("Apply one or more effects (drop shadow, inner shadow, layer blur, background blur) directly to one or more nodes. Replaces all existing effects on each target node. Pass an empty array to clear all effects. Returns {results:[{nodeId,effectCount}]} for each nodeId."),
+		mcp.WithDescription("Apply one or more effects (drop shadow, inner shadow, layer blur, background blur, plus the native GLASS / NOISE / TEXTURE effects) directly to one or more nodes. Replaces all existing effects on each target node. Pass an empty array to clear all effects. Returns {results:[{nodeId,effectCount}]} for each nodeId."),
 		mcp.WithString("nodeId",
 			mcp.Required(),
 			mcp.Description("Primary target node ID in colon format e.g. 4029:12345. Also accepts nodeIds[] in batch mode for bulk application."),
 		),
 		mcp.WithArray("effects",
 			mcp.Required(),
-			mcp.Description("Array of effect objects. Each has: type (DROP_SHADOW | INNER_SHADOW | LAYER_BLUR | BACKGROUND_BLUR), radius, color (hex, shadows only), opacity (0–1, shadows only), offsetX, offsetY (shadows only), spread (shadows only), visible (default true), showShadowBehindNode (DROP_SHADOW only, default false)"),
+			mcp.Description("Array of effect objects. type: DROP_SHADOW | INNER_SHADOW | LAYER_BLUR | BACKGROUND_BLUR | GLASS | NOISE | TEXTURE. Shadow fields: color, opacity, offsetX/Y, radius, spread, showShadowBehindNode. GLASS/NOISE/TEXTURE take their native Figma params; TEXTURE/NOISE also accept noiseSizeVector."),
 			mcp.Items(map[string]any{"type": "object"}),
 		),
 		channelParam(),
@@ -209,6 +233,30 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 			"field":      args["field"],
 		}
 		resp, err := node.Send(ctx, "bind_variable_to_node", []string{nodeID}, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("bind_variable_to_effect",
+		mcp.WithDescription("Bind a variable to a field on an Effect object using setBoundVariableForEffect. Returns the updated effect object; apply it with set_effects or create_effect_style."),
+		mcp.WithObject("effect", mcp.Required(), mcp.Description("Effect object to bind.")),
+		mcp.WithString("field", mcp.Required(), mcp.Description("Effect field to bind, e.g. radius or color.")),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to bind.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "bind_variable_to_effect", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("bind_variable_to_layout_grid",
+		mcp.WithDescription("Bind a variable to a field on a LayoutGrid object using setBoundVariableForLayoutGrid. Returns the updated grid object; apply it with create_grid_style or layout-grid APIs."),
+		mcp.WithObject("layoutGrid", mcp.Required(), mcp.Description("LayoutGrid object to bind.")),
+		mcp.WithString("field", mcp.Required(), mcp.Description("Layout grid field to bind, e.g. sectionSize, count, gutterSize, offset, or color.")),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to bind.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "bind_variable_to_layout_grid", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
 }

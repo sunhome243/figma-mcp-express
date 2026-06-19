@@ -30,8 +30,8 @@ func TestBatchOpCatalogCoversPluginHandlers(t *testing.T) {
 			pluginOps[m[1]] = true
 		}
 	}
-	if len(pluginOps) != 96 {
-		t.Fatalf("plugin lowercase handler op count = %d, want 96", len(pluginOps))
+	if len(pluginOps) != 117 {
+		t.Fatalf("plugin lowercase handler op count = %d, want 117", len(pluginOps))
 	}
 
 	var missing []string
@@ -200,9 +200,10 @@ func TestSearchBatchOps_MultiWordQueryMatches(t *testing.T) {
 // gave up.
 func TestSearchBatchOps_ZeroMatchSuggestsClosest(t *testing.T) {
 	s, _ := newTestServer(t)
-	// "delete" + a non-matching term → no op matches BOTH (AND) → zero matches.
+	// "delete node" + a non-matching term → no op matches ALL tokens (AND) →
+	// zero matches, while the node-specific suggestion still ranks first.
 	search := callToolResult(t, s, "search_batch_ops", map[string]any{
-		"query": "delete xyzzy", "limit": float64(30),
+		"query": "delete node xyzzy", "limit": float64(30),
 	})
 	if search.IsError {
 		t.Fatalf("search errored: %s", resultText(t, search))
@@ -511,7 +512,7 @@ func TestBatchCatalogSpecExamplesAndUnknownOp(t *testing.T) {
 	}
 }
 
-func TestBatchCatalogSpecsDoNotExposePerOpChannel(t *testing.T) {
+func TestBatchCatalogSpecsDoNotExposeOuterToolParams(t *testing.T) {
 	s, _ := newTestServer(t)
 
 	for _, op := range []string{"set_fills", "create_text", "rename_node", "set_corner_radius"} {
@@ -524,6 +525,9 @@ func TestBatchCatalogSpecsDoNotExposePerOpChannel(t *testing.T) {
 			txt := resultText(t, spec)
 			if strings.Contains(txt, `"channel"`) {
 				t.Fatalf("batch op spec must not expose per-op channel; route channel on outer batch only: %s", txt)
+			}
+			if strings.Contains(txt, `"origin"`) {
+				t.Fatalf("batch op spec must not expose per-op origin; route origin on outer batch only: %s", txt)
 			}
 		})
 	}

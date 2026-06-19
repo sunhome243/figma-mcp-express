@@ -95,6 +95,46 @@ func TestBatchValidateOnly_NullClearsOptionalParam(t *testing.T) {
 	}
 }
 
+func TestBatchValidateOnly_RejectsNonPositiveMinMaxConstraint(t *testing.T) {
+	for _, op := range []map[string]any{
+		{"type": "set_auto_layout", "nodeIds": []any{"1:1"}, "params": map[string]any{"minWidth": float64(0)}},
+		{"type": "resize_nodes", "nodeIds": []any{"1:1"}, "params": map[string]any{"maxHeight": float64(-1)}},
+		{"type": "create_frame", "params": map[string]any{"minHeight": float64(0)}},
+	} {
+		valid, raw := batchValidateOnlyValid(t, op)
+		if valid {
+			t.Fatalf("op %v with non-positive min/max constraint must be rejected, got %s", op["type"], raw)
+		}
+	}
+}
+
+func TestBatchValidateOnly_SetTextRangeHyperlinkNodeID(t *testing.T) {
+	valid, raw := batchValidateOnlyValid(t, map[string]any{
+		"type":    "set_text_range",
+		"nodeIds": []any{"1:1"},
+		"params": map[string]any{
+			"startOffset": float64(0),
+			"endOffset":   float64(3),
+			"hyperlink":   map[string]any{"nodeId": "2-3"},
+		},
+	})
+	if !valid {
+		t.Fatalf("hyphen-format hyperlink nodeId should normalize through the batch gate, got %s", raw)
+	}
+	valid, raw = batchValidateOnlyValid(t, map[string]any{
+		"type":    "set_text_range",
+		"nodeIds": []any{"1:1"},
+		"params": map[string]any{
+			"startOffset": float64(0),
+			"endOffset":   float64(3),
+			"hyperlink":   map[string]any{"nodeId": "not-a-node-id"},
+		},
+	})
+	if valid {
+		t.Fatalf("invalid hyperlink nodeId should be rejected by the batch gate, got %s", raw)
+	}
+}
+
 func TestBatchValidateOnly_CreateFrameGridGapVariableIds(t *testing.T) {
 	valid, raw := batchValidateOnlyValid(t, map[string]any{
 		"type": "create_frame",
