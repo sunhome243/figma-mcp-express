@@ -418,6 +418,11 @@ describe("create_polygon", () => {
     await handleWriteCreateRequest(makeRequest("create_polygon", [], { pointCount: 2 }));
     expect(poly.pointCount).toBe(3);
   });
+
+  it("rounds fractional pointCount to Figma's integer contract", async () => {
+    await handleWriteCreateRequest(makeRequest("create_polygon", [], { pointCount: 5.6 }));
+    expect(poly.pointCount).toBe(6);
+  });
 });
 
 describe("create_star", () => {
@@ -439,9 +444,17 @@ describe("create_star", () => {
     expect(star.innerRadius).toBe(0.3);
   });
 
+  it("clamps pointCount below 3 up to 3", async () => {
+    await handleWriteCreateRequest(makeRequest("create_star", [], { pointCount: 2 }));
+    expect(star.pointCount).toBe(3);
+  });
+
   it("clamps innerRadius into 0–1", async () => {
     await handleWriteCreateRequest(makeRequest("create_star", [], { innerRadius: 2 }));
     expect(star.innerRadius).toBe(1);
+
+    await handleWriteCreateRequest(makeRequest("create_star", [], { innerRadius: -0.5 }));
+    expect(star.innerRadius).toBe(0);
   });
 });
 
@@ -477,8 +490,10 @@ describe("import_svg", () => {
 describe("create_table", () => {
   let table: any;
   let cells: Record<string, any>;
+  let loadedFonts: any[];
   beforeEach(() => {
     cells = {};
+    loadedFonts = [];
     table = { id: "table:1", name: "Table", type: "TABLE", x: 0, y: 0, width: 200, height: 100,
       numRows: 2, numColumns: 2,
       cellAt(r: number, c: number) {
@@ -490,7 +505,7 @@ describe("create_table", () => {
       ...(globalThis as any).figma,
       currentPage: { id: "0:1", appendChild: () => {} },
       createTable: (_r: number, _c: number) => { table.numRows = _r; table.numColumns = _c; return table; },
-      loadFontAsync: async () => {},
+      loadFontAsync: async (font: any) => { loadedFonts.push(font); },
     };
   });
 
@@ -519,6 +534,23 @@ describe("create_table", () => {
     expect(cells["0,0"].text.characters).toBe("A");
     expect(cells["0,1"]).toBeUndefined();
     expect(cells["1,0"]).toBeUndefined();
+  });
+
+  it("loads each distinct cell text font before assigning characters", async () => {
+    cells["0,0"] = { text: { fontName: { family: "Inter", style: "Regular" }, characters: "" } };
+    cells["0,1"] = { text: { fontName: { family: "Roboto", style: "Bold" }, characters: "" } };
+    cells["1,0"] = { text: { fontName: { family: "Roboto", style: "Bold" }, characters: "" } };
+
+    await handleWriteCreateRequest(makeRequest("create_table", [], {
+      numRows: 2, numColumns: 2, cells: [["A", "B"], ["C", "D"]],
+    }));
+
+    expect(loadedFonts).toEqual([
+      { family: "Inter", style: "Regular" },
+      { family: "Roboto", style: "Bold" },
+    ]);
+    expect(cells["1,0"].text.characters).toBe("C");
+    expect(cells["1,1"].text.characters).toBe("D");
   });
 });
 

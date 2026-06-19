@@ -94,3 +94,19 @@ func TestBatchValidateOnly_NullClearsOptionalParam(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchValidateOnly_CreateFrameGridGapVariableIds(t *testing.T) {
+	valid, raw := batchValidateOnlyValid(t, map[string]any{
+		"type": "create_frame",
+		"params": map[string]any{
+			"layoutMode":              "GRID",
+			"gridRowCount":            float64(2),
+			"gridColumnCount":         float64(3),
+			"gridRowGapVariableId":    "VariableID:1:2",
+			"gridColumnGapVariableId": "VariableID:1:3",
+		},
+	})
+	if !valid {
+		t.Fatalf("create_frame GRID gap variable ids must validate through the batch gate, got %s", raw)
+	}
+}

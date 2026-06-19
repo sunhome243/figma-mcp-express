@@ -1,6 +1,32 @@
 import { getBounds } from "./serializers";
 import { makeSolidPaint, getParentNode, base64ToBytes, applyAutoLayout, applyTextStyleProps, applyLayoutSizing } from "./write-helpers";
 
+const isFontName = (font: unknown): font is FontName => {
+  return !!font && typeof (font as any).family === "string" && typeof (font as any).style === "string";
+};
+
+const tableCellFontKey = (font: FontName) => `${font.family}\0${font.style}`;
+
+const loadFontsForTableCells = async (table: TableNode, cells: any[], numRows: number, numColumns: number) => {
+  const loaded = new Set<string>();
+  for (let r = 0; r < cells.length && r < numRows; r++) {
+    const row = cells[r];
+    if (!Array.isArray(row)) continue;
+    for (let c = 0; c < row.length && c < numColumns; c++) {
+      if (row[c] == null) continue;
+      const fontName = table.cellAt(r, c).text.fontName;
+      if (!isFontName(fontName)) {
+        throw new Error(`create_table: cell ${r},${c} has mixed fontName and cannot be edited safely`);
+      }
+      const key = tableCellFontKey(fontName);
+      if (!loaded.has(key)) {
+        await figma.loadFontAsync(fontName);
+        loaded.add(key);
+      }
+    }
+  }
+};
+
 export const handleWriteCreateRequest = async (request: any) => {
   switch (request.type) {
     case "create_frame": {
@@ -302,7 +328,7 @@ export const handleWriteCreateRequest = async (request: any) => {
       // Optional cell text: a 2D array [rowIndex][colIndex] of strings. The cell's text
       // sublayer font must be loaded before assigning characters.
       if (Array.isArray(p.cells)) {
-        await figma.loadFontAsync(table.cellAt(0, 0).text.fontName as FontName);
+        await loadFontsForTableCells(table, p.cells, numRows, numColumns);
         for (let r = 0; r < p.cells.length && r < numRows; r++) {
           const row = p.cells[r];
           if (!Array.isArray(row)) continue;

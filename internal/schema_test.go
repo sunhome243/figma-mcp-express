@@ -57,6 +57,40 @@ func TestNormalizeNodeID(t *testing.T) {
 	}
 }
 
+func TestNormalizeRPCNodeReferences(t *testing.T) {
+	nodeIDs := []string{"4029-12345", "I2167-9091;186-1579", "$0.id"}
+	params := map[string]interface{}{
+		"nodeId":      "1-2",
+		"parentId":    "3-4",
+		"pageId":      "0-1",
+		"componentId": "5-6",
+		"key":         "abc-def",
+	}
+
+	normalizeRPCNodeReferences(nodeIDs, params)
+
+	if got, want := nodeIDs[0], "4029:12345"; got != want {
+		t.Fatalf("nodeIDs[0] = %q, want %q", got, want)
+	}
+	if got, want := nodeIDs[1], "I2167:9091;186:1579"; got != want {
+		t.Fatalf("nodeIDs[1] = %q, want %q", got, want)
+	}
+	if got, want := nodeIDs[2], "$0.id"; got != want {
+		t.Fatalf("nodeIDs[2] = %q, want %q", got, want)
+	}
+	for key, want := range map[string]string{
+		"nodeId":      "1:2",
+		"parentId":    "3:4",
+		"pageId":      "0:1",
+		"componentId": "5:6",
+		"key":         "abc-def",
+	} {
+		if got, _ := params[key].(string); got != want {
+			t.Fatalf("params[%q] = %q, want %q", key, got, want)
+		}
+	}
+}
+
 // ── ValidateRPC ───────────────────────────────────────────────────────────────
 
 func TestValidateRPC_GetNode(t *testing.T) {
@@ -546,6 +580,27 @@ func TestValidateRPC_CreateRectangleEllipse(t *testing.T) {
 		if msg := ValidateRPC(tool, nil, map[string]interface{}{"width": float64(50), "parentId": "1:1"}); msg != "" {
 			t.Errorf("%s unexpected error: %s", tool, msg)
 		}
+	}
+}
+
+func TestValidateRPC_CreatePolygonStarContracts(t *testing.T) {
+	if msg := ValidateRPC("create_polygon", nil, map[string]interface{}{"pointCount": float64(2)}); msg == "" {
+		t.Error("expected error for polygon pointCount below the Figma minimum")
+	}
+	if msg := ValidateRPC("create_polygon", nil, map[string]interface{}{"pointCount": float64(3)}); msg != "" {
+		t.Errorf("unexpected error for polygon pointCount=3: %s", msg)
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"pointCount": float64(2)}); msg == "" {
+		t.Error("expected error for star pointCount below the Figma minimum")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"innerRadius": float64(-0.1)}); msg == "" {
+		t.Error("expected error for star innerRadius below 0")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"innerRadius": float64(1.1)}); msg == "" {
+		t.Error("expected error for star innerRadius above 1")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"pointCount": float64(3), "innerRadius": float64(1)}); msg != "" {
+		t.Errorf("unexpected error for valid star bounds: %s", msg)
 	}
 }
 

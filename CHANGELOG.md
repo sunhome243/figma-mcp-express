@@ -50,12 +50,20 @@ Versions follow [Semantic Versioning](https://semver.org/).
   `leadingTrim` / `textTruncation` / `maxLines` / `hangingList` / `hangingPunctuation`) require a
   reasonably current Figma (built against `@figma/plugin-typings` 1.124.0). On an older Figma desktop
   these may no-op or throw at runtime; the schema layer can't detect the host version.
+- Node ID tool schemas remain colon-format-first (`4029:12345`), matching Figma plugin IDs; the
+  runtime normalizes common URL hyphen IDs before validation as a compatibility recovery path.
+- `create_polygon` / `create_star` validate the Figma shape bounds at the schema layer
+  (`pointCount >= 3`, `innerRadius` 0-1) and keep plugin-side clamping as a defensive guard for raw
+  plugin or older batch paths.
 
 ### Fixed
 
 - **`set_blend_mode` rejecting `LINEAR_BURN` / `LINEAR_DODGE`.** Both are valid Figma blend modes (the
   plugin handler already accepted them) but the Go schema allowlist omitted them, failing the call
   before it reached the plugin. Added to `validBlendModes`.
+- **`create_table` cell text now loads each distinct target cell font before mutation.** New Figma
+  tables normally share one cell font, but loading per distinct cell font avoids the single-font
+  assumption if a table cell font differs before text insertion.
 
 ## [2.5.3] — 2026-06-19
 

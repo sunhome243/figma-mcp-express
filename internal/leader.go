@@ -141,6 +141,7 @@ func (l *Leader) handleRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	leaderLogger.Printf("rpc %s nodeIDs=%v from %s", req.Tool, req.NodeIDs, r.RemoteAddr)
+	normalizeRPCNodeReferences(req.NodeIDs, req.Params)
 
 	if req.Tool == "batch" {
 		if err := validateAndPrepareBatchParams(req.Params); err != nil {

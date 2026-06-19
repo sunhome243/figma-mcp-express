@@ -35,6 +35,20 @@ func NormalizeNodeID(s string) string {
 	return s
 }
 
+func normalizeRPCNodeReferences(nodeIDs []string, params map[string]interface{}) {
+	for i, id := range nodeIDs {
+		nodeIDs[i] = NormalizeNodeID(id)
+	}
+	if params == nil {
+		return
+	}
+	for _, key := range []string{"nodeId", "parentId", "pageId", "componentId"} {
+		if v, ok := params[key].(string); ok {
+			params[key] = NormalizeNodeID(v)
+		}
+	}
+}
+
 // ValidNodeID reports whether s is a valid Figma node ID.
 func ValidNodeID(s string) bool {
 	return nodeIDPattern.MatchString(s)

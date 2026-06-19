@@ -23,7 +23,7 @@ reads under `## Read — Document` not named above (`get_document`, `get_reactio
 `get_viewport`, `get_fonts`, `get_annotations`, `get_screenshot`) are
 full-profile-only — use `get_metadata` / `get_node` / `save_screenshots` in `core`.
 
-Plugin-facing top-level tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. For `batch`, pass `channel` on the outer `batch` call only; per-op `params.channel` is rejected because op contracts come from `BatchOpCatalog`. Node IDs are always in colon format, e.g. `4029:12345`, never hyphens.
+Plugin-facing top-level tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. For `batch`, pass `channel` on the outer `batch` call only; per-op `params.channel` is rejected because op contracts come from `BatchOpCatalog`. Node IDs are documented and returned in colon format, e.g. `4029:12345`; the runtime normalizes common Figma URL hyphen IDs before validation as a recovery path.
 
 ---
 
@@ -270,7 +270,11 @@ Create a new frame on the current page or inside a parent node. Optional layout-
 | height                 | number | No       | Height in pixels (default 100)                                                |
 | name                   | string | No       | Frame name                                                                    |
 | fillColor              | string | No       | Fill color as hex e.g. `#FFFFFF`                                              |
-| layoutMode             | string | No       | Auto-layout direction: `HORIZONTAL`, `VERTICAL`, or `NONE`                    |
+| layoutMode             | string | No       | Auto-layout direction: `HORIZONTAL`, `VERTICAL`, `GRID`, or `NONE`            |
+| gridRowCount           | number | No       | Number of rows when `layoutMode` is `GRID`                                    |
+| gridColumnCount        | number | No       | Number of columns when `layoutMode` is `GRID`                                 |
+| gridRowGap             | number | No       | Row gap when `layoutMode` is `GRID`                                           |
+| gridColumnGap          | number | No       | Column gap when `layoutMode` is `GRID`                                        |
 | paddingTop             | number | No       | Auto-layout top padding                                                       |
 | paddingRight           | number | No       | Auto-layout right padding                                                     |
 | paddingBottom          | number | No       | Auto-layout bottom padding                                                    |
@@ -296,6 +300,8 @@ Create a new frame on the current page or inside a parent node. Optional layout-
 | paddingBottomVariableId | string | No       | Variable ID to bind to `paddingBottom` instead of a raw value                 |
 | paddingLeftVariableId   | string | No       | Variable ID to bind to `paddingLeft` instead of a raw value                   |
 | itemSpacingVariableId   | string | No       | Variable ID to bind to `itemSpacing` instead of a raw value                   |
+| gridRowGapVariableId    | string | No       | Variable ID to bind to `gridRowGap` when `layoutMode` is `GRID`               |
+| gridColumnGapVariableId | string | No       | Variable ID to bind to `gridColumnGap` when `layoutMode` is `GRID`            |
 | channel                | string | No       | Target a specific connected file by channel id.                               |
 
 ### create_rectangle

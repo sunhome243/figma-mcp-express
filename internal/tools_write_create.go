@@ -27,6 +27,8 @@ func registerWriteCreateTools(s *server.MCPServer, node *Node) {
 		mcp.WithNumber("gridColumnCount", mcp.Description("Number of columns (GRID layoutMode only)")),
 		mcp.WithNumber("gridRowGap", mcp.Description("Gap between grid rows (GRID layoutMode only)")),
 		mcp.WithNumber("gridColumnGap", mcp.Description("Gap between grid columns (GRID layoutMode only)")),
+		mcp.WithString("gridRowGapVariableId", mcp.Description("Design variable ID to bind to gridRowGap (GRID layoutMode only).")),
+		mcp.WithString("gridColumnGapVariableId", mcp.Description("Design variable ID to bind to gridColumnGap (GRID layoutMode only).")),
 		mcp.WithNumber("paddingTop", mcp.Description("Auto-layout top padding (raw pixels)")),
 		mcp.WithNumber("paddingRight", mcp.Description("Auto-layout right padding (raw pixels)")),
 		mcp.WithNumber("paddingBottom", mcp.Description("Auto-layout bottom padding (raw pixels)")),
