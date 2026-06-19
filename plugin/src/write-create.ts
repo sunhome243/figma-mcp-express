@@ -160,14 +160,15 @@ export const handleWriteCreateRequest = async (request: any) => {
       const scaleMode: string = p.scaleMode || "FILL";
       validatePaintScaleMode(scaleMode);
       const parent = await getParentNode(p.parentId);
-      const image = p.imageUrl
-        ? await (() => {
-            if (typeof figma.createImageAsync !== "function") {
-              throw new Error("createImageAsync is unavailable in this Figma host");
-            }
-            return figma.createImageAsync(String(p.imageUrl));
-          })()
-        : figma.createImage(base64ToBytes(p.imageData));
+      let image: Image;
+      if (p.imageUrl) {
+        if (typeof figma.createImageAsync !== "function") {
+          throw new Error("createImageAsync is unavailable in this Figma host");
+        }
+        image = await figma.createImageAsync(String(p.imageUrl));
+      } else {
+        image = figma.createImage(base64ToBytes(p.imageData));
+      }
       const rect = figma.createRectangle();
       rect.resize(p.width || 200, p.height || 200);
       rect.x = p.x != null ? p.x : 0;

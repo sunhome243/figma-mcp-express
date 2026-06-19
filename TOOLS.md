@@ -1357,7 +1357,7 @@ Bind a local variable to a node property so the property is driven by the variab
 
 ### bind_variable_to_effect
 
-Bind a variable to a field on an Effect object using `setBoundVariableForEffect`. Returns the updated effect object; apply it with `set_effects` or `create_effect_style`.
+Bind a variable to a field on an Effect object using `setBoundVariableForEffect`. This is Figma's pure object helper: it returns an updated effect object and does not mutate any node or style by itself. Apply the returned object with `set_effects` or `create_effect_style`.
 
 | Name       | Type   | Required | Description                                     |
 | ---------- | ------ | -------- | ----------------------------------------------- |
@@ -1368,7 +1368,7 @@ Bind a variable to a field on an Effect object using `setBoundVariableForEffect`
 
 ### bind_variable_to_layout_grid
 
-Bind a variable to a field on a LayoutGrid object using `setBoundVariableForLayoutGrid`. Returns the updated grid object; apply it with layout-grid style/node APIs.
+Bind a variable to a field on a LayoutGrid object using `setBoundVariableForLayoutGrid`. This is Figma's pure object helper: it returns an updated grid object and does not mutate any node or style by itself. Apply the returned object with layout-grid style/node APIs.
 
 | Name       | Type   | Required | Description                                                |
 | ---------- | ------ | -------- | ---------------------------------------------------------- |
