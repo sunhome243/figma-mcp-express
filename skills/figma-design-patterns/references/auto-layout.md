@@ -68,6 +68,10 @@ cardWidth  = (1152 - (3-1)*16) / 3    = (1152 - 32) / 3  = 373.3 → round to 37
 
 Set each card to `layoutSizingHorizontal = "FIXED"` and `resize(373, cardHeight)`.
 
+**Native alternative — GRID layout.** `set_auto_layout` / `create_frame` accept `layoutMode: "GRID"` with `gridRowCount`, `gridColumnCount`, `gridRowGap`, `gridColumnGap` (gaps token-bindable via `gridRowGapVariableId` / `gridColumnGapVariableId`). A true grid tiles children into rows/columns without the WRAP+FIXED-width formula above — prefer it for fixed-count card grids when the host Figma supports GRID (recent versions only; on older Figma it may no-op, so verify the result). Flex-only props (`primaryAxisAlignItems`, `itemSpacing`, `itemReverseZIndex`, `strokesIncludedInLayout`) do not apply in GRID mode.
+
+**Responsive bounds.** `minWidth` / `maxWidth` / `minHeight` / `maxHeight` are settable on frames (`set_auto_layout`) and on auto-layout children (`resize_nodes`) — use a `maxWidth` to cap a `FILL` content column instead of pinning it `FIXED`. Pass `null` to clear a bound.
+
 ---
 
 ## FILL sizing must happen after placement

@@ -44,6 +44,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
   `VERTICAL` / `BOTH`), `strokesIncludedInLayout`, `itemReverseZIndex`, and `counterAxisSpacingVariableId`
   (token binding for the wrapped-track gap).
 
+### Notes
+
+- The newer surfaces here (GRID auto-layout, `create_table`, and the recent TextNode props
+  `leadingTrim` / `textTruncation` / `maxLines` / `hangingList` / `hangingPunctuation`) require a
+  reasonably current Figma (built against `@figma/plugin-typings` 1.124.0). On an older Figma desktop
+  these may no-op or throw at runtime; the schema layer can't detect the host version.
+
 ### Fixed
 
 - **`set_blend_mode` rejecting `LINEAR_BURN` / `LINEAR_DODGE`.** Both are valid Figma blend modes (the
