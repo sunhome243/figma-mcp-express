@@ -121,6 +121,30 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
+	s.AddTool(mcp.NewTool("reorder_local_style",
+		mcp.WithDescription("Move a local paint/text/effect/grid style after another style of the same type. Omit afterStyleId to move it to the top of its style list."),
+		mcp.WithString("styleType", mcp.Required(), mcp.Description("Style type: PAINT, TEXT, EFFECT, or GRID.")),
+		mcp.WithString("styleId", mcp.Required(), mcp.Description("Target local style ID to move.")),
+		mcp.WithString("afterStyleId", mcp.Description("Reference local style ID of the same type. Omit to move target first.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "reorder_local_style", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("reorder_local_style_folder",
+		mcp.WithDescription("Move a local style folder after another folder for paint/text/effect/grid styles. Omit afterFolder to move it first."),
+		mcp.WithString("styleType", mcp.Required(), mcp.Description("Style type: PAINT, TEXT, EFFECT, or GRID.")),
+		mcp.WithString("folder", mcp.Required(), mcp.Description("Target folder path/name to move.")),
+		mcp.WithString("afterFolder", mcp.Description("Reference folder path/name of the same style type. Omit to move target first.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "reorder_local_style_folder", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
 	// LEVER 4 (tool demotion) — delete_style is DEMOTED to a batch-only op. Registration commented out (off tools/list); batch relays type "delete_style" to the untouched plugin handler. Uncomment to restore.
 	// s.AddTool(mcp.NewTool("delete_style",
 	// 	mcp.WithDescription("Delete a style (paint, text, effect, or grid) by its ID."),
@@ -209,6 +233,30 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 			"field":      args["field"],
 		}
 		resp, err := node.Send(ctx, "bind_variable_to_node", []string{nodeID}, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("bind_variable_to_effect",
+		mcp.WithDescription("Bind a variable to a field on an Effect object using setBoundVariableForEffect. Returns the updated effect object; apply it with set_effects or create_effect_style."),
+		mcp.WithObject("effect", mcp.Required(), mcp.Description("Effect object to bind.")),
+		mcp.WithString("field", mcp.Required(), mcp.Description("Effect field to bind, e.g. radius or color.")),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to bind.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "bind_variable_to_effect", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("bind_variable_to_layout_grid",
+		mcp.WithDescription("Bind a variable to a field on a LayoutGrid object using setBoundVariableForLayoutGrid. Returns the updated grid object; apply it with create_grid_style or layout-grid APIs."),
+		mcp.WithObject("layoutGrid", mcp.Required(), mcp.Description("LayoutGrid object to bind.")),
+		mcp.WithString("field", mcp.Required(), mcp.Description("Layout grid field to bind, e.g. sectionSize, count, gutterSize, offset, or color.")),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to bind.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "bind_variable_to_layout_grid", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
 }

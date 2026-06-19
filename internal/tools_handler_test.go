@@ -147,7 +147,8 @@ func TestHandlers_NoParamReadTools(t *testing.T) {
 	noParamTools := []string{
 		"get_document", "get_pages", "get_metadata", "get_selection",
 		"get_viewport", "get_fonts", "get_styles", "get_variable_defs",
-		"get_local_components", "get_annotations",
+		"get_local_components", "get_annotations", "get_file_thumbnail",
+		"get_selection_colors",
 	}
 	for _, name := range noParamTools {
 		callTool(t, s, name, nil)
@@ -207,6 +208,14 @@ func TestHandlers_ScanNodesByTypes(t *testing.T) {
 func TestHandlers_GetReactions(t *testing.T) {
 	s, _ := newTestServer(t)
 	callTool(t, s, "get_reactions", map[string]any{"nodeId": "1:1"})
+}
+
+func TestHandlers_APIGapReadTools(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	callTool(t, s, "get_image_by_hash", map[string]any{"hash": "abc"})
+	callTool(t, s, "get_dev_resources", map[string]any{"nodeId": "1:1", "includeChildren": true})
+	callTool(t, s, "resolve_variable_for_consumer", map[string]any{"variableId": "v1", "nodeId": "1:1"})
 }
 
 // ── Read – export tools ───────────────────────────────────────────────────────
@@ -283,6 +292,32 @@ func TestHandlers_WriteCreateTools(t *testing.T) {
 	})
 	// import_image minimal
 	callTool(t, s, "import_image", map[string]any{"imageData": "abc123"})
+	callTool(t, s, "import_image", map[string]any{"imageUrl": "https://example.com/image.png"})
+	callTool(t, s, "create_video", map[string]any{"videoData": "abc123", "scaleMode": "FIT"})
+	callTool(t, s, "create_gif", map[string]any{"imageHash": "hash-1", "width": float64(120), "height": float64(80)})
+	callTool(t, s, "create_link_preview", map[string]any{"url": "https://example.com", "name": "Docs"})
+	callTool(t, s, "create_vector", map[string]any{"vectorPaths": []any{map[string]any{"data": "M 0 0 L 10 10", "windingRule": "NONZERO"}}})
+	callTool(t, s, "create_slice", map[string]any{"width": float64(320), "height": float64(180)})
+	callTool(t, s, "create_page_divider", map[string]any{"name": "---"})
+	callTool(t, s, "create_text_path", map[string]any{"nodeId": "1:1", "startSegment": float64(0), "startPosition": float64(0)})
+}
+
+func TestImportImagePrefersBase64InputOverImageURL(t *testing.T) {
+	rec := newRecordedRPCServer(t)
+	s, _ := newTestServerWithRPCURL(t, rec.server.URL)
+
+	callTool(t, s, "import_image", map[string]any{
+		"imageData": "abc123",
+		"imageUrl":  "https://example.com/remote.png",
+	})
+
+	req := rec.lastRequest(t)
+	if _, present := req.Params["imageUrl"]; present {
+		t.Fatalf("imageUrl must not be forwarded when imageData is present, got %v", req.Params["imageUrl"])
+	}
+	if got, _ := req.Params["imageData"].(string); got != "abc123" {
+		t.Fatalf("imageData = %q, want abc123", got)
+	}
 }
 
 // ── Write – modify tools ──────────────────────────────────────────────────────
@@ -317,6 +352,12 @@ func TestHandlers_WriteModifyTools(t *testing.T) {
 	callTool(t, s, "clone_node", map[string]any{"nodeId": "1:1", "x": float64(50), "y": float64(50), "parentId": "2:2"})
 	callTool(t, s, "clone_node", map[string]any{"nodeId": "1:1"}) // minimal
 
+	callTool(t, s, "set_file_thumbnail", map[string]any{"nodeId": "1:1"})
+	callTool(t, s, "set_file_thumbnail", map[string]any{}) // clear
+	callTool(t, s, "add_dev_resource", map[string]any{"nodeId": "1:1", "url": "https://example.com/spec", "name": "Spec"})
+	callTool(t, s, "edit_dev_resource", map[string]any{"nodeId": "1:1", "currentUrl": "https://example.com/spec", "url": "https://example.com/new-spec"})
+	callTool(t, s, "delete_dev_resource", map[string]any{"nodeId": "1:1", "url": "https://example.com/new-spec"})
+
 	callTool(t, s, "set_auto_layout", map[string]any{"nodeId": "1:1", "layoutMode": "HORIZONTAL"})
 
 	callTool(t, s, "delete_nodes", map[string]any{"nodeIds": []any{"1:1", "2:2"}})
@@ -334,6 +375,14 @@ func TestHandlers_WriteStyleTools(t *testing.T) {
 
 	callTool(t, s, "update_paint_style", map[string]any{"styleId": "S:abc", "color": "#00FF00"})
 	callTool(t, s, "update_paint_style", map[string]any{"styleId": "S:abc", "name": "Renamed"})
+	callTool(t, s, "reorder_local_style", map[string]any{"styleType": "PAINT", "styleId": "S:abc", "afterStyleId": "S:def"})
+	callTool(t, s, "reorder_local_style_folder", map[string]any{"styleType": "TEXT", "folder": "Heading", "afterFolder": "Body"})
+	callTool(t, s, "bind_variable_to_effect", map[string]any{
+		"effect": map[string]any{"type": "DROP_SHADOW", "radius": float64(8)}, "field": "radius", "variableId": "v1",
+	})
+	callTool(t, s, "bind_variable_to_layout_grid", map[string]any{
+		"layoutGrid": map[string]any{"pattern": "GRID", "sectionSize": float64(8)}, "field": "sectionSize", "variableId": "v1",
+	})
 
 	callTool(t, s, "delete_style", map[string]any{"styleId": "S:abc"})
 }
@@ -346,7 +395,9 @@ func TestHandlers_WriteVariableTools(t *testing.T) {
 	callTool(t, s, "create_variable_collection", map[string]any{"name": "Brand", "initialModeName": "Light"})
 	callTool(t, s, "add_variable_mode", map[string]any{"collectionId": "c1", "modeName": "Dark"})
 	callTool(t, s, "create_variable", map[string]any{"name": "primary", "collectionId": "c1", "type": "COLOR"})
+	callTool(t, s, "create_variable_alias", map[string]any{"variableId": "v1"})
 	callTool(t, s, "set_variable_value", map[string]any{"variableId": "v1", "modeId": "m1", "value": "#fff"})
+	callTool(t, s, "update_variable", map[string]any{"variableId": "v1", "removeCodeSyntax": []any{"WEB"}})
 	callTool(t, s, "delete_variable", map[string]any{"variableId": "v1"})
 	callTool(t, s, "delete_variable", map[string]any{"collectionId": "c1"})
 }

@@ -83,19 +83,28 @@ func makeHandler(node *Node, command string, nodeIDs []string, params map[string
 	}
 }
 
-// withChannel returns params with the request's `channel` arg injected (if any),
+// withChannel returns params with universal routing/presence args injected (if any),
 // cloning so the base map (often shared/nil) is never mutated. The bridge strips
-// `channel` before sending to the plugin. Use this in every tool handler.
+// `channel` before sending to the plugin; `origin` reaches the plugin for watch-agent
+// attribution. Use this in every plugin-reaching tool handler.
 func withChannel(req mcp.CallToolRequest, params map[string]interface{}) map[string]interface{} {
 	ch, _ := req.GetArguments()["channel"].(string)
-	if ch == "" {
+	origin, hasOrigin := pickOrigin(req.GetArguments())
+	_, hasRawOrigin := req.GetArguments()["origin"]
+	if ch == "" && !hasOrigin && !hasRawOrigin {
 		return params
 	}
-	out := make(map[string]interface{}, len(params)+1)
+	out := make(map[string]interface{}, len(params)+2)
 	for k, v := range params {
 		out[k] = v
 	}
-	out["channel"] = ch
+	delete(out, "origin")
+	if ch != "" {
+		out["channel"] = ch
+	}
+	if hasOrigin {
+		out["origin"] = origin
+	}
 	return out
 }
 

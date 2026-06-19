@@ -8,6 +8,21 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Figma Plugin API gap coverage for media/link, dev resources, style organization, and variable helpers.**
+  Added top-level tools plus validated `batch` op support for:
+  `import_image(imageUrl)` via `createImageAsync`, `create_video` via `createVideoAsync`,
+  `create_gif`, `create_link_preview`, `create_vector`, `create_slice`, `create_page_divider`,
+  `create_text_path`, `get_image_by_hash`, `get_file_thumbnail` / `set_file_thumbnail`,
+  node-level Dev Resource CRUD (`get_dev_resources`, `add_dev_resource`, `edit_dev_resource`,
+  `delete_dev_resource`), `get_selection_colors`, local style and style-folder reordering
+  (`reorder_local_style`, `reorder_local_style_folder`), `create_variable_alias`,
+  `resolve_variable_for_consumer`, `update_variable(removeCodeSyntax)`,
+  `bind_variable_to_effect`, and `bind_variable_to_layout_grid`.
+- **Multi-agent origin discipline in the bundled skill docs.** The multi-agent reference now states
+  that `origin` is a fixed roster enum, agents must use the origin assigned to them, random enum
+  selection is forbidden, the orchestrator origin is `wolfgang`, `sessionId+origin` is the identity
+  key, `set_presence` should be called at dispatch/workflow transitions, and `batch` carries
+  `origin` as a top-level argument.
 - **Native `GLASS` / `NOISE` / `TEXTURE` effects** in `set_effects` and `create_effect_style`
   (top-level tools + `batch` ops). Previously only `DROP_SHADOW`/`INNER_SHADOW`/`LAYER_BLUR`/
   `BACKGROUND_BLUR` were accepted, forcing callers to fake frosted glass with a background-blur +

@@ -27,6 +27,13 @@ const makeReadCaches = (): SerializeCaches => ({
 // call (pass a larger depth or Infinity for an unbounded read).
 const DEFAULT_GET_NODE_DEPTH = 50;
 
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  if (typeof figma.base64Encode === "function") return figma.base64Encode(bytes);
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s);
+};
+
 export const handleReadDocumentRequest = async (request: any) => {
   switch (request.type) {
     case "get_document": {
@@ -50,6 +57,60 @@ export const handleReadDocumentRequest = async (request: any) => {
         data: await Promise.all(
           figma.currentPage.selection.map((node) => serializeNode(node, caches)),
         ),
+      };
+    }
+
+    case "get_image_by_hash": {
+      const hash = request.params && request.params.hash;
+      if (!hash) throw new Error("hash is required");
+      const image = figma.getImageByHash(String(hash));
+      if (!image) {
+        return { type: request.type, requestId: request.requestId, data: { hash, image: null } };
+      }
+      const [size, bytes] = await Promise.all([image.getSizeAsync(), image.getBytesAsync()]);
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { hash: image.hash, width: size.width, height: size.height, bytesBase64: bytesToBase64(bytes) },
+      };
+    }
+
+    case "get_file_thumbnail": {
+      if (typeof figma.getFileThumbnailNodeAsync !== "function") {
+        throw new Error("getFileThumbnailNodeAsync is unavailable in this Figma host");
+      }
+      const node = await figma.getFileThumbnailNodeAsync();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: node ? { nodeId: node.id, name: node.name, type: node.type } : { nodeId: null },
+      };
+    }
+
+    case "get_dev_resources": {
+      const nodeId = request.params && request.params.nodeId;
+      if (!nodeId) throw new Error("nodeId is required");
+      const node = await figma.getNodeByIdAsync(String(nodeId)) as any;
+      if (!node) throw new Error(`Node not found: ${nodeId}`);
+      if (typeof node.getDevResourcesAsync !== "function") {
+        throw new Error(`Node ${nodeId} does not support dev resources`);
+      }
+      const resources = await node.getDevResourcesAsync({ includeChildren: !!request.params?.includeChildren });
+      return { type: request.type, requestId: request.requestId, data: { nodeId, resources } };
+    }
+
+    case "resolve_variable_for_consumer": {
+      const p = request.params || {};
+      if (!p.variableId) throw new Error("variableId is required");
+      if (!p.nodeId) throw new Error("nodeId is required");
+      const variable = await figma.variables.getVariableByIdAsync(p.variableId);
+      if (!variable) throw new Error(`Variable not found: ${p.variableId}`);
+      const node = await figma.getNodeByIdAsync(String(p.nodeId)) as SceneNode | null;
+      if (!node) throw new Error(`Node not found: ${p.nodeId}`);
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { variableId: variable.id, nodeId: node.id, resolved: variable.resolveForConsumer(node) },
       };
     }
 

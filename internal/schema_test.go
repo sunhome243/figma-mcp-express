@@ -686,11 +686,14 @@ func TestValidateRPC_CloneNode(t *testing.T) {
 
 func TestValidateRPC_ImportImage(t *testing.T) {
 	if msg := ValidateRPC("import_image", nil, nil); msg == "" {
-		t.Error("expected error for missing imageData")
+		t.Error("expected error for missing image input")
 	}
 	// imagePath alone is now valid (server reads + encodes the file)
 	if msg := ValidateRPC("import_image", nil, map[string]interface{}{"imagePath": "/tmp/logo.png"}); msg != "" {
 		t.Errorf("unexpected error for imagePath: %s", msg)
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{"imageUrl": "https://example.com/logo.png"}); msg != "" {
+		t.Errorf("unexpected error for imageUrl: %s", msg)
 	}
 	if msg := ValidateRPC("import_image", nil, map[string]interface{}{"imageData": "b64", "scaleMode": "STRETCH"}); msg == "" {
 		t.Error("expected error for invalid scaleMode")
@@ -702,6 +705,58 @@ func TestValidateRPC_ImportImage(t *testing.T) {
 		if msg := ValidateRPC("import_image", nil, map[string]interface{}{"imageData": "b64", "scaleMode": sm}); msg != "" {
 			t.Errorf("unexpected error for scaleMode %s: %s", sm, msg)
 		}
+	}
+}
+
+func TestValidateRPC_APIGapCreateAndDevResourceTools(t *testing.T) {
+	if msg := ValidateRPC("create_video", nil, nil); msg == "" {
+		t.Error("expected error for missing video input")
+	}
+	if msg := ValidateRPC("create_video", nil, map[string]interface{}{
+		"videoData": "b64",
+		"scaleMode": "FIT",
+		"videoTransform": []interface{}{
+			[]interface{}{float64(1), float64(0), float64(0)},
+			[]interface{}{float64(0), float64(1), float64(0)},
+		},
+	}); msg != "" {
+		t.Errorf("unexpected error for create_video: %s", msg)
+	}
+	if msg := ValidateRPC("create_gif", nil, map[string]interface{}{"imageHash": "abc"}); msg != "" {
+		t.Errorf("unexpected error for create_gif: %s", msg)
+	}
+	if msg := ValidateRPC("create_link_preview", nil, map[string]interface{}{"url": "https://example.com"}); msg != "" {
+		t.Errorf("unexpected error for create_link_preview: %s", msg)
+	}
+	if msg := ValidateRPC("create_vector", nil, map[string]interface{}{"width": float64(10), "height": float64(10)}); msg != "" {
+		t.Errorf("unexpected error for create_vector: %s", msg)
+	}
+	if msg := ValidateRPC("create_slice", nil, map[string]interface{}{"parentId": "bad"}); msg == "" {
+		t.Error("expected error for invalid slice parentId")
+	}
+	if msg := ValidateRPC("create_page_divider", nil, map[string]interface{}{"name": "---"}); msg != "" {
+		t.Errorf("unexpected error for create_page_divider: %s", msg)
+	}
+	if msg := ValidateRPC("create_page_divider", nil, map[string]interface{}{"name": "Milestone"}); msg == "" {
+		t.Error("expected error for invalid create_page_divider name")
+	}
+	if msg := ValidateRPC("create_text_path", nil, map[string]interface{}{"nodeId": "1:1"}); msg != "" {
+		t.Errorf("unexpected error for create_text_path: %s", msg)
+	}
+	if msg := ValidateRPC("create_text_path", nil, map[string]interface{}{"nodeId": "1:1", "startPosition": float64(1.5)}); msg == "" {
+		t.Error("expected error for out-of-range text path startPosition")
+	}
+	if msg := ValidateRPC("create_text_path", nil, map[string]interface{}{"nodeId": "1:1", "startSegment": float64(1.25)}); msg == "" {
+		t.Error("expected error for non-integer text path startSegment")
+	}
+	if msg := ValidateRPC("add_dev_resource", nil, map[string]interface{}{"nodeId": "1:1", "url": "https://example.com/spec"}); msg != "" {
+		t.Errorf("unexpected error for add_dev_resource: %s", msg)
+	}
+	if msg := ValidateRPC("edit_dev_resource", nil, map[string]interface{}{"nodeId": "1:1", "currentUrl": "https://example.com/spec"}); msg == "" {
+		t.Error("expected error when edit_dev_resource has no replacement url or name")
+	}
+	if msg := ValidateRPC("delete_dev_resource", nil, map[string]interface{}{"nodeId": "1:1", "url": "https://example.com/spec"}); msg != "" {
+		t.Errorf("unexpected error for delete_dev_resource: %s", msg)
 	}
 }
 
@@ -793,6 +848,21 @@ func TestValidateRPC_DeleteStyle(t *testing.T) {
 	}
 }
 
+func TestValidateRPC_ReorderLocalStyles(t *testing.T) {
+	if msg := ValidateRPC("reorder_local_style", nil, map[string]interface{}{"styleType": "PAINT"}); msg == "" {
+		t.Error("expected error for missing styleId")
+	}
+	if msg := ValidateRPC("reorder_local_style", nil, map[string]interface{}{"styleType": "PAINT", "styleId": "S:abc", "afterStyleId": "S:def"}); msg != "" {
+		t.Errorf("unexpected error for reorder_local_style: %s", msg)
+	}
+	if msg := ValidateRPC("reorder_local_style_folder", nil, map[string]interface{}{"styleType": "TEXT", "folder": "Brand/Heading", "afterFolder": "Brand/Body"}); msg != "" {
+		t.Errorf("unexpected error for reorder_local_style_folder: %s", msg)
+	}
+	if msg := ValidateRPC("reorder_local_style_folder", nil, map[string]interface{}{"styleType": "SHADOW", "folder": "Brand"}); msg == "" {
+		t.Error("expected error for invalid styleType")
+	}
+}
+
 func TestValidateRPC_CreateVariableCollection(t *testing.T) {
 	if msg := ValidateRPC("create_variable_collection", nil, nil); msg == "" {
 		t.Error("expected error for missing name")
@@ -864,6 +934,28 @@ func TestValidateRPC_BindVariableToNode(t *testing.T) {
 	}
 	if msg := ValidateRPC("bind_variable_to_node", []string{"1:1"}, map[string]interface{}{"variableId": "v1", "field": "fill"}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
+	}
+}
+
+func TestValidateRPC_EffectAndLayoutGridVariableHelpers(t *testing.T) {
+	if msg := ValidateRPC("create_variable_alias", nil, map[string]interface{}{"variableId": "v1"}); msg != "" {
+		t.Errorf("unexpected error for create_variable_alias: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{"variableId": "v1", "removeCodeSyntax": []interface{}{"WEB", "iOS"}}); msg != "" {
+		t.Errorf("unexpected error for removeCodeSyntax: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{"variableId": "v1", "removeCodeSyntax": []interface{}{"MAC"}}); msg == "" {
+		t.Error("expected error for invalid removeCodeSyntax platform")
+	}
+	if msg := ValidateRPC("bind_variable_to_effect", nil, map[string]interface{}{
+		"effect": map[string]interface{}{"type": "DROP_SHADOW", "radius": float64(8)}, "field": "radius", "variableId": "v1",
+	}); msg != "" {
+		t.Errorf("unexpected error for bind_variable_to_effect: %s", msg)
+	}
+	if msg := ValidateRPC("bind_variable_to_layout_grid", nil, map[string]interface{}{
+		"layoutGrid": map[string]interface{}{"pattern": "GRID", "sectionSize": float64(8)}, "field": "sectionSize", "variableId": "v1",
+	}); msg != "" {
+		t.Errorf("unexpected error for bind_variable_to_layout_grid: %s", msg)
 	}
 }
 

@@ -71,6 +71,16 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
+	s.AddTool(mcp.NewTool("create_variable_alias",
+		mcp.WithDescription("Create a variable alias value from an existing variable ID using createVariableAliasByIdAsync. Use the returned alias as a variable value."),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to alias.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "create_variable_alias", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
 	s.AddTool(mcp.NewTool("set_variable_value",
 		mcp.WithDescription("Set a variable's value for a specific mode."),
 		mcp.WithString("variableId",
@@ -105,7 +115,7 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 	// })
 
 	s.AddTool(mcp.NewTool("update_variable",
-		mcp.WithDescription("Update an existing variable's metadata: rename, set publishing scopes, hide from publishing, or set per-platform code syntax. Does not change the variable's value (use set_variable_value)."),
+		mcp.WithDescription("Update an existing variable's metadata: rename, set publishing scopes, hide from publishing, set per-platform code syntax, or remove code syntax platforms. Does not change the variable's value (use set_variable_value)."),
 		mcp.WithString("variableId",
 			mcp.Required(),
 			mcp.Description("Variable ID to update (from get_variable_defs)"),
@@ -117,6 +127,10 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 		),
 		mcp.WithBoolean("hiddenFromPublishing", mcp.Description("Hide this variable when the file is published as a library")),
 		mcp.WithObject("codeSyntax", mcp.Description("Per-platform code names: {WEB?, ANDROID?, iOS?}. Each provided platform is set; others are left unchanged.")),
+		mcp.WithArray("removeCodeSyntax",
+			mcp.Description("Code syntax platforms to remove: WEB, ANDROID, or iOS."),
+			mcp.WithStringItems(),
+		),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := req.GetArguments()

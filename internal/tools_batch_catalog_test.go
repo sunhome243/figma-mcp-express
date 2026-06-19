@@ -30,8 +30,8 @@ func TestBatchOpCatalogCoversPluginHandlers(t *testing.T) {
 			pluginOps[m[1]] = true
 		}
 	}
-	if len(pluginOps) != 96 {
-		t.Fatalf("plugin lowercase handler op count = %d, want 96", len(pluginOps))
+	if len(pluginOps) != 117 {
+		t.Fatalf("plugin lowercase handler op count = %d, want 117", len(pluginOps))
 	}
 
 	var missing []string
@@ -200,9 +200,10 @@ func TestSearchBatchOps_MultiWordQueryMatches(t *testing.T) {
 // gave up.
 func TestSearchBatchOps_ZeroMatchSuggestsClosest(t *testing.T) {
 	s, _ := newTestServer(t)
-	// "delete" + a non-matching term → no op matches BOTH (AND) → zero matches.
+	// "delete node" + a non-matching term → no op matches ALL tokens (AND) →
+	// zero matches, while the node-specific suggestion still ranks first.
 	search := callToolResult(t, s, "search_batch_ops", map[string]any{
-		"query": "delete xyzzy", "limit": float64(30),
+		"query": "delete node xyzzy", "limit": float64(30),
 	})
 	if search.IsError {
 		t.Fatalf("search errored: %s", resultText(t, search))
