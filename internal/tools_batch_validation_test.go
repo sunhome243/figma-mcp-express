@@ -135,6 +135,33 @@ func TestBatchValidateOnly_SetTextRangeHyperlinkNodeID(t *testing.T) {
 	}
 }
 
+func TestBatchValidateOnly_SetEffectsRejectsInvalidAdvancedEffectFields(t *testing.T) {
+	cases := []map[string]any{
+		{"type": "set_effects", "nodeIds": []any{"1:1"}, "params": map[string]any{"effects": []any{map[string]any{"type": "BACKGROUND_BLUR", "blurType": "GRADUAL"}}}},
+		{"type": "set_effects", "nodeIds": []any{"1:1"}, "params": map[string]any{"effects": []any{map[string]any{"type": "NOISE", "noiseType": "CHROMA"}}}},
+		{"type": "set_effects", "nodeIds": []any{"1:1"}, "params": map[string]any{"effects": []any{map[string]any{"type": "TEXTURE", "noiseSizeVector": map[string]any{"x": float64(2)}}}}},
+		{"type": "set_effects", "nodeIds": []any{"1:1"}, "params": map[string]any{"effects": []any{map[string]any{"type": "GLASS", "lightIntensity": float64(1.2)}}}},
+	}
+	for _, op := range cases {
+		valid, raw := batchValidateOnlyValid(t, op)
+		if valid {
+			t.Fatalf("op with invalid advanced effect fields must be rejected, got %s", raw)
+		}
+	}
+
+	valid, raw := batchValidateOnlyValid(t, map[string]any{
+		"type":    "set_effects",
+		"nodeIds": []any{"1:1"},
+		"params": map[string]any{"effects": []any{
+			map[string]any{"type": "NOISE", "noiseType": "MULTITONE", "opacity": float64(0.4), "noiseSizeVector": map[string]any{"x": float64(2), "y": float64(3)}},
+			map[string]any{"type": "BACKGROUND_BLUR", "blurType": "PROGRESSIVE", "startOffset": map[string]any{"x": float64(0), "y": float64(0)}, "endOffset": map[string]any{"x": float64(1), "y": float64(1)}},
+		}},
+	})
+	if !valid {
+		t.Fatalf("valid advanced effects should pass batch validateOnly, got %s", raw)
+	}
+}
+
 func TestBatchValidateOnly_CreateFrameGridGapVariableIds(t *testing.T) {
 	valid, raw := batchValidateOnlyValid(t, map[string]any{
 		"type": "create_frame",

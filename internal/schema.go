@@ -127,6 +127,219 @@ func validateMediaFilters(params map[string]interface{}) string {
 	return ""
 }
 
+func validateOptionalNumberRange(params map[string]interface{}, key, prefix string, min, max float64) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	n, ok := v.(float64)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return fmt.Sprintf("%s%s must be a number", prefix, key)
+	}
+	if n < min || n > max {
+		return fmt.Sprintf("%s%s must be between %v and %v", prefix, key, min, max)
+	}
+	return ""
+}
+
+func validateOptionalNumber(params map[string]interface{}, key, prefix string) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	n, ok := v.(float64)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return fmt.Sprintf("%s%s must be a number", prefix, key)
+	}
+	return ""
+}
+
+func validateOptionalNumberMin(params map[string]interface{}, key, prefix string, min float64) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	n, ok := v.(float64)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return fmt.Sprintf("%s%s must be a number", prefix, key)
+	}
+	if n < min {
+		return fmt.Sprintf("%s%s must be >= %v", prefix, key, min)
+	}
+	return ""
+}
+
+func validateOptionalBool(params map[string]interface{}, key, prefix string) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	if _, ok := v.(bool); !ok {
+		return fmt.Sprintf("%s%s must be a boolean", prefix, key)
+	}
+	return ""
+}
+
+func validateEffectVector(params map[string]interface{}, key, prefix string, min, max float64, bounded bool) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	vec, ok := v.(map[string]interface{})
+	if !ok {
+		return fmt.Sprintf("%s%s must be an object with numeric x and y", prefix, key)
+	}
+	for _, axis := range []string{"x", "y"} {
+		raw, ok := vec[axis]
+		if !ok {
+			return fmt.Sprintf("%s%s.%s is required", prefix, key, axis)
+		}
+		n, ok := raw.(float64)
+		if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+			return fmt.Sprintf("%s%s.%s must be a number", prefix, key, axis)
+		}
+		if bounded {
+			if n < min || n > max {
+				return fmt.Sprintf("%s%s.%s must be between %v and %v", prefix, key, axis, min, max)
+			}
+		} else if n <= min {
+			return fmt.Sprintf("%s%s.%s must be > %v", prefix, key, axis, min)
+		}
+	}
+	return ""
+}
+
+func validateEffectObject(prefix string, effect map[string]interface{}, allowDefaultType bool) string {
+	label := ""
+	if prefix != "" {
+		label = prefix + "."
+	}
+	t, hasType := effect["type"]
+	effectType, ok := t.(string)
+	if hasType && !ok {
+		return label + "type must be a string"
+	}
+	if effectType == "" {
+		if allowDefaultType {
+			effectType = "DROP_SHADOW"
+		} else {
+			return fmt.Sprintf("%stype must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", label, effectType)
+		}
+	}
+	switch effectType {
+	case "DROP_SHADOW", "INNER_SHADOW":
+		if msg := validateOptionalNumberRange(effect, "opacity", label, 0, 1); msg != "" {
+			return msg
+		}
+		for _, key := range []string{"radius", "spread"} {
+			if msg := validateOptionalNumberMin(effect, key, label, 0); msg != "" {
+				return msg
+			}
+		}
+		for _, key := range []string{"offsetX", "offsetY"} {
+			if msg := validateOptionalNumber(effect, key, label); msg != "" {
+				return msg
+			}
+		}
+	case "LAYER_BLUR", "BACKGROUND_BLUR":
+		if blurType, ok := effect["blurType"].(string); ok && blurType != "" {
+			switch blurType {
+			case "NORMAL", "PROGRESSIVE":
+			default:
+				return fmt.Sprintf("%sblurType must be NORMAL or PROGRESSIVE, got: %s", label, blurType)
+			}
+		} else if raw, ok := effect["blurType"]; ok && raw != nil {
+			return label + "blurType must be a string"
+		}
+		for _, key := range []string{"radius", "startRadius"} {
+			if msg := validateOptionalNumberMin(effect, key, label, 0); msg != "" {
+				return msg
+			}
+		}
+		for _, key := range []string{"startOffset", "endOffset"} {
+			if msg := validateEffectVector(effect, key, label, 0, 1, true); msg != "" {
+				return msg
+			}
+		}
+	case "GLASS":
+		for _, key := range []string{"lightIntensity", "refraction", "dispersion"} {
+			if msg := validateOptionalNumberRange(effect, key, label, 0, 1); msg != "" {
+				return msg
+			}
+		}
+		if msg := validateOptionalNumberMin(effect, "depth", label, 1); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalNumberMin(effect, "radius", label, 0); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalNumber(effect, "lightAngle", label); msg != "" {
+			return msg
+		}
+	case "NOISE":
+		if noiseType, ok := effect["noiseType"].(string); ok && noiseType != "" {
+			switch noiseType {
+			case "MONOTONE", "DUOTONE", "MULTITONE":
+			default:
+				return fmt.Sprintf("%snoiseType must be MONOTONE, DUOTONE, or MULTITONE, got: %s", label, noiseType)
+			}
+		} else if raw, ok := effect["noiseType"]; ok && raw != nil {
+			return label + "noiseType must be a string"
+		}
+		for _, key := range []string{"opacity", "density"} {
+			if msg := validateOptionalNumberRange(effect, key, label, 0, 1); msg != "" {
+				return msg
+			}
+		}
+		if msg := validateOptionalNumberMin(effect, "noiseSize", label, 0); msg != "" {
+			return msg
+		}
+		if msg := validateEffectVector(effect, "noiseSizeVector", label, 0, 0, false); msg != "" {
+			return msg
+		}
+	case "TEXTURE":
+		if msg := validateOptionalNumberMin(effect, "noiseSize", label, 0); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalNumberMin(effect, "radius", label, 0); msg != "" {
+			return msg
+		}
+		if msg := validateEffectVector(effect, "noiseSizeVector", label, 0, 0, false); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalBool(effect, "clipToShape", label); msg != "" {
+			return msg
+		}
+	default:
+		return fmt.Sprintf("%stype must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", label, effectType)
+	}
+	if msg := validateOptionalBool(effect, "visible", label); msg != "" {
+		return msg
+	}
+	return ""
+}
+
+func validateEffectsArray(params map[string]interface{}, key, prefix string, allowDefaultType bool) string {
+	raw, ok := params[key]
+	if !ok {
+		return ""
+	}
+	effects, ok := raw.([]interface{})
+	if !ok {
+		return fmt.Sprintf("%s%s must be an array", prefix, key)
+	}
+	for i, rawEffect := range effects {
+		effect, ok := rawEffect.(map[string]interface{})
+		if !ok {
+			return fmt.Sprintf("%s%s[%d] must be an object", prefix, key, i)
+		}
+		if msg := validateEffectObject(fmt.Sprintf("%s%s[%d]", prefix, key, i), effect, allowDefaultType); msg != "" {
+			return msg
+		}
+	}
+	return ""
+}
+
 func validateCodeSyntaxPlatform(platform string) string {
 	switch platform {
 	case "WEB", "ANDROID", "iOS":
@@ -930,11 +1143,12 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		if name, _ := params["name"].(string); name == "" {
 			return "name is required"
 		}
-		if t, ok := params["type"].(string); ok && t != "" {
-			switch t {
-			case "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR", "GLASS", "NOISE", "TEXTURE":
-			default:
-				return fmt.Sprintf("type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", t)
+		if msg := validateEffectsArray(params, "effects", "", true); msg != "" {
+			return msg
+		}
+		if _, hasEffects := params["effects"]; !hasEffects {
+			if msg := validateEffectObject("", params, true); msg != "" {
+				return msg
 			}
 		}
 
@@ -1529,15 +1743,12 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return "effects must be an array"
 		}
 		for i, e := range effectList {
-			em, ok := e.(map[string]interface{})
+			effect, ok := e.(map[string]interface{})
 			if !ok {
 				return fmt.Sprintf("effects[%d] must be an object", i)
 			}
-			t, _ := em["type"].(string)
-			switch t {
-			case "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR", "GLASS", "NOISE", "TEXTURE":
-			default:
-				return fmt.Sprintf("effects[%d].type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", i, t)
+			if msg := validateEffectObject(fmt.Sprintf("effects[%d]", i), effect, false); msg != "" {
+				return msg
 			}
 		}
 

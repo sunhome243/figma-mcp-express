@@ -305,6 +305,96 @@ function validateMode(type: string, params: any): void {
   }
 }
 
+function requireNumberRange(type: string, effect: any, key: string, min: number, max: number): void {
+  if (effect[key] == null) return;
+  if (typeof effect[key] !== "number" || !Number.isFinite(effect[key]) || effect[key] < min || effect[key] > max) {
+    throw new Error(`${type}: ${key} must be between ${min} and ${max}`);
+  }
+}
+
+function requireNumber(type: string, effect: any, key: string): void {
+  if (effect[key] == null) return;
+  if (typeof effect[key] !== "number" || !Number.isFinite(effect[key])) {
+    throw new Error(`${type}: ${key} must be a number`);
+  }
+}
+
+function requireNumberMin(type: string, effect: any, key: string, min: number): void {
+  if (effect[key] == null) return;
+  if (typeof effect[key] !== "number" || !Number.isFinite(effect[key]) || effect[key] < min) {
+    throw new Error(`${type}: ${key} must be >= ${min}`);
+  }
+}
+
+function validateVector(type: string, effect: any, key: string, bounded: boolean): void {
+  if (effect[key] == null) return;
+  const vector = effect[key];
+  if (typeof vector !== "object" || Array.isArray(vector)) {
+    throw new Error(`${type}: ${key} must be an object with numeric x and y`);
+  }
+  for (const axis of ["x", "y"] as const) {
+    if (typeof vector[axis] !== "number" || !Number.isFinite(vector[axis])) {
+      throw new Error(`${type}: ${key}.${axis} must be a number`);
+    }
+    if (bounded) {
+      if (vector[axis] < 0 || vector[axis] > 1) {
+        throw new Error(`${type}: ${key}.${axis} must be between 0 and 1`);
+      }
+    } else if (vector[axis] <= 0) {
+      throw new Error(`${type}: ${key}.${axis} must be > 0`);
+    }
+  }
+}
+
+function validateAdvancedEffect(type: string, effect: any, index: number): void {
+  const prefix = `${type}: effects[${index}]`;
+  switch (effect.type) {
+    case "DROP_SHADOW":
+    case "INNER_SHADOW":
+      requireNumberRange(prefix, effect, "opacity", 0, 1);
+      requireNumberMin(prefix, effect, "radius", 0);
+      requireNumberMin(prefix, effect, "spread", 0);
+      requireNumber(prefix, effect, "offsetX");
+      requireNumber(prefix, effect, "offsetY");
+      return;
+    case "LAYER_BLUR":
+    case "BACKGROUND_BLUR":
+      if (effect.blurType != null && effect.blurType !== "NORMAL" && effect.blurType !== "PROGRESSIVE") {
+        throw new Error(`${prefix}: blurType must be NORMAL or PROGRESSIVE`);
+      }
+      requireNumberMin(prefix, effect, "radius", 0);
+      requireNumberMin(prefix, effect, "startRadius", 0);
+      validateVector(prefix, effect, "startOffset", true);
+      validateVector(prefix, effect, "endOffset", true);
+      return;
+    case "GLASS":
+      requireNumberRange(prefix, effect, "lightIntensity", 0, 1);
+      requireNumberRange(prefix, effect, "refraction", 0, 1);
+      requireNumberRange(prefix, effect, "dispersion", 0, 1);
+      requireNumberMin(prefix, effect, "depth", 1);
+      requireNumberMin(prefix, effect, "radius", 0);
+      requireNumber(prefix, effect, "lightAngle");
+      return;
+    case "NOISE":
+      if (effect.noiseType != null && !["MONOTONE", "DUOTONE", "MULTITONE"].includes(effect.noiseType)) {
+        throw new Error(`${prefix}: noiseType must be MONOTONE, DUOTONE, or MULTITONE`);
+      }
+      requireNumberRange(prefix, effect, "opacity", 0, 1);
+      requireNumberRange(prefix, effect, "density", 0, 1);
+      requireNumberMin(prefix, effect, "noiseSize", 0);
+      validateVector(prefix, effect, "noiseSizeVector", false);
+      return;
+    case "TEXTURE":
+      requireNumberMin(prefix, effect, "noiseSize", 0);
+      requireNumberMin(prefix, effect, "radius", 0);
+      validateVector(prefix, effect, "noiseSizeVector", false);
+      if (effect.clipToShape != null && typeof effect.clipToShape !== "boolean") {
+        throw new Error(`${prefix}: clipToShape must be a boolean`);
+      }
+      return;
+  }
+}
+
 function validateResolvedEffects(params: any): void {
   if (!Array.isArray(params?.effects)) throw new Error("set_effects: effects array is required");
   const valid = new Set([
@@ -320,6 +410,7 @@ function validateResolvedEffects(params: any): void {
         `set_effects: effects[${index}].type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE`,
       );
     }
+    validateAdvancedEffect("set_effects", effect, index);
   });
 }
 

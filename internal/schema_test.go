@@ -873,6 +873,59 @@ func TestValidateRPC_CreateEffectStyle(t *testing.T) {
 			t.Errorf("unexpected error for type %s: %s", et, msg)
 		}
 	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":     "Blur/Bad",
+		"type":     "LAYER_BLUR",
+		"blurType": "GRADUAL",
+	}); msg == "" {
+		t.Error("expected error for invalid blurType")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":      "Noise/Bad",
+		"type":      "NOISE",
+		"noiseType": "CHROMA",
+	}); msg == "" {
+		t.Error("expected error for invalid noiseType")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":  "Glass/Bad",
+		"type":  "GLASS",
+		"depth": float64(0),
+	}); msg == "" {
+		t.Error("expected error for invalid GLASS depth")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":       "Glass/BadAngle",
+		"type":       "GLASS",
+		"lightAngle": "east",
+	}); msg == "" {
+		t.Error("expected error for invalid GLASS lightAngle")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":            "Texture/BadVector",
+		"type":            "TEXTURE",
+		"noiseSizeVector": map[string]interface{}{"x": float64(2)},
+	}); msg == "" {
+		t.Error("expected error for incomplete noiseSizeVector")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name": "Mixed/Bad",
+		"effects": []interface{}{
+			map[string]interface{}{"type": "BACKGROUND_BLUR", "blurType": "PROGRESSIVE", "startOffset": map[string]interface{}{"x": float64(1.2), "y": float64(0)}},
+		},
+	}); msg == "" {
+		t.Error("expected effects[] validation to reject out-of-range progressive blur vectors")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name": "Mixed/Good",
+		"effects": []interface{}{
+			map[string]interface{}{"type": "GLASS", "lightIntensity": float64(0.7), "depth": float64(4)},
+			map[string]interface{}{"type": "NOISE", "noiseType": "DUOTONE", "noiseSizeVector": map[string]interface{}{"x": float64(2), "y": float64(5)}},
+			map[string]interface{}{"type": "BACKGROUND_BLUR", "blurType": "PROGRESSIVE", "startOffset": map[string]interface{}{"x": float64(0.5), "y": float64(0)}, "endOffset": map[string]interface{}{"x": float64(0.5), "y": float64(1)}},
+		},
+	}); msg != "" {
+		t.Errorf("unexpected error for valid advanced effects[]: %s", msg)
+	}
 }
 
 func TestValidateRPC_CreateGridStyle(t *testing.T) {
@@ -1808,6 +1861,21 @@ func TestValidateRPC_SetEffects(t *testing.T) {
 		"effects": []interface{}{map[string]interface{}{"type": "LAYER_BLUR", "radius": float64(4)}},
 	}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
+	}
+	if msg := ValidateRPC("set_effects", []string{"1:1"}, map[string]interface{}{
+		"effects": []interface{}{map[string]interface{}{"type": "LAYER_BLUR", "blurType": "GRADUAL"}},
+	}); msg == "" {
+		t.Error("expected error for invalid blurType")
+	}
+	if msg := ValidateRPC("set_effects", []string{"1:1"}, map[string]interface{}{
+		"effects": []interface{}{map[string]interface{}{"type": "NOISE", "noiseType": "CHROMA"}},
+	}); msg == "" {
+		t.Error("expected error for invalid noiseType")
+	}
+	if msg := ValidateRPC("set_effects", []string{"1:1"}, map[string]interface{}{
+		"effects": []interface{}{map[string]interface{}{"type": "TEXTURE", "noiseSizeVector": map[string]interface{}{"x": float64(2)}}},
+	}); msg == "" {
+		t.Error("expected error for incomplete noiseSizeVector")
 	}
 }
 

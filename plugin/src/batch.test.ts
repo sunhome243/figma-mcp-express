@@ -431,6 +431,41 @@ describe("handleBatchRequest — resolved semantic validation", () => {
     expect(node.effects[0].refraction).toBe(0.4);
   });
 
+  it("rejects set_effects after refs resolve when advanced effect fields are invalid", async () => {
+    let getNodeCalls = 0;
+    (globalThis as any).figma = {
+      getNodeByIdAsync: async () => {
+        getNodeCalls++;
+        return { id: "10:1", name: "Rect", type: "RECTANGLE", effects: [] };
+      },
+      commitUndo: () => {},
+      ui: noopUi,
+    };
+
+    const res = await handleBatchRequest({
+      type: "batch",
+      requestId: "req-resolved-effects-bad-field",
+      params: {
+        continueOnError: false,
+        ops: [
+          {
+            type: "map",
+            over: [{ id: "10:1" }],
+            as: "item",
+            do: {
+              type: "set_effects",
+              nodeIds: ["$item.id"],
+              params: { effects: [{ type: "NOISE", noiseType: "CHROMA" }] },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.data.results[0].error).toContain("noiseType");
+    expect(getNodeCalls).toBe(0);
+  });
+
   it("rejects map inner ops after named refs resolve to bad concrete values", async () => {
     let getNodeCalls = 0;
     (globalThis as any).figma = {
