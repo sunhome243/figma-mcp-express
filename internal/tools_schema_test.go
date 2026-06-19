@@ -29,6 +29,7 @@ type toolsListResponse struct {
 
 type propertySchema struct {
 	Type  string          `json:"type"`
+	Enum  []string        `json:"enum"`
 	Items json.RawMessage `json:"items"`
 }
 
@@ -134,12 +135,149 @@ func TestToolSchemas_AllToolsRegistered(t *testing.T) {
 	// catalog meta-tools used for progressive discovery. Count includes the
 	// prototype additions get_prototype + set_prototype_start, plus set_presence,
 	// and the node-creation additions create_line/create_polygon/create_star/import_svg/create_table,
-	// plus set_text_range, update_variable, update_variable_collection, and the promoted set_constraints.
-	const want = 84
+	// plus set_text_range, update_variable, update_variable_collection, promoted set_constraints,
+	// and the API-gap media/dev-resource/style-variable helper surface.
+	const want = 105
 	got := len(resp.Result.Tools)
 	if got != want {
 		t.Errorf("expected %d registered tools, got %d — update the constant if tools were intentionally added or removed", want, got)
 	}
+}
+
+func TestToolSchemas_CreateEffectStyleExposesAdvancedShorthandParams(t *testing.T) {
+	resp := listTools(t)
+	var props map[string]propertySchema
+	for _, tool := range resp.Result.Tools {
+		if tool.Name == "create_effect_style" {
+			props = tool.InputSchema.Properties
+			break
+		}
+	}
+	if props == nil {
+		t.Fatal("create_effect_style tool not found")
+	}
+
+	want := map[string]string{
+		"blurType":        "string",
+		"startRadius":     "number",
+		"startOffset":     "object",
+		"endOffset":       "object",
+		"lightIntensity":  "number",
+		"lightAngle":      "number",
+		"refraction":      "number",
+		"depth":           "number",
+		"dispersion":      "number",
+		"noiseType":       "string",
+		"secondaryColor":  "string",
+		"noiseSize":       "number",
+		"noiseSizeVector": "object",
+		"density":         "number",
+		"clipToShape":     "boolean",
+	}
+	for name, wantType := range want {
+		prop, ok := props[name]
+		if !ok {
+			t.Fatalf("create_effect_style missing advanced shorthand param %q", name)
+		}
+		if prop.Type != wantType {
+			t.Fatalf("create_effect_style.%s type = %q, want %q", name, prop.Type, wantType)
+		}
+	}
+}
+
+func TestToolSchemas_PluginFacingToolsExposeRequiredOrigin(t *testing.T) {
+	resp := listTools(t)
+
+	if len(resp.Result.Tools) == 0 {
+		t.Fatal("tools/list returned no tools — registration may have failed")
+	}
+
+	wantExemptTools := map[string]bool{
+		"list_channels":         true,
+		"search_batch_ops":      true,
+		"get_batch_op_spec":     true,
+		"fetch_library_catalog": true,
+	}
+	assertBoolMapsEqual(t, originExemptTools, wantExemptTools)
+
+	wantRoster := append([]string(nil), rosterOrigins...)
+	sort.Strings(wantRoster)
+
+	var missing []string
+	var notRequired []string
+	var wrongShape []string
+	var unexpected []string
+	for _, tool := range resp.Result.Tools {
+		origin, hasOrigin := tool.InputSchema.Properties["origin"]
+		if originExemptTool(tool.Name) {
+			if hasOrigin {
+				unexpected = append(unexpected, tool.Name)
+			}
+			continue
+		}
+		if !hasOrigin {
+			missing = append(missing, tool.Name)
+			continue
+		}
+		if !schemaRequires(tool.InputSchema.Required, "origin") {
+			notRequired = append(notRequired, tool.Name)
+		}
+		gotRoster := append([]string(nil), origin.Enum...)
+		sort.Strings(gotRoster)
+		if origin.Type != "string" || !stringSlicesEqual(gotRoster, wantRoster) {
+			wrongShape = append(wrongShape, fmt.Sprintf("%s(type=%q enum=%v)", tool.Name, origin.Type, origin.Enum))
+		}
+	}
+
+	if len(missing) > 0 || len(notRequired) > 0 || len(wrongShape) > 0 || len(unexpected) > 0 {
+		sort.Strings(missing)
+		sort.Strings(notRequired)
+		sort.Strings(wrongShape)
+		sort.Strings(unexpected)
+		t.Fatalf("origin schema drift:\nmissing origin: %v\nnot required: %v\nwrong shape: %v\nunexpected on exempt tools: %v", missing, notRequired, wrongShape, unexpected)
+	}
+}
+
+func assertBoolMapsEqual(t *testing.T, got, want map[string]bool) {
+	t.Helper()
+	var extra []string
+	var missing []string
+	for key := range got {
+		if !want[key] {
+			extra = append(extra, key)
+		}
+	}
+	for key := range want {
+		if !got[key] {
+			missing = append(missing, key)
+		}
+	}
+	if len(extra) > 0 || len(missing) > 0 {
+		sort.Strings(extra)
+		sort.Strings(missing)
+		t.Fatalf("origin exemption set drifted: extra=%v missing=%v", extra, missing)
+	}
+}
+
+func schemaRequires(required []string, name string) bool {
+	for _, value := range required {
+		if value == name {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestToolSchemas_DefaultCoreProfileExposesSmallSurface(t *testing.T) {

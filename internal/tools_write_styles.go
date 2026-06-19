@@ -71,6 +71,21 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 		mcp.WithNumber("offsetX", mcp.Description("Shadow X offset in pixels (default 0, shadows only)")),
 		mcp.WithNumber("offsetY", mcp.Description("Shadow Y offset in pixels (default 4, shadows only)")),
 		mcp.WithNumber("spread", mcp.Description("Shadow spread in pixels (default 0, shadows only)")),
+		mcp.WithString("blurType", mcp.Description("Blur style for LAYER_BLUR/BACKGROUND_BLUR: NORMAL (default) or PROGRESSIVE")),
+		mcp.WithNumber("startRadius", mcp.Description("PROGRESSIVE blur start radius in pixels (default 0)")),
+		mcp.WithObject("startOffset", mcp.Description("PROGRESSIVE blur start vector {x,y}, normalized 0..1")),
+		mcp.WithObject("endOffset", mcp.Description("PROGRESSIVE blur end vector {x,y}, normalized 0..1")),
+		mcp.WithNumber("lightIntensity", mcp.Description("GLASS highlight intensity 0..1 (default 0.5)")),
+		mcp.WithNumber("lightAngle", mcp.Description("GLASS highlight angle in degrees (default 130)")),
+		mcp.WithNumber("refraction", mcp.Description("GLASS edge refraction 0..1 (default 0.3)")),
+		mcp.WithNumber("depth", mcp.Description("GLASS edge depth >=1 (default 10)")),
+		mcp.WithNumber("dispersion", mcp.Description("GLASS chromatic dispersion 0..1 (default 0.1)")),
+		mcp.WithString("noiseType", mcp.Description("NOISE type: MONOTONE (default), DUOTONE, or MULTITONE")),
+		mcp.WithString("secondaryColor", mcp.Description("NOISE secondary color for DUOTONE as hex e.g. #FFFFFF")),
+		mcp.WithNumber("noiseSize", mcp.Description("NOISE/TEXTURE grain size (default 1)")),
+		mcp.WithObject("noiseSizeVector", mcp.Description("Optional anisotropic NOISE/TEXTURE grain vector {x,y}")),
+		mcp.WithNumber("density", mcp.Description("NOISE density 0..1 (default 0.5)")),
+		mcp.WithBoolean("clipToShape", mcp.Description("TEXTURE clips to the shape boundary (default true)")),
 		mcp.WithString("description", mcp.Description("Optional style description")),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -118,6 +133,30 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := req.GetArguments()
 		resp, err := node.Send(ctx, "update_paint_style", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("reorder_local_style",
+		mcp.WithDescription("Move a local paint/text/effect/grid style after another style of the same type. Omit afterStyleId to move it to the top of its style list."),
+		mcp.WithString("styleType", mcp.Required(), mcp.Description("Style type: PAINT, TEXT, EFFECT, or GRID.")),
+		mcp.WithString("styleId", mcp.Required(), mcp.Description("Target local style ID to move.")),
+		mcp.WithString("afterStyleId", mcp.Description("Reference local style ID of the same type. Omit to move target first.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "reorder_local_style", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("reorder_local_style_folder",
+		mcp.WithDescription("Move a local style folder after another folder for paint/text/effect/grid styles. Omit afterFolder to move it first."),
+		mcp.WithString("styleType", mcp.Required(), mcp.Description("Style type: PAINT, TEXT, EFFECT, or GRID.")),
+		mcp.WithString("folder", mcp.Required(), mcp.Description("Target folder path/name to move.")),
+		mcp.WithString("afterFolder", mcp.Description("Reference folder path/name of the same style type. Omit to move target first.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "reorder_local_style_folder", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
 
@@ -209,6 +248,30 @@ func registerWriteStyleTools(s *server.MCPServer, node *Node) {
 			"field":      args["field"],
 		}
 		resp, err := node.Send(ctx, "bind_variable_to_node", []string{nodeID}, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("bind_variable_to_effect",
+		mcp.WithDescription("Bind a variable to a field on an Effect object using setBoundVariableForEffect. Returns the updated effect object; apply it with set_effects or create_effect_style."),
+		mcp.WithObject("effect", mcp.Required(), mcp.Description("Effect object to bind.")),
+		mcp.WithString("field", mcp.Required(), mcp.Description("Effect field to bind, e.g. radius or color.")),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to bind.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "bind_variable_to_effect", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("bind_variable_to_layout_grid",
+		mcp.WithDescription("Bind a variable to a field on a LayoutGrid object using setBoundVariableForLayoutGrid. Returns the updated grid object; apply it with create_grid_style or layout-grid APIs."),
+		mcp.WithObject("layoutGrid", mcp.Required(), mcp.Description("LayoutGrid object to bind.")),
+		mcp.WithString("field", mcp.Required(), mcp.Description("Layout grid field to bind, e.g. sectionSize, count, gutterSize, offset, or color.")),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to bind.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "bind_variable_to_layout_grid", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
 }

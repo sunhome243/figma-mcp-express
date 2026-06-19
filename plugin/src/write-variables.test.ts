@@ -412,6 +412,20 @@ describe("update_variable", () => {
     await expect(handleWriteRequest(makeRequest("update_variable", [], {})))
       .rejects.toThrow("variableId is required");
   });
+
+  it("rejects non-string codeSyntax values before mutating", async () => {
+    const syntaxCalls: any[] = [];
+    mockVariables["var:1"] = {
+      id: "var:1", name: "old", resolvedType: "COLOR",
+      scopes: ["ALL_SCOPES"], hiddenFromPublishing: false, codeSyntax: {},
+      setVariableCodeSyntax(platform: string, value: string) { syntaxCalls.push({ platform, value }); this.codeSyntax[platform] = value; },
+    };
+    await expect(handleWriteRequest(makeRequest("update_variable", [], {
+      variableId: "var:1",
+      codeSyntax: { WEB: { token: "bad" } },
+    }))).rejects.toThrow("codeSyntax.WEB must be a string");
+    expect(syntaxCalls).toEqual([]);
+  });
 });
 
 // ── update_variable_collection ────────────────────────────────────────────────
@@ -454,5 +468,15 @@ describe("update_variable_collection", () => {
   it("throws when the collection is not found", async () => {
     await expect(handleWriteRequest(makeRequest("update_variable_collection", [], { collectionId: "nope" })))
       .rejects.toThrow("Collection not found");
+  });
+
+  it("rejects non-string renameMode fields before mutating", async () => {
+    const col: any = makeCollection("col:1", "Tokens");
+    mockCollections["col:1"] = col;
+    await expect(handleWriteRequest(makeRequest("update_variable_collection", [], {
+      collectionId: "col:1",
+      renameMode: { modeId: "mode:default", newName: { label: "bad" } },
+    }))).rejects.toThrow("renameMode.newName must be a string");
+    expect(col.modes[0].name).toBe("Mode 1");
   });
 });

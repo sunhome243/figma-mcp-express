@@ -27,6 +27,12 @@ func registerReadStyleTools(s *server.MCPServer, node *Node) {
 		originParam(),
 	), makeHandler(node, "get_variable_defs", nil, nil))
 
+	s.AddTool(mcp.NewTool("get_selection_colors",
+		mcp.WithDescription("Get Figma's computed colors from the current selection using getSelectionColors."),
+		channelParam(),
+		originParam(),
+	), makeHandler(node, "get_selection_colors", nil, nil))
+
 	s.AddTool(mcp.NewTool("get_local_components",
 		mcp.WithDescription("Get all components defined in the current Figma file. For large libraries pass pageId to scan ONE page (avoids timeout/jam); omit to scan all pages. Large results are saved to disk and returned as {spilled:true,path} — read with jq. Timeouts are server-managed; a read that times out should be re-scoped narrower, never given a longer timeout."),
 		mcp.WithString("pageId",

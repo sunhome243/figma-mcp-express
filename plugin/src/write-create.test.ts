@@ -594,3 +594,169 @@ describe("import_image filters & transform", () => {
     expect(paint.imageTransform).toEqual([[1, 0, 0], [0, 1, 0]]);
   });
 });
+
+// ── media/link creation APIs ─────────────────────────────────────────────────
+
+describe("media/link creation APIs", () => {
+  let appended: any[];
+
+  beforeEach(() => {
+    appended = [];
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      currentPage: { id: "0:1", appendChild: (node: any) => appended.push(node) },
+      createImageAsync: async (src: string) => ({ hash: `img:${src}` }),
+      createVideoAsync: async (_bytes: Uint8Array) => ({ hash: "video:hash" }),
+      createGif: (hash: string) => ({
+        id: "gif:1", name: "GIF", type: "MEDIA", x: 0, y: 0, width: 100, height: 100,
+        mediaData: { hash },
+        resize(w: number, h: number) { this.width = w; this.height = h; },
+      }),
+      createLinkPreviewAsync: async (url: string) => ({
+        id: "link:1", name: "Preview", type: "LINK_UNFURL", x: 0, y: 0, linkUnfurlData: { url },
+      }),
+      createRectangle: () => ({
+        id: "rect:media", name: "Rectangle", type: "RECTANGLE", x: 0, y: 0, width: 1, height: 1,
+        fills: [] as any[], resize(w: number, h: number) { this.width = w; this.height = h; },
+      }),
+    };
+  });
+
+  it("imports an image from a URL via createImageAsync", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("import_image", [], {
+      imageUrl: "https://example.com/a.png", width: 320, height: 180,
+    }));
+    expect(res?.data.id).toBe("rect:media");
+    expect(appended[0].fills[0]).toMatchObject({
+      type: "IMAGE",
+      imageHash: "img:https://example.com/a.png",
+      scaleMode: "FILL",
+    });
+  });
+
+  it("creates a video rectangle from base64 bytes", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_video", [], {
+      videoData: "TWFu", name: "Clip", width: 400, height: 225, scaleMode: "CROP",
+      videoTransform: [[1, 0, 0], [0, 1, 0]], exposure: 0.25, contrast: -0.5,
+    }));
+    expect(res?.data.type).toBe("RECTANGLE");
+    expect(appended[0].name).toBe("Clip");
+    expect(appended[0].fills[0]).toMatchObject({
+      type: "VIDEO",
+      videoHash: "video:hash",
+      scaleMode: "CROP",
+      videoTransform: [[1, 0, 0], [0, 1, 0]],
+      filters: { exposure: 0.25, contrast: -0.5 },
+    });
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("creates a FigJam GIF media node from an image hash", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_gif", [], {
+      imageHash: "gif-image-hash", x: 10, y: 20, width: 240, height: 120, name: "Loading",
+    }));
+    expect(res?.data.type).toBe("MEDIA");
+    expect(appended[0].mediaData.hash).toBe("gif-image-hash");
+    expect(appended[0].x).toBe(10);
+    expect(appended[0].name).toBe("Loading");
+  });
+
+  it("creates a FigJam link preview node", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_link_preview", [], {
+      url: "https://example.com/post", x: 5, y: 6, name: "Spec",
+    }));
+    expect(res?.data.type).toBe("LINK_UNFURL");
+    expect(appended[0].linkUnfurlData.url).toBe("https://example.com/post");
+    expect(appended[0].x).toBe(5);
+    expect(appended[0].name).toBe("Spec");
+  });
+
+  it("reports host support clearly for FigJam-only GIF API", async () => {
+    delete (globalThis as any).figma.createGif;
+    await expect(handleWriteCreateRequest(makeRequest("create_gif", [], { imageHash: "hash" })))
+      .rejects.toThrow("createGif is unavailable");
+  });
+});
+
+// ── advanced node creation APIs ──────────────────────────────────────────────
+
+describe("advanced creation APIs", () => {
+  let appended: any[];
+  let createdTextPathArgs: any;
+  let textPathSourceNode: any;
+
+  beforeEach(() => {
+    appended = [];
+    createdTextPathArgs = null;
+    textPathSourceNode = null;
+    const parent = { id: "0:1", appendChild: (node: any) => appended.push(node) };
+    textPathSourceNode = { id: "vec:source", type: "VECTOR", parent };
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      currentPage: parent,
+      getNodeByIdAsync: async (id: string) => id === "vec:source" ? textPathSourceNode : null,
+      createVector: () => ({
+        id: "vec:1", name: "Vector", type: "VECTOR", x: 0, y: 0, width: 100, height: 100,
+        fills: [] as any[], vectorPaths: [],
+        resize(w: number, h: number) { this.width = w; this.height = h; },
+      }),
+      createSlice: () => ({
+        id: "slice:1", name: "Slice", type: "SLICE", x: 0, y: 0, width: 100, height: 100,
+        resize(w: number, h: number) { this.width = w; this.height = h; },
+      }),
+      createPageDivider: (name?: string) => ({ id: "page:divider", name: name || "---", type: "PAGE", parent: null }),
+      createTextPath: (node: any, startSegment: number, startPosition: number) => {
+        createdTextPathArgs = { node, startSegment, startPosition };
+        return { id: "textpath:1", name: "Text Path", type: "TEXT_PATH", parent };
+      },
+    };
+  });
+
+  it("creates a vector node and applies vectorPaths", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_vector", [], {
+      name: "Icon", width: 24, height: 24, vectorPaths: [{ windingRule: "NONZERO", data: "M0 0L1 1Z" }],
+      fillColor: "#ff0000",
+    }));
+    expect(res?.data.type).toBe("VECTOR");
+    expect(appended[0].name).toBe("Icon");
+    expect(appended[0].vectorPaths).toEqual([{ windingRule: "NONZERO", data: "M0 0L1 1Z" }]);
+    expect(appended[0].fills[0].type).toBe("SOLID");
+  });
+
+  it("creates a slice node", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_slice", [], {
+      name: "Export", x: 1, y: 2, width: 300, height: 200,
+    }));
+    expect(res?.data.type).toBe("SLICE");
+    expect(appended[0].name).toBe("Export");
+    expect(appended[0].width).toBe(300);
+  });
+
+  it("creates a page divider", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_page_divider", [], { name: "---" }));
+    expect(res?.data.type).toBe("PAGE");
+    expect(res?.data.name).toBe("---");
+  });
+
+  it("rejects invalid page divider names before calling Figma", async () => {
+    await expect(handleWriteCreateRequest(makeRequest("create_page_divider", [], { name: "Archive" })))
+      .rejects.toThrow("name must be all asterisks");
+  });
+
+  it("creates a text path from a vector-like node", async () => {
+    textPathSourceNode.type = "ELLIPSE";
+    const res = await handleWriteCreateRequest(makeRequest("create_text_path", [], {
+      nodeId: "vec:source", startSegment: 2, startPosition: 0.5, name: "Path Label",
+    }));
+    expect(res?.data.type).toBe("TEXT_PATH");
+    expect(createdTextPathArgs.node.id).toBe("vec:source");
+    expect(createdTextPathArgs.startSegment).toBe(2);
+    expect(createdTextPathArgs.startPosition).toBe(0.5);
+  });
+
+  it("rejects invalid text path start positions", async () => {
+    await expect(handleWriteCreateRequest(makeRequest("create_text_path", [], {
+      nodeId: "vec:source", startSegment: 0, startPosition: 1.5,
+    }))).rejects.toThrow("startPosition must be a number between 0 and 1");
+  });
+});

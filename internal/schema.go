@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 )
@@ -45,6 +46,11 @@ func normalizeRPCNodeReferences(nodeIDs []string, params map[string]interface{})
 	for _, key := range []string{"nodeId", "parentId", "pageId", "componentId"} {
 		if v, ok := params[key].(string); ok {
 			params[key] = NormalizeNodeID(v)
+		}
+	}
+	if hyperlink, ok := params["hyperlink"].(map[string]interface{}); ok {
+		if v, ok := hyperlink["nodeId"].(string); ok {
+			hyperlink["nodeId"] = NormalizeNodeID(v)
 		}
 	}
 }
@@ -98,6 +104,277 @@ func validateImportComponentAssetType(assetType interface{}) string {
 		return ""
 	}
 	return "assetType must be COMPONENT or COMPONENT_SET"
+}
+
+func validateMediaScaleMode(scaleMode string) string {
+	if scaleMode == "" {
+		return ""
+	}
+	switch scaleMode {
+	case "FILL", "FIT", "CROP", "TILE":
+		return ""
+	default:
+		return fmt.Sprintf("scaleMode must be FILL, FIT, CROP, or TILE, got: %s", scaleMode)
+	}
+}
+
+func validateMediaFilters(params map[string]interface{}) string {
+	for _, k := range []string{"exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"} {
+		if v, ok := params[k].(float64); ok && (v < -1 || v > 1) {
+			return fmt.Sprintf("%s must be between -1 and 1, got: %v", k, v)
+		}
+	}
+	return ""
+}
+
+func validateOptionalNumberRange(params map[string]interface{}, key, prefix string, min, max float64) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	n, ok := v.(float64)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return fmt.Sprintf("%s%s must be a number", prefix, key)
+	}
+	if n < min || n > max {
+		return fmt.Sprintf("%s%s must be between %v and %v", prefix, key, min, max)
+	}
+	return ""
+}
+
+func validateOptionalNumber(params map[string]interface{}, key, prefix string) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	n, ok := v.(float64)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return fmt.Sprintf("%s%s must be a number", prefix, key)
+	}
+	return ""
+}
+
+func validateOptionalNumberMin(params map[string]interface{}, key, prefix string, min float64) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	n, ok := v.(float64)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return fmt.Sprintf("%s%s must be a number", prefix, key)
+	}
+	if n < min {
+		return fmt.Sprintf("%s%s must be >= %v", prefix, key, min)
+	}
+	return ""
+}
+
+func validateOptionalBool(params map[string]interface{}, key, prefix string) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	if _, ok := v.(bool); !ok {
+		return fmt.Sprintf("%s%s must be a boolean", prefix, key)
+	}
+	return ""
+}
+
+func validateEffectVector(params map[string]interface{}, key, prefix string, min, max float64, bounded bool) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	vec, ok := v.(map[string]interface{})
+	if !ok {
+		return fmt.Sprintf("%s%s must be an object with numeric x and y", prefix, key)
+	}
+	for _, axis := range []string{"x", "y"} {
+		raw, ok := vec[axis]
+		if !ok {
+			return fmt.Sprintf("%s%s.%s is required", prefix, key, axis)
+		}
+		n, ok := raw.(float64)
+		if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+			return fmt.Sprintf("%s%s.%s must be a number", prefix, key, axis)
+		}
+		if bounded {
+			if n < min || n > max {
+				return fmt.Sprintf("%s%s.%s must be between %v and %v", prefix, key, axis, min, max)
+			}
+		} else if n <= min {
+			return fmt.Sprintf("%s%s.%s must be > %v", prefix, key, axis, min)
+		}
+	}
+	return ""
+}
+
+func validateEffectObject(prefix string, effect map[string]interface{}, allowDefaultType bool) string {
+	label := ""
+	if prefix != "" {
+		label = prefix + "."
+	}
+	t, hasType := effect["type"]
+	effectType, ok := t.(string)
+	if hasType && !ok {
+		return label + "type must be a string"
+	}
+	if effectType == "" {
+		if allowDefaultType {
+			effectType = "DROP_SHADOW"
+		} else {
+			return fmt.Sprintf("%stype must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", label, effectType)
+		}
+	}
+	switch effectType {
+	case "DROP_SHADOW", "INNER_SHADOW":
+		if msg := validateOptionalNumberRange(effect, "opacity", label, 0, 1); msg != "" {
+			return msg
+		}
+		for _, key := range []string{"radius", "spread"} {
+			if msg := validateOptionalNumberMin(effect, key, label, 0); msg != "" {
+				return msg
+			}
+		}
+		for _, key := range []string{"offsetX", "offsetY"} {
+			if msg := validateOptionalNumber(effect, key, label); msg != "" {
+				return msg
+			}
+		}
+	case "LAYER_BLUR", "BACKGROUND_BLUR":
+		if blurType, ok := effect["blurType"].(string); ok && blurType != "" {
+			switch blurType {
+			case "NORMAL", "PROGRESSIVE":
+			default:
+				return fmt.Sprintf("%sblurType must be NORMAL or PROGRESSIVE, got: %s", label, blurType)
+			}
+		} else if raw, ok := effect["blurType"]; ok && raw != nil {
+			return label + "blurType must be a string"
+		}
+		for _, key := range []string{"radius", "startRadius"} {
+			if msg := validateOptionalNumberMin(effect, key, label, 0); msg != "" {
+				return msg
+			}
+		}
+		for _, key := range []string{"startOffset", "endOffset"} {
+			if msg := validateEffectVector(effect, key, label, 0, 1, true); msg != "" {
+				return msg
+			}
+		}
+	case "GLASS":
+		for _, key := range []string{"lightIntensity", "refraction", "dispersion"} {
+			if msg := validateOptionalNumberRange(effect, key, label, 0, 1); msg != "" {
+				return msg
+			}
+		}
+		if msg := validateOptionalNumberMin(effect, "depth", label, 1); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalNumberMin(effect, "radius", label, 0); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalNumber(effect, "lightAngle", label); msg != "" {
+			return msg
+		}
+	case "NOISE":
+		if noiseType, ok := effect["noiseType"].(string); ok && noiseType != "" {
+			switch noiseType {
+			case "MONOTONE", "DUOTONE", "MULTITONE":
+			default:
+				return fmt.Sprintf("%snoiseType must be MONOTONE, DUOTONE, or MULTITONE, got: %s", label, noiseType)
+			}
+		} else if raw, ok := effect["noiseType"]; ok && raw != nil {
+			return label + "noiseType must be a string"
+		}
+		for _, key := range []string{"opacity", "density"} {
+			if msg := validateOptionalNumberRange(effect, key, label, 0, 1); msg != "" {
+				return msg
+			}
+		}
+		if msg := validateOptionalNumberMin(effect, "noiseSize", label, 0); msg != "" {
+			return msg
+		}
+		if msg := validateEffectVector(effect, "noiseSizeVector", label, 0, 0, false); msg != "" {
+			return msg
+		}
+	case "TEXTURE":
+		if msg := validateOptionalNumberMin(effect, "noiseSize", label, 0); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalNumberMin(effect, "radius", label, 0); msg != "" {
+			return msg
+		}
+		if msg := validateEffectVector(effect, "noiseSizeVector", label, 0, 0, false); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalBool(effect, "clipToShape", label); msg != "" {
+			return msg
+		}
+	default:
+		return fmt.Sprintf("%stype must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", label, effectType)
+	}
+	if msg := validateOptionalBool(effect, "visible", label); msg != "" {
+		return msg
+	}
+	return ""
+}
+
+func validateEffectsArray(params map[string]interface{}, key, prefix string, allowDefaultType bool) string {
+	raw, ok := params[key]
+	if !ok {
+		return ""
+	}
+	effects, ok := raw.([]interface{})
+	if !ok {
+		return fmt.Sprintf("%s%s must be an array", prefix, key)
+	}
+	for i, rawEffect := range effects {
+		effect, ok := rawEffect.(map[string]interface{})
+		if !ok {
+			return fmt.Sprintf("%s%s[%d] must be an object", prefix, key, i)
+		}
+		if msg := validateEffectObject(fmt.Sprintf("%s%s[%d]", prefix, key, i), effect, allowDefaultType); msg != "" {
+			return msg
+		}
+	}
+	return ""
+}
+
+func validateCodeSyntaxPlatform(platform string) string {
+	switch platform {
+	case "WEB", "ANDROID", "iOS":
+		return ""
+	default:
+		return fmt.Sprintf("codeSyntax platform must be WEB, ANDROID, or iOS, got: %s", platform)
+	}
+}
+
+func validateStyleType(styleType string) string {
+	switch styleType {
+	case "PAINT", "TEXT", "EFFECT", "GRID":
+		return ""
+	default:
+		return fmt.Sprintf("styleType must be PAINT, TEXT, EFFECT, or GRID, got: %s", styleType)
+	}
+}
+
+func isPageDividerName(name string) bool {
+	if name == "" {
+		return false
+	}
+	runes := []rune(name)
+	first := runes[0]
+	switch first {
+	case '*', '-', ' ', '\u2013', '\u2014':
+	default:
+		return false
+	}
+	for _, r := range runes[1:] {
+		if r != first {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidateRPC validates an incoming RPC request against the tool's expected
@@ -214,6 +491,32 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			default:
 				return fmt.Sprintf("detail must be minimal, compact, full, or codegen, got: %s", detail)
 			}
+		}
+
+	case "get_image_by_hash":
+		if hash, _ := params["hash"].(string); hash == "" {
+			return "hash is required"
+		}
+
+	case "get_dev_resources":
+		nodeID, _ := params["nodeId"].(string)
+		if nodeID == "" {
+			return "nodeId is required"
+		}
+		if !ValidNodeID(nodeID) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
+		}
+
+	case "resolve_variable_for_consumer":
+		if variableID, _ := params["variableId"].(string); variableID == "" {
+			return "variableId is required"
+		}
+		nodeID, _ := params["nodeId"].(string)
+		if nodeID == "" {
+			return "nodeId is required"
+		}
+		if !ValidNodeID(nodeID) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
 		}
 
 	case "search_nodes":
@@ -334,6 +637,37 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeIDs[0])
 		}
 
+	case "create_vector", "create_slice":
+		if w, ok := params["width"].(float64); ok && w <= 0 {
+			return "width must be positive"
+		}
+		if h, ok := params["height"].(float64); ok && h <= 0 {
+			return "height must be positive"
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "create_page_divider":
+		if name, ok := params["name"].(string); ok && name != "" && !isPageDividerName(name) {
+			return "name must be all asterisks, hyphens, spaces, en dashes, or em dashes"
+		}
+
+	case "create_text_path":
+		nodeID, _ := params["nodeId"].(string)
+		if nodeID == "" {
+			return "nodeId is required"
+		}
+		if !ValidNodeID(nodeID) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
+		}
+		if startSegment, ok := params["startSegment"].(float64); ok && (startSegment < 0 || math.IsNaN(startSegment) || math.IsInf(startSegment, 0) || startSegment != math.Trunc(startSegment)) {
+			return "startSegment must be a non-negative integer"
+		}
+		if startPosition, ok := params["startPosition"].(float64); ok && (startPosition < 0 || startPosition > 1 || math.IsNaN(startPosition) || math.IsInf(startPosition, 0)) {
+			return "startPosition must be between 0 and 1"
+		}
+
 	case "export_tokens":
 		if format, ok := params["format"].(string); ok && format != "" {
 			switch format {
@@ -368,6 +702,9 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeIDs[0])
 		}
 		if msg := validateAutoLayoutParams(params); msg != "" {
+			return msg
+		}
+		if msg := validateLayoutSizingParams(params); msg != "" {
 			return msg
 		}
 
@@ -516,6 +853,16 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 				}
 			}
 		}
+		if link, ok := params["hyperlink"].(map[string]interface{}); ok {
+			nodeID, hasNodeID := link["nodeId"].(string)
+			_, hasURL := link["url"]
+			if hasNodeID && hasURL {
+				return "hyperlink must provide url or nodeId, not both"
+			}
+			if hasNodeID && nodeID != "" && !ValidNodeID(nodeID) {
+				return fmt.Sprintf("hyperlink.nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
+			}
+		}
 
 	case "set_fills":
 		if len(nodeIDs) == 0 || nodeIDs[0] == "" {
@@ -643,24 +990,112 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
 		}
 
+	case "set_file_thumbnail":
+		if nodeID, ok := params["nodeId"].(string); ok && nodeID != "" && !ValidNodeID(nodeID) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
+		}
+
+	case "add_dev_resource":
+		nodeID, _ := params["nodeId"].(string)
+		if nodeID == "" {
+			return "nodeId is required"
+		}
+		if !ValidNodeID(nodeID) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
+		}
+		if url, _ := params["url"].(string); url == "" {
+			return "url is required"
+		}
+
+	case "edit_dev_resource":
+		nodeID, _ := params["nodeId"].(string)
+		if nodeID == "" {
+			return "nodeId is required"
+		}
+		if !ValidNodeID(nodeID) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
+		}
+		if currentURL, _ := params["currentUrl"].(string); currentURL == "" {
+			return "currentUrl is required"
+		}
+		_, hasURL := params["url"]
+		_, hasName := params["name"]
+		if !hasURL && !hasName {
+			return "edit_dev_resource requires url or name"
+		}
+
+	case "delete_dev_resource":
+		nodeID, _ := params["nodeId"].(string)
+		if nodeID == "" {
+			return "nodeId is required"
+		}
+		if !ValidNodeID(nodeID) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeID)
+		}
+		if url, _ := params["url"].(string); url == "" {
+			return "url is required"
+		}
+
 	case "import_image":
 		imageData, _ := params["imageData"].(string)
 		imagePath, _ := params["imagePath"].(string)
-		if imageData == "" && imagePath == "" {
-			return "provide either imagePath (a local file) or imageData (base64)"
+		imageURL, _ := params["imageUrl"].(string)
+		if imageData == "" && imagePath == "" && imageURL == "" {
+			return "provide imagePath (a local file), imageData (base64), or imageUrl (remote URL)"
 		}
-		if sm, ok := params["scaleMode"].(string); ok && sm != "" {
-			switch sm {
-			case "FILL", "FIT", "CROP", "TILE":
-			default:
-				return fmt.Sprintf("scaleMode must be FILL, FIT, CROP, or TILE, got: %s", sm)
+		if sm, ok := params["scaleMode"].(string); ok {
+			if msg := validateMediaScaleMode(sm); msg != "" {
+				return msg
 			}
 		}
-		// ImageFilters fields are each constrained to -1..1.
-		for _, k := range []string{"exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"} {
-			if v, ok := params[k].(float64); ok && (v < -1 || v > 1) {
-				return fmt.Sprintf("%s must be between -1 and 1, got: %v", k, v)
+		if msg := validateMediaFilters(params); msg != "" {
+			return msg
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "create_video":
+		videoData, _ := params["videoData"].(string)
+		videoPath, _ := params["videoPath"].(string)
+		if videoData == "" && videoPath == "" {
+			return "provide either videoPath (a local file) or videoData (base64)"
+		}
+		if sm, ok := params["scaleMode"].(string); ok {
+			if msg := validateMediaScaleMode(sm); msg != "" {
+				return msg
 			}
+		}
+		if msg := validateMediaFilters(params); msg != "" {
+			return msg
+		}
+		if w, ok := params["width"].(float64); ok && w <= 0 {
+			return "width must be positive"
+		}
+		if h, ok := params["height"].(float64); ok && h <= 0 {
+			return "height must be positive"
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "create_gif":
+		if imageHash, _ := params["imageHash"].(string); imageHash == "" {
+			return "imageHash is required"
+		}
+		if w, ok := params["width"].(float64); ok && w <= 0 {
+			return "width must be positive"
+		}
+		if h, ok := params["height"].(float64); ok && h <= 0 {
+			return "height must be positive"
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "create_link_preview":
+		if url, _ := params["url"].(string); url == "" {
+			return "url is required"
 		}
 		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
@@ -708,11 +1143,12 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		if name, _ := params["name"].(string); name == "" {
 			return "name is required"
 		}
-		if t, ok := params["type"].(string); ok && t != "" {
-			switch t {
-			case "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR", "GLASS", "NOISE", "TEXTURE":
-			default:
-				return fmt.Sprintf("type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", t)
+		if msg := validateEffectsArray(params, "effects", "", true); msg != "" {
+			return msg
+		}
+		if _, hasEffects := params["effects"]; !hasEffects {
+			if msg := validateEffectObject("", params, true); msg != "" {
+				return msg
 			}
 		}
 
@@ -752,6 +1188,30 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return "styleId is required"
 		}
 
+	case "reorder_local_style":
+		styleType, _ := params["styleType"].(string)
+		if styleType == "" {
+			return "styleType is required"
+		}
+		if msg := validateStyleType(styleType); msg != "" {
+			return msg
+		}
+		if styleID, _ := params["styleId"].(string); styleID == "" {
+			return "styleId is required"
+		}
+
+	case "reorder_local_style_folder":
+		styleType, _ := params["styleType"].(string)
+		if styleType == "" {
+			return "styleType is required"
+		}
+		if msg := validateStyleType(styleType); msg != "" {
+			return msg
+		}
+		if folder, _ := params["folder"].(string); folder == "" {
+			return "folder is required"
+		}
+
 	// ── Variable tools ───────────────────────────────────────────────────────
 
 	case "create_variable_collection":
@@ -779,6 +1239,11 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		case "COLOR", "FLOAT", "STRING", "BOOLEAN":
 		default:
 			return fmt.Sprintf("type must be COLOR, FLOAT, STRING, or BOOLEAN, got: %s", varType)
+		}
+
+	case "create_variable_alias":
+		if variableID, _ := params["variableId"].(string); variableID == "" {
+			return "variableId is required"
 		}
 
 	case "set_variable_value":
@@ -813,10 +1278,21 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		}
 		if cs, ok := params["codeSyntax"].(map[string]interface{}); ok {
 			for k := range cs {
-				switch k {
-				case "WEB", "ANDROID", "iOS":
-				default:
-					return fmt.Sprintf("codeSyntax platform must be WEB, ANDROID, or iOS, got: %s", k)
+				if msg := validateCodeSyntaxPlatform(k); msg != "" {
+					return msg
+				}
+				if _, ok := cs[k].(string); !ok {
+					return fmt.Sprintf("codeSyntax.%s must be a string", k)
+				}
+			}
+		} else if raw, ok := params["codeSyntax"]; ok && raw != nil {
+			return "codeSyntax must be an object"
+		}
+		if raw, ok := params["removeCodeSyntax"].([]interface{}); ok {
+			for _, p := range raw {
+				platform, _ := p.(string)
+				if msg := validateCodeSyntaxPlatform(platform); msg != "" {
+					return msg
 				}
 			}
 		}
@@ -826,12 +1302,14 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return "collectionId is required"
 		}
 		if rm, ok := params["renameMode"].(map[string]interface{}); ok {
-			if mid, _ := rm["modeId"].(string); mid == "" {
+			if mid, ok := rm["modeId"].(string); !ok || mid == "" {
 				return "renameMode requires a modeId"
 			}
-			if _, hasNew := rm["newName"]; !hasNew {
+			if newName, ok := rm["newName"].(string); !ok || newName == "" {
 				return "renameMode requires a newName"
 			}
+		} else if raw, ok := params["renameMode"]; ok && raw != nil {
+			return "renameMode must be an object"
 		}
 
 	// ── Linked tools ─────────────────────────────────────────────────────────
@@ -866,6 +1344,28 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		}
 		if field, _ := params["field"].(string); field == "" {
 			return "field is required"
+		}
+
+	case "bind_variable_to_effect":
+		if _, ok := params["effect"].(map[string]interface{}); !ok {
+			return "effect is required and must be an object"
+		}
+		if field, _ := params["field"].(string); field == "" {
+			return "field is required"
+		}
+		if variableID, _ := params["variableId"].(string); variableID == "" {
+			return "variableId is required"
+		}
+
+	case "bind_variable_to_layout_grid":
+		if _, ok := params["layoutGrid"].(map[string]interface{}); !ok {
+			return "layoutGrid is required and must be an object"
+		}
+		if field, _ := params["field"].(string); field == "" {
+			return "field is required"
+		}
+		if variableID, _ := params["variableId"].(string); variableID == "" {
+			return "variableId is required"
 		}
 
 	case "swap_component":
@@ -1243,15 +1743,12 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return "effects must be an array"
 		}
 		for i, e := range effectList {
-			em, ok := e.(map[string]interface{})
+			effect, ok := e.(map[string]interface{})
 			if !ok {
 				return fmt.Sprintf("effects[%d] must be an object", i)
 			}
-			t, _ := em["type"].(string)
-			switch t {
-			case "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR", "GLASS", "NOISE", "TEXTURE":
-			default:
-				return fmt.Sprintf("effects[%d].type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", i, t)
+			if msg := validateEffectObject(fmt.Sprintf("effects[%d]", i), effect, false); msg != "" {
+				return msg
 			}
 		}
 
@@ -1439,6 +1936,13 @@ func validateTextStyleParams(params map[string]interface{}) string {
 // validateLayoutSizingParams checks the optional sizing-within-parent enums
 // (resize_nodes, create_frame).
 func validateLayoutSizingParams(params map[string]interface{}) string {
+	for _, k := range []string{"minWidth", "maxWidth", "minHeight", "maxHeight"} {
+		if v, ok := params[k]; ok && v != nil {
+			if n, ok := v.(float64); ok && n <= 0 {
+				return fmt.Sprintf("%s must be positive", k)
+			}
+		}
+	}
 	for _, k := range []string{"layoutSizingHorizontal", "layoutSizingVertical"} {
 		if v, ok := params[k].(string); ok && v != "" {
 			switch v {

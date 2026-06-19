@@ -256,6 +256,71 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
+	s.AddTool(mcp.NewTool("set_file_thumbnail",
+		mcp.WithDescription("Set or clear the current file thumbnail node. Omit nodeId to clear the thumbnail."),
+		mcp.WithString("nodeId", mcp.Description("FRAME, COMPONENT, COMPONENT_SET, or SECTION node ID to use as the file thumbnail. Omit to clear.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := map[string]interface{}{}
+		if id, ok := req.GetArguments()["nodeId"].(string); ok && id != "" {
+			params["nodeId"] = NormalizeNodeID(id)
+		}
+		resp, err := node.Send(ctx, "set_file_thumbnail", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("add_dev_resource",
+		mcp.WithDescription("Attach a Dev Mode resource link to a node using addDevResourceAsync."),
+		mcp.WithString("nodeId", mcp.Required(), mcp.Description("Node ID in colon format e.g. '4029:12345'.")),
+		mcp.WithString("url", mcp.Required(), mcp.Description("Resource URL.")),
+		mcp.WithString("name", mcp.Description("Optional display name for the resource.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		params := map[string]interface{}{
+			"nodeId": NormalizeNodeID(args["nodeId"].(string)),
+			"url":    args["url"],
+		}
+		if name, ok := args["name"].(string); ok && name != "" {
+			params["name"] = name
+		}
+		resp, err := node.Send(ctx, "add_dev_resource", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("edit_dev_resource",
+		mcp.WithDescription("Edit a node Dev Mode resource link by its current URL. Provide url, name, or both as the replacement."),
+		mcp.WithString("nodeId", mcp.Required(), mcp.Description("Node ID in colon format e.g. '4029:12345'.")),
+		mcp.WithString("currentUrl", mcp.Required(), mcp.Description("Existing resource URL to edit.")),
+		mcp.WithString("url", mcp.Description("Replacement URL.")),
+		mcp.WithString("name", mcp.Description("Replacement display name.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		params := map[string]interface{}{
+			"nodeId":     NormalizeNodeID(args["nodeId"].(string)),
+			"currentUrl": args["currentUrl"],
+		}
+		copyOptionalArgs(args, params, []string{"url", "name"})
+		resp, err := node.Send(ctx, "edit_dev_resource", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("delete_dev_resource",
+		mcp.WithDescription("Delete a Dev Mode resource link from a node by URL."),
+		mcp.WithString("nodeId", mcp.Required(), mcp.Description("Node ID in colon format e.g. '4029:12345'.")),
+		mcp.WithString("url", mcp.Required(), mcp.Description("Resource URL to delete.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		params := map[string]interface{}{
+			"nodeId": NormalizeNodeID(args["nodeId"].(string)),
+			"url":    args["url"],
+		}
+		resp, err := node.Send(ctx, "delete_dev_resource", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
 	s.AddTool(mcp.NewTool("set_opacity",
 		mcp.WithDescription("Set the opacity of one or more nodes (nodeIds[]) — 0 = fully transparent, 1 = fully opaque. Bulk-apply: returns {results:[{nodeId,…}]}, one entry per node. "+
 			"Also a `batch` op type — fan a scan into it in ONE round-trip with the projection ref nodeIds:[\"$0.matchingNodes[*].id\"]; read its bulk output back with $N.results[*].nodeId."),
