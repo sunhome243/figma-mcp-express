@@ -79,16 +79,9 @@ func (n *Node) Send(ctx context.Context, tool string, nodeIDs []string, params m
 	leader := n.leader
 	n.mu.RUnlock()
 
-	// Normalize hyphen-format node IDs that LLMs sometimes produce.
-	for i, id := range nodeIDs {
-		nodeIDs[i] = NormalizeNodeID(id)
-	}
-	// Normalize common param keys that contain node IDs.
-	for _, key := range []string{"nodeId", "parentId"} {
-		if v, ok := params[key].(string); ok {
-			params[key] = NormalizeNodeID(v)
-		}
-	}
+	// Normalize hyphen-format node IDs that LLMs sometimes produce before the
+	// schema gate runs; tool docs still advertise colon-format IDs as canonical.
+	normalizeRPCNodeReferences(nodeIDs, params)
 
 	if tool == "batch" {
 		if err := validateAndPrepareBatchParams(params); err != nil {

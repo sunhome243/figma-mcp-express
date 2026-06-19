@@ -6,10 +6,9 @@ Every plugin-supported operation remains available through validated
 `get_batch_op_spec` for its authoritative schema, and
 `batch(validateOnly:true)` before generated or unfamiliar mutations.
 
-This file documents the broader compatibility/catalog vocabulary. Tools marked
-**[NEW]** are additions to the upstream base; **[ENHANCED]** means the upstream
-tool has new params or behavior. Set `FIGMA_MCP_TOOL_PROFILE=full` to expose
-the legacy top-level compatibility surface for debugging or older clients.
+This file documents the current broader compatibility/catalog vocabulary. Set
+`FIGMA_MCP_TOOL_PROFILE=full` to expose the full top-level compatibility surface
+for debugging or clients that do not use the core batch-first profile.
 
 **The core 21 top-level tools** (everything else below is a `batch` op type or
 full-profile-only — NOT directly callable in `core`): `batch`, `search_batch_ops`,
@@ -18,16 +17,16 @@ full-profile-only — NOT directly callable in `core`): `batch`, `search_batch_o
 `scan_nodes_by_types`, `scan_text_nodes`, `search_nodes`, `get_local_components`,
 `list_channels`, `list_library_variable_collections`, `fetch_library_catalog`,
 `export_tokens`, `export_frames_to_pdf`, `save_screenshots`. Every `## Write —*`
-section and the `import_*` library ops are batch op types in `core`; the legacy
+section and the `import_*` library ops are batch op types in `core`; the
 reads under `## Read — Document` not named above (`get_document`, `get_reactions`,
 `get_viewport`, `get_fonts`, `get_annotations`, `get_screenshot`) are
 full-profile-only — use `get_metadata` / `get_node` / `save_screenshots` in `core`.
 
-Plugin-facing top-level tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. For `batch`, pass `channel` on the outer `batch` call only; per-op `params.channel` is rejected because op contracts come from `BatchOpCatalog`. Node IDs are always in colon format, e.g. `4029:12345`, never hyphens.
+Plugin-facing top-level tools accept an optional `channel` param (omitted from most param tables for brevity — see the Channel section). Local catalog meta tools such as `search_batch_ops` and `get_batch_op_spec` do not need a channel. For `batch`, pass `channel` on the outer `batch` call only; per-op `params.channel` is rejected because op contracts come from `BatchOpCatalog`. Node IDs are documented and returned in colon format, e.g. `4029:12345`; the runtime normalizes common Figma URL hyphen IDs before validation as a recovery path.
 
 ---
 
-## Channel [NEW]
+## Channel
 
 ### list_channels
 
@@ -74,7 +73,7 @@ Get the nodes currently selected in Figma. Returns an empty array if nothing is 
 | ------- | ------ | -------- | ----------------------------------------------- |
 | channel | string | No       | Target a specific connected file by channel id. |
 
-### get_node [ENHANCED]
+### get_node
 
 Get a single node by ID with full detail. Optional `depth` limits traversal depth to avoid MB-scale payloads. Use `get_nodes_info` to fetch multiple nodes in one round-trip. INSTANCE nodes include `mainComponent:{key,name,remote}` and `componentProperties` (the resolved variant map).
 
@@ -85,7 +84,7 @@ Get a single node by ID with full detail. Optional `depth` limits traversal dept
 | skipInvisibleInstanceChildren | boolean | No       | Skip hidden instances' children. Default false.                                                                     |
 | channel                       | string  | No       | Target a specific connected file by channel id.                                                                     |
 
-### get_nodes_info [ENHANCED]
+### get_nodes_info
 
 Get full details for multiple nodes by ID in one round-trip. Prefer this over calling `get_node` repeatedly. Large responses spill to disk. INSTANCE nodes include `mainComponent:{key,name,remote}` and `componentProperties` (the resolved variant map).
 
@@ -96,7 +95,7 @@ Get full details for multiple nodes by ID in one round-trip. Prefer this over ca
 | skipInvisibleInstanceChildren | boolean  | No       | Skip hidden instances' children. Default false. |
 | channel                       | string   | No       | Target a specific connected file by channel id. |
 
-### get_design_context [ENHANCED]
+### get_design_context
 
 Get a depth-limited, token-efficient tree of the current selection or page. Supports detail levels and deduplication of repeated component instances. Large responses spill to disk.
 
@@ -189,7 +188,7 @@ Get all local variable definitions: collections, modes, and values. Variables ar
 | ------- | ------ | -------- | ----------------------------------------------- |
 | channel | string | No       | Target a specific connected file by channel id. |
 
-### get_local_components [ENHANCED]
+### get_local_components
 
 Get all components defined in the current Figma file. For large libraries, pass `pageId` to scan one page (avoids timeout/jam). Large results spill to disk. componentSets entries include a `defaultVariantKey` (import THAT, not the SET key); component entries include `variantProperties`.
 
@@ -256,7 +255,7 @@ Export screenshots for multiple nodes and write them to the local filesystem. Re
 
 ## Write — Create
 
-> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as full-profile top-level tools.
 
 ### create_frame
 
@@ -270,7 +269,11 @@ Create a new frame on the current page or inside a parent node. Optional layout-
 | height                 | number | No       | Height in pixels (default 100)                                                |
 | name                   | string | No       | Frame name                                                                    |
 | fillColor              | string | No       | Fill color as hex e.g. `#FFFFFF`                                              |
-| layoutMode             | string | No       | Auto-layout direction: `HORIZONTAL`, `VERTICAL`, or `NONE`                    |
+| layoutMode             | string | No       | Auto-layout direction: `HORIZONTAL`, `VERTICAL`, `GRID`, or `NONE`            |
+| gridRowCount           | number | No       | Number of rows when `layoutMode` is `GRID`                                    |
+| gridColumnCount        | number | No       | Number of columns when `layoutMode` is `GRID`                                 |
+| gridRowGap             | number | No       | Row gap when `layoutMode` is `GRID`                                           |
+| gridColumnGap          | number | No       | Column gap when `layoutMode` is `GRID`                                        |
 | paddingTop             | number | No       | Auto-layout top padding                                                       |
 | paddingRight           | number | No       | Auto-layout right padding                                                     |
 | paddingBottom          | number | No       | Auto-layout bottom padding                                                    |
@@ -296,6 +299,8 @@ Create a new frame on the current page or inside a parent node. Optional layout-
 | paddingBottomVariableId | string | No       | Variable ID to bind to `paddingBottom` instead of a raw value                 |
 | paddingLeftVariableId   | string | No       | Variable ID to bind to `paddingLeft` instead of a raw value                   |
 | itemSpacingVariableId   | string | No       | Variable ID to bind to `itemSpacing` instead of a raw value                   |
+| gridRowGapVariableId    | string | No       | Variable ID to bind to `gridRowGap` when `layoutMode` is `GRID`               |
+| gridColumnGapVariableId | string | No       | Variable ID to bind to `gridColumnGap` when `layoutMode` is `GRID`            |
 | channel                | string | No       | Target a specific connected file by channel id.                               |
 
 ### create_rectangle
@@ -333,6 +338,84 @@ Create a new ellipse (circle/oval) on the current page or inside a parent node.
 | parentId  | string | No       | Parent node ID. Defaults to current page.       |
 | channel   | string | No       | Target a specific connected file by channel id. |
 
+### create_line
+
+Create a straight LineNode for dividers and rules. A visible 1px black stroke is applied by default.
+
+| Name         | Type   | Required | Description                                                                                         |
+| ------------ | ------ | -------- | --------------------------------------------------------------------------------------------------- |
+| x            | number | No       | X position (default 0)                                                                              |
+| y            | number | No       | Y position (default 0)                                                                              |
+| length       | number | No       | Line length in pixels (default 100)                                                                 |
+| name         | string | No       | Line name                                                                                           |
+| strokeWeight | number | No       | Stroke thickness in pixels (default 1)                                                              |
+| strokeColor  | string | No       | Stroke color as hex e.g. `#000000` (default black)                                                  |
+| strokeCap    | string | No       | `NONE`, `ROUND`, `SQUARE`, `ARROW_LINES`, `ARROW_EQUILATERAL`, `DIAMOND_FILLED`, `TRIANGLE_FILLED`, or `CIRCLE_FILLED` |
+| rotation     | number | No       | Rotation in degrees (default 0 = horizontal; 90 = vertical)                                         |
+| parentId     | string | No       | Parent node ID. Defaults to current page.                                                           |
+| channel      | string | No       | Target a specific connected file by channel id.                                                     |
+
+### create_polygon
+
+Create a regular PolygonNode with a configurable number of sides.
+
+| Name       | Type   | Required | Description                                      |
+| ---------- | ------ | -------- | ------------------------------------------------ |
+| x          | number | No       | X position (default 0)                           |
+| y          | number | No       | Y position (default 0)                           |
+| width      | number | No       | Width in pixels (default 100)                    |
+| height     | number | No       | Height in pixels (default 100)                   |
+| pointCount | number | No       | Number of sides, minimum 3 (default 3)           |
+| name       | string | No       | Polygon name                                     |
+| fillColor  | string | No       | Fill color as hex e.g. `#3B82F6`                 |
+| parentId   | string | No       | Parent node ID. Defaults to current page.        |
+| channel    | string | No       | Target a specific connected file by channel id.  |
+
+### create_star
+
+Create a StarNode with configurable point count and inner-radius ratio.
+
+| Name        | Type   | Required | Description                                             |
+| ----------- | ------ | -------- | ------------------------------------------------------- |
+| x           | number | No       | X position (default 0)                                  |
+| y           | number | No       | Y position (default 0)                                  |
+| width       | number | No       | Width in pixels (default 100)                           |
+| height      | number | No       | Height in pixels (default 100)                          |
+| pointCount  | number | No       | Number of star points, minimum 3 (default 5)            |
+| innerRadius | number | No       | Inner-radius ratio 0-1 (default 0.5; smaller is spikier) |
+| name        | string | No       | Star name                                               |
+| fillColor   | string | No       | Fill color as hex e.g. `#FBBF24`                        |
+| parentId    | string | No       | Parent node ID. Defaults to current page.               |
+| channel     | string | No       | Target a specific connected file by channel id.         |
+
+### import_svg
+
+Create Figma vector nodes from raw SVG markup via `figma.createNodeFromSvg`. Returns a wrapping frame containing the imported vectors.
+
+| Name     | Type   | Required | Description                                      |
+| -------- | ------ | -------- | ------------------------------------------------ |
+| svg      | string | Yes      | Raw SVG markup string e.g. `<svg>...</svg>`      |
+| x        | number | No       | X position (default 0)                           |
+| y        | number | No       | Y position (default 0)                           |
+| name     | string | No       | Name for the wrapping frame                      |
+| parentId | string | No       | Parent node ID. Defaults to current page.        |
+| channel  | string | No       | Target a specific connected file by channel id.  |
+
+### create_table
+
+Create a TableNode with the given rows and columns. Optionally fill cells with text.
+
+| Name       | Type     | Required | Description                                                                           |
+| ---------- | -------- | -------- | ------------------------------------------------------------------------------------- |
+| numRows    | number   | Yes      | Number of rows, minimum 1                                                             |
+| numColumns | number   | Yes      | Number of columns, minimum 1                                                          |
+| x          | number   | No       | X position (default 0)                                                                |
+| y          | number   | No       | Y position (default 0)                                                                |
+| name       | string   | No       | Table name                                                                            |
+| cells      | string[][] | No     | Optional 2D cell text array indexed `[row][column]`; out-of-range entries are ignored |
+| parentId   | string   | No       | Parent node ID. Defaults to current page.                                             |
+| channel    | string   | No       | Target a specific connected file by channel id.                                       |
+
 ### create_text
 
 Create a new text node on the current page or inside a parent node. The font is loaded automatically before insertion. Returns the created node ID and bounds.
@@ -359,7 +442,7 @@ Create a new text node on the current page or inside a parent node. The font is 
 | textDecoration      | string | No       | Text decoration: `NONE`, `UNDERLINE`, or `STRIKETHROUGH`                               |
 | channel             | string | No       | Target a specific connected file by channel id.                                        |
 
-### create_instance [NEW]
+### create_instance
 
 Create an instance of a component, optionally placing it in a parent, positioning/sizing it, and setting variant and exposed-instance properties.
 
@@ -402,7 +485,7 @@ Create a Figma Section node on the current page. Sections are the modern way to 
 | height  | number | No       | Height in pixels                                |
 | channel | string | No       | Target a specific connected file by channel id. |
 
-### import_image [NEW]
+### import_image
 
 Import an image file from disk (or raw base64 data) into Figma as a new image-fill rectangle. The server reads `imagePath` from the local filesystem and base64-encodes it automatically — prefer this over passing raw `imageData`. Returns the new node ID and bounds.
 
@@ -435,7 +518,7 @@ Clone an existing node, optionally repositioning it or placing it in a new paren
 
 ## Write — Modify
 
-> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as full-profile top-level tools.
 
 ### rename_node [BATCH OP]
 
@@ -570,9 +653,9 @@ Combine two or more vector nodes using a boolean operation, producing a new merg
 
 ---
 
-## Write — Components [NEW/ENHANCED]
+## Write — Components
 
-> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as full-profile top-level tools.
 
 ### swap_component
 
@@ -594,7 +677,7 @@ Detach one or more component instances, converting them to plain frames. The lin
 | ------- | -------- | -------- | ----------------------------------------------- |
 | nodeIds | string[] | Yes      | INSTANCE node IDs                               |
 
-### set_instance_properties [NEW]
+### set_instance_properties
 
 Set variant, boolean, text, and instance-swap properties on a component INSTANCE. Use `resetOverrides=true` to restore defaults before applying. SLOT-type keys are auto-filtered (passing them throws `cannotSetSlotProperty`, which would poison the whole update) and reported back as `droppedSlotKeys`; fonts for TEXT properties are preloaded automatically.
 
@@ -605,7 +688,7 @@ Set variant, boolean, text, and instance-swap properties on a component INSTANCE
 | resetOverrides | boolean | No       | Reset the instance to component defaults before applying properties (default false) |
 | channel        | string  | No       | Target a specific connected file by channel id.                                     |
 
-### import_component_by_key [NEW]
+### import_component_by_key
 
 Import a component (or component set) from a subscribed library by its key, making it available to instantiate. Component keys must be full 40-char lowercase hex published keys, not node IDs. For a COMPONENT_SET key pass `assetType='COMPONENT_SET'`; if the key was seen in a cached `fetch_library_catalog` result, the server injects the correct `assetType` automatically.
 
@@ -619,7 +702,7 @@ Import a component (or component set) from a subscribed library by its key, maki
 
 ## Write — Styles
 
-> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as full-profile top-level tools.
 
 ### apply_style_to_node
 
@@ -632,7 +715,7 @@ Apply an existing local style (paint, text, effect, or grid) to a node, linking 
 | target  | string | No       | For paint styles only — apply to `fill` (default) or `stroke` |
 | channel | string | No       | Target a specific connected file by channel id.               |
 
-### set_fills [ENHANCED]
+### set_fills
 
 Set the fill color on a single node. Use `mode='append'` to stack a new fill on top of existing fills. Supports token binding via `variableId`. Pass `paints[]` for full control over multiple fills (gradient, image, etc.) — takes precedence over `color` when both are provided.
 
@@ -646,7 +729,7 @@ Set the fill color on a single node. Use `mode='append'` to stack a new fill on 
 | paints     | object[] | No       | Full paint array (Figma Paint objects). Takes precedence over `color` when provided. Supports solid, gradient, and image fills. |
 | channel    | string   | No       | Target a specific connected file by channel id.                                   |
 
-### set_strokes [ENHANCED]
+### set_strokes
 
 Set the stroke color and weight on a single node. Use `mode='append'` to stack. Supports token binding via `variableId`. Pass `paints[]` for full control over multiple strokes — takes precedence over `color` when both are provided.
 
@@ -706,17 +789,16 @@ Set corner radius on one or more nodes. Provide a uniform `cornerRadius` or per-
 | bottomLeftRadius  | number   | No       | Bottom-left corner radius                       |
 | bottomRightRadius | number   | No       | Bottom-right corner radius                      |
 
-### set_constraints [BATCH OP]
+### set_constraints
 
-> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
-
-Set layout constraints (pinning behaviour) on one or more nodes relative to their parent.
+Set layout constraints (pinning behaviour) on one or more nodes relative to their parent. Also available as a `batch` op.
 
 | Name       | Type     | Required | Description                                                  |
 | ---------- | -------- | -------- | ------------------------------------------------------------ |
 | nodeIds    | string[] | Yes      | Node IDs                                                     |
 | horizontal | string   | No       | `MIN` (left), `MAX` (right), `CENTER`, `STRETCH`, or `SCALE` |
 | vertical   | string   | No       | `MIN` (top), `MAX` (bottom), `CENTER`, `STRETCH`, or `SCALE` |
+| channel    | string   | No       | Target a specific connected file by channel id.              |
 
 ### rotate_nodes [BATCH OP]
 
@@ -729,7 +811,7 @@ Rotate one or more nodes to an absolute angle in degrees.
 | nodeIds  | string[] | Yes      | Node IDs                                                          |
 | rotation | number   | Yes      | Rotation angle in degrees (positive = counter-clockwise in Figma) |
 
-### resize_nodes [ENHANCED]
+### resize_nodes
 
 Resize one or more nodes and/or set their sizing-within-parent (FILL/HUG). FILL/HUG requires the node to be inside an auto-layout parent.
 
@@ -738,6 +820,10 @@ Resize one or more nodes and/or set their sizing-within-parent (FILL/HUG). FILL/
 | nodeIds                | string[] | Yes      | Node IDs                                                                   |
 | width                  | number   | No       | New width in pixels                                                        |
 | height                 | number   | No       | New height in pixels                                                       |
+| minWidth               | number/null | No    | Auto-layout child minimum width; pass `null` to clear                      |
+| maxWidth               | number/null | No    | Auto-layout child maximum width; pass `null` to clear                      |
+| minHeight              | number/null | No    | Auto-layout child minimum height; pass `null` to clear                     |
+| maxHeight              | number/null | No    | Auto-layout child maximum height; pass `null` to clear                     |
 | layoutSizingHorizontal | string   | No       | `FIXED`, `HUG`, or `FILL`                                                  |
 | layoutSizingVertical   | string   | No       | `FIXED`, `HUG`, or `FILL`                                                  |
 | layoutGrow             | number   | No       | Grow factor along the parent's main axis                                   |
@@ -745,14 +831,18 @@ Resize one or more nodes and/or set their sizing-within-parent (FILL/HUG). FILL/
 | layoutPositioning      | string   | No       | `AUTO` or `ABSOLUTE`                                                       |
 | channel                | string   | No       | Target a specific connected file by channel id.                            |
 
-### set_auto_layout [ENHANCED]
+### set_auto_layout
 
 Set or update auto-layout (flex) properties on an existing frame.
 
 | Name                  | Type   | Required | Description                                                         |
 | --------------------- | ------ | -------- | ------------------------------------------------------------------- |
 | nodeId                | string | Yes      | Frame node ID                                                       |
-| layoutMode            | string | No       | `HORIZONTAL`, `VERTICAL`, or `NONE`                                 |
+| layoutMode            | string | No       | `HORIZONTAL`, `VERTICAL`, `GRID`, or `NONE`                         |
+| gridRowCount          | number | No       | Number of rows when `layoutMode` is `GRID`                          |
+| gridColumnCount       | number | No       | Number of columns when `layoutMode` is `GRID`                       |
+| gridRowGap            | number | No       | Row gap when `layoutMode` is `GRID`                                 |
+| gridColumnGap         | number | No       | Column gap when `layoutMode` is `GRID`                              |
 | paddingTop            | number | No       | Top padding                                                         |
 | paddingRight          | number | No       | Right padding                                                       |
 | paddingBottom         | number | No       | Bottom padding                                                      |
@@ -760,15 +850,26 @@ Set or update auto-layout (flex) properties on an existing frame.
 | itemSpacing           | number | No       | Gap between children                                                |
 | primaryAxisAlignItems | string | No       | `MIN`, `CENTER`, `MAX`, or `SPACE_BETWEEN`                          |
 | counterAxisAlignItems | string | No       | `MIN`, `CENTER`, `MAX`, or `BASELINE`                               |
+| counterAxisAlignContent | string | No     | Wrapped-track distribution: `AUTO` or `SPACE_BETWEEN`               |
 | primaryAxisSizingMode | string | No       | `FIXED` or `AUTO` (hug)                                             |
 | counterAxisSizingMode | string | No       | `FIXED` or `AUTO` (hug)                                             |
 | layoutWrap            | string | No       | `NO_WRAP` or `WRAP`                                                 |
+| overflowDirection     | string | No       | `NONE`, `HORIZONTAL`, `VERTICAL`, or `BOTH`                         |
+| strokesIncludedInLayout | boolean | No    | Include strokes in auto-layout sizing                               |
+| itemReverseZIndex     | boolean | No      | Reverse child stacking order                                        |
+| minWidth              | number/null | No    | Frame minimum width; pass `null` to clear                           |
+| maxWidth              | number/null | No    | Frame maximum width; pass `null` to clear                           |
+| minHeight             | number/null | No    | Frame minimum height; pass `null` to clear                          |
+| maxHeight             | number/null | No    | Frame maximum height; pass `null` to clear                          |
 | counterAxisSpacing      | number | No       | Gap between wrapped rows/columns (only when `layoutWrap` is `WRAP`) |
 | paddingTopVariableId    | string | No       | Variable ID to bind to `paddingTop` instead of a raw value          |
 | paddingRightVariableId  | string | No       | Variable ID to bind to `paddingRight` instead of a raw value        |
 | paddingBottomVariableId | string | No       | Variable ID to bind to `paddingBottom` instead of a raw value       |
 | paddingLeftVariableId   | string | No       | Variable ID to bind to `paddingLeft` instead of a raw value         |
 | itemSpacingVariableId   | string | No       | Variable ID to bind to `itemSpacing` instead of a raw value         |
+| counterAxisSpacingVariableId | string | No | Variable ID to bind to `counterAxisSpacing`                         |
+| gridRowGapVariableId    | string | No       | Variable ID to bind to `gridRowGap` when `layoutMode` is `GRID`     |
+| gridColumnGapVariableId | string | No       | Variable ID to bind to `gridColumnGap` when `layoutMode` is `GRID`  |
 | channel               | string | No       | Target a specific connected file by channel id.                     |
 
 ### set_text
@@ -792,6 +893,30 @@ Update the content and/or styling of an existing TEXT node. Provide `text` to ch
 | textCase            | string | No       | `ORIGINAL`, `UPPER`, `LOWER`, `TITLE`, `SMALL_CAPS`, or `SMALL_CAPS_FORCED` |
 | textDecoration      | string | No       | `NONE`, `UNDERLINE`, or `STRIKETHROUGH`                                     |
 | channel             | string | No       | Target a specific connected file by channel id.                             |
+
+### set_text_range
+
+Apply styling to a character range within a TEXT node. Offsets are zero-based and use `[startOffset, endOffset)`.
+
+| Name               | Type   | Required | Description                                                                            |
+| ------------------ | ------ | -------- | -------------------------------------------------------------------------------------- |
+| nodeId             | string | Yes      | TEXT node ID                                                                           |
+| startOffset        | number | Yes      | Start character index, inclusive                                                       |
+| endOffset          | number | Yes      | End character index, exclusive                                                         |
+| fontFamily         | string | No       | Font family for the range                                                              |
+| fontStyle          | string | No       | Font style for the range                                                               |
+| fontSize           | number | No       | Font size in pixels for the range                                                      |
+| color              | string | No       | Text color for the range as hex                                                        |
+| textCase           | string | No       | `ORIGINAL`, `UPPER`, `LOWER`, `TITLE`, `SMALL_CAPS`, or `SMALL_CAPS_FORCED`            |
+| textDecoration     | string | No       | `NONE`, `UNDERLINE`, or `STRIKETHROUGH`                                                |
+| letterSpacingValue | number | No       | Letter spacing value                                                                   |
+| letterSpacingUnit  | string | No       | `PIXELS` or `PERCENT`                                                                  |
+| lineHeightValue    | number | No       | Line height value                                                                      |
+| lineHeightUnit     | string | No       | `PIXELS`, `PERCENT`, or `AUTO`                                                         |
+| hyperlink          | object/null | No  | `{url}` or `{nodeId}` hyperlink for the range; pass `null` to clear                    |
+| listOptions        | object | No       | `{type:"ORDERED"|"UNORDERED"|"NONE"}`                                                  |
+| indentation        | number | No       | Indentation level for the range                                                        |
+| channel            | string | No       | Target a specific connected file by channel id.                                        |
 
 ### create_paint_style
 
@@ -885,7 +1010,7 @@ Delete a style (paint, text, effect, or grid) by its ID.
 | ------- | ------ | -------- | ----------------------------------------------- |
 | styleId | string | Yes      | Style ID to delete                              |
 
-### import_style_by_key [NEW]
+### import_style_by_key
 
 Import a paint, text, or effect style from a subscribed library by its key, making it available to apply to nodes.
 
@@ -898,7 +1023,7 @@ Import a paint, text, or effect style from a subscribed library by its key, maki
 
 ## Write — Variables
 
-> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as full-profile top-level tools.
 
 ### create_variable_collection
 
@@ -933,7 +1058,7 @@ Add a new mode to an existing variable collection (e.g. Light/Dark, Desktop/Mobi
 | modeName     | string | Yes      | Name for the new mode                           |
 | channel      | string | No       | Target a specific connected file by channel id. |
 
-### set_variable_mode [ENHANCED]
+### set_variable_mode
 
 Pin a node to a specific mode of a variable collection (e.g. switch a frame to Dark mode) via `setExplicitVariableModeForCollection`.
 
@@ -954,6 +1079,32 @@ Set a variable's value for a specific mode. The `modeId` is validated against th
 | modeId     | string | Yes      | Mode ID within the collection                                                      |
 | value      | string | Yes      | Value to set. COLOR: hex. FLOAT: number. STRING: text. BOOLEAN: `true` or `false`. |
 | channel    | string | No       | Target a specific connected file by channel id.                                    |
+
+### update_variable
+
+Update an existing variable's metadata. This does not change values; use `set_variable_value` for per-mode values.
+
+| Name                 | Type     | Required | Description                                                            |
+| -------------------- | -------- | -------- | ---------------------------------------------------------------------- |
+| variableId           | string   | Yes      | Variable ID to update                                                  |
+| name                 | string   | No       | New variable name; slash notation groups variables                     |
+| scopes               | string[] | No       | Publishing scopes such as `ALL_SCOPES`, `ALL_FILLS`, `GAP`, `FONT_SIZE` |
+| hiddenFromPublishing | boolean  | No       | Hide this variable when the file is published as a library             |
+| codeSyntax           | object   | No       | Per-platform code names: `{WEB?, ANDROID?, iOS?}`                      |
+| channel              | string   | No       | Target a specific connected file by channel id.                        |
+
+### update_variable_collection
+
+Update a variable collection: rename it, hide it from publishing, rename a mode, or remove a mode. A collection must keep at least one mode.
+
+| Name                 | Type    | Required | Description                                      |
+| -------------------- | ------- | -------- | ------------------------------------------------ |
+| collectionId         | string  | Yes      | Variable collection ID to update                 |
+| name                 | string  | No       | New collection name                              |
+| hiddenFromPublishing | boolean | No       | Hide this collection when published as a library |
+| renameMode           | object  | No       | Rename a mode: `{modeId, newName}`               |
+| removeMode           | string  | No       | Mode ID to remove; cannot remove the last mode   |
+| channel              | string  | No       | Target a specific connected file by channel id.  |
 
 ### bind_variable_to_node
 
@@ -977,7 +1128,7 @@ Delete a single variable (provide `variableId`) or an entire collection (provide
 | variableId   | string | No       | Variable ID to delete                                             |
 | collectionId | string | No       | Collection ID to delete (removes all variables in the collection) |
 
-### get_remote_variable_collection [NEW]
+### get_remote_variable_collection
 
 Look up a remote (subscribed-library) variable collection by ID to discover its modes — uses `getVariableCollectionByIdAsync`, which local-only lookups miss.
 
@@ -986,7 +1137,7 @@ Look up a remote (subscribed-library) variable collection by ID to discover its 
 | collectionId | string | Yes      | Variable collection ID to resolve               |
 | channel      | string | No       | Target a specific connected file by channel id. |
 
-### list_library_variable_collections [NEW]
+### list_library_variable_collections
 
 List all variable collections available from subscribed libraries, including their IDs and modes.
 
@@ -994,7 +1145,7 @@ List all variable collections available from subscribed libraries, including the
 | ------- | ------ | -------- | ----------------------------------------------- |
 | channel | string | No       | Target a specific connected file by channel id. |
 
-### import_variable_by_key [NEW]
+### import_variable_by_key
 
 Import a design variable from a subscribed library by its key, making it available to bind to node properties.
 
@@ -1003,7 +1154,7 @@ Import a design variable from a subscribed library by its key, making it availab
 | key     | string | Yes      | Library variable key from the catalog; bare node IDs are rejected |
 | channel | string | No       | Target a specific connected file by channel id. |
 
-### get_library_variables [NEW]
+### get_library_variables
 
 Get all variables in a subscribed library collection by its key. Returns name, resolvedType, and valuesByMode for every variable — use this to read design tokens (colors, spacing, typography) from a subscribed library without opening the library file in Figma.
 
@@ -1016,7 +1167,7 @@ Get all variables in a subscribed library collection by its key. Returns name, r
 
 ## Write — Prototype
 
-> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as full-profile top-level tools.
 
 ### set_reactions
 
@@ -1078,7 +1229,7 @@ Find and replace text content across all TEXT nodes in a subtree. Searches the e
 
 ## Write — Page
 
-> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as legacy top-level tools.
+> **Core profile:** every op in this section is a **`batch` op type**, not a top-level tool. Invoke inside `batch(ops:[{ "type": "<op>", … }])` (discover via `search_batch_ops` → `get_batch_op_spec` → `batch(validateOnly:true)`). Set `FIGMA_MCP_TOOL_PROFILE=full` to expose them as full-profile top-level tools.
 
 ### navigate_to_page
 
@@ -1125,9 +1276,9 @@ Delete a page from the Figma document. Cannot delete the only remaining page.
 
 ---
 
-## Library [NEW]
+## Library
 
-> **Core profile:** `fetch_library_catalog` and `list_library_variable_collections` are **core top-level tools**. The `import_*` ops below (`import_component_by_key`, `import_style_by_key`, `import_variable_by_key`, `import_image`) are **`batch` op types** in `core` — invoke via `batch(ops:[…])`, or set `FIGMA_MCP_TOOL_PROFILE=full` for the legacy top-level surface.
+> **Core profile:** `fetch_library_catalog` and `list_library_variable_collections` are **core top-level tools**. The `import_*` ops below (`import_component_by_key`, `import_style_by_key`, `import_variable_by_key`, `import_image`) are **`batch` op types** in `core` — invoke via `batch(ops:[…])`, or set `FIGMA_MCP_TOOL_PROFILE=full` for the full top-level surface.
 
 ### fetch_library_catalog
 
@@ -1143,7 +1294,7 @@ Requires `FIGMA_TOKEN` env (read-only PAT, auto-loaded from `.env`). Writes the 
 
 ---
 
-## Batch [NEW]
+## Batch
 
 ### search_batch_ops
 
@@ -1163,7 +1314,7 @@ Returns `{matches, count, total}` with compact op metadata.
 ### get_batch_op_spec
 
 Return the structured schema for one batch/FigmaPlan op. This is the
-authoritative contract for hidden/core-profile write ops and legacy batch-only
+authoritative contract for hidden/core-profile write ops and batch-only
 ops.
 
 | Name            | Type    | Required | Description                                               |

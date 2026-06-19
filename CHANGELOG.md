@@ -6,6 +6,67 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`update_variable` / `update_variable_collection` — variable & collection metadata management.**
+  `update_variable`: rename, set publishing `scopes` (validated against the 22-value VariableScope
+  enum), `hiddenFromPublishing`, and per-platform `codeSyntax` (`WEB`/`ANDROID`/`iOS`).
+  `update_variable_collection`: rename, `hiddenFromPublishing`, `renameMode`, `removeMode` (with a
+  clear error when removing the last remaining mode). Both are also `batch` ops.
+- **`set_constraints` promoted to a top-level tool.** Previously batch-only (LEVER 4 demotion);
+  now a first-class tool for pinning behaviour on non-auto-layout children. Still a `batch` op.
+- **`set_text_range` — per-span (character-range) text styling.** Apply mixed fonts/sizes,
+  per-span color, hyperlinks (`{url}` or `{nodeId}`), list options (`ORDERED`/`UNORDERED`/`NONE`),
+  indentation, decoration, and per-range spacing to a `[startOffset, endOffset)` slice of a TEXT node.
+  All fonts covering the range are loaded before mutation; offsets are validated. Also a `batch` op.
+- **Whole-node text properties on `set_text` / `create_text`:** `textStyleId` (link a named text
+  style), `textTruncation` + `maxLines` (modern truncation), `paragraphIndent`, `paragraphSpacing`,
+  `listSpacing`, `leadingTrim`, `hangingPunctuation`, `hangingList`.
+- **Five new node-creation tools** (also available as `batch` ops):
+  - `create_line` — straight LineNode for dividers/rules (defaults to a visible 1px stroke; `strokeWeight`, `strokeColor`, `strokeCap`, `rotation`, `length`).
+  - `create_polygon` — regular PolygonNode (`pointCount` ≥3, `fillColor`).
+  - `create_star` — StarNode (`pointCount`, `innerRadius` 0–1, `fillColor`).
+  - `import_svg` — vector nodes from raw SVG markup via `figma.createNodeFromSvg` (the simplest way to add custom icons without a library component).
+  - `create_table` — TableNode (`numRows`, `numColumns`, optional `cells` 2D text array).
+- **GRID auto-layout mode.** `set_auto_layout` (and `create_frame`) now accept `layoutMode: "GRID"`
+  with `gridRowCount`, `gridColumnCount`, `gridRowGap`, `gridColumnGap`, plus `gridRowGapVariableId` /
+  `gridColumnGapVariableId` for token-bound grid gaps. Previously the Go schema rejected `"GRID"`
+  outright even though the plugin API supports it.
+- **Responsive min/max constraints.** `minWidth`, `maxWidth`, `minHeight`, `maxHeight` are now settable
+  on `set_auto_layout` / `create_frame` (frame-level) and `resize_nodes` (auto-layout child level).
+  Pass `null` to clear a constraint.
+- **`import_image` now exposes the full ImagePaint surface:** `rotation` (FILL/FIT/TILE),
+  `scalingFactor` (TILE density), `imageTransform` (CROP crop/zoom matrix), and all 7 `ImageFilters`
+  (`exposure`, `contrast`, `saturation`, `temperature`, `tint`, `highlights`, `shadows`, each -1..1).
+  The filter object is built only from explicitly-provided fields so unintended zeros are never sent.
+- **More auto-layout properties on `set_auto_layout`:** `counterAxisAlignContent` (`AUTO` /
+  `SPACE_BETWEEN`, wrapped-track distribution), `overflowDirection` (`NONE` / `HORIZONTAL` /
+  `VERTICAL` / `BOTH`), `strokesIncludedInLayout`, `itemReverseZIndex`, and `counterAxisSpacingVariableId`
+  (token binding for the wrapped-track gap).
+
+### Notes
+
+- The newer surfaces here (GRID auto-layout, `create_table`, and the recent TextNode props
+  `leadingTrim` / `textTruncation` / `maxLines` / `hangingList` / `hangingPunctuation`) require a
+  reasonably current Figma (built against `@figma/plugin-typings` 1.124.0). On an older Figma desktop
+  these may no-op or throw at runtime; the schema layer can't detect the host version.
+- Node ID tool schemas remain colon-format-first (`4029:12345`), matching Figma plugin IDs; the
+  runtime normalizes common URL hyphen IDs before validation as a compatibility recovery path.
+- `create_polygon` / `create_star` validate the Figma shape bounds at the schema layer
+  (`pointCount >= 3`, `innerRadius` 0-1) and keep plugin-side clamping as a defensive guard for raw
+  plugin or older batch paths.
+
+### Fixed
+
+- **`set_blend_mode` rejecting `LINEAR_BURN` / `LINEAR_DODGE`.** Both are valid Figma blend modes (the
+  plugin handler already accepted them) but the Go schema allowlist omitted them, failing the call
+  before it reached the plugin. Added to `validBlendModes`.
+- **`create_table` cell text now loads each distinct target cell font before mutation.** New Figma
+  tables normally share one cell font, but loading per distinct cell font avoids the single-font
+  assumption if a table cell font differs before text insertion.
+- **Skill docs now route SVG ingestion through `import_svg`.** The old gotcha still described SVG
+  import as a missing MCP capability.
+
 ## [2.5.3] — 2026-06-19
 
 ### Fixed

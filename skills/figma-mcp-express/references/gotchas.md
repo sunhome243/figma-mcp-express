@@ -132,11 +132,11 @@ The orchestrator should pre-fetch assets and hand builders **local file paths**.
 | Asset type | Ingestion method | MCP path |
 |---|---|---|
 | PNG / JPEG | `batch import_image` with `imagePath` | Direct batch op |
-| SVG | `use_figma` + `figma.createNodeFromSvg` | Plugin runtime required ⏳ |
+| SVG | `batch import_svg` with raw SVG markup | Direct batch op |
 | Lottie .json | Import poster PNG + note the .json path | Animation not ingestible ⏳ |
 
-SVG: figma-mcp-express has NO `import_svg` or `create_vector_from_svg` batch op. Requires
-official Figma plugin runtime via `use_figma`. This is a genuine MCP capability gap.
+SVG: pre-fetch or generate the markup, then pass the raw `<svg>...</svg>` string to `import_svg`.
+Use `get_batch_op_spec(op:"import_svg")` for the current schema before large imports.
 
 Lottie: `.json` files cannot be imported as live animations through any MCP op or plugin script.
 Export the static poster frame as PNG. Keep the `.json` path for developer handoff.

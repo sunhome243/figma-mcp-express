@@ -57,6 +57,40 @@ func TestNormalizeNodeID(t *testing.T) {
 	}
 }
 
+func TestNormalizeRPCNodeReferences(t *testing.T) {
+	nodeIDs := []string{"4029-12345", "I2167-9091;186-1579", "$0.id"}
+	params := map[string]interface{}{
+		"nodeId":      "1-2",
+		"parentId":    "3-4",
+		"pageId":      "0-1",
+		"componentId": "5-6",
+		"key":         "abc-def",
+	}
+
+	normalizeRPCNodeReferences(nodeIDs, params)
+
+	if got, want := nodeIDs[0], "4029:12345"; got != want {
+		t.Fatalf("nodeIDs[0] = %q, want %q", got, want)
+	}
+	if got, want := nodeIDs[1], "I2167:9091;186:1579"; got != want {
+		t.Fatalf("nodeIDs[1] = %q, want %q", got, want)
+	}
+	if got, want := nodeIDs[2], "$0.id"; got != want {
+		t.Fatalf("nodeIDs[2] = %q, want %q", got, want)
+	}
+	for key, want := range map[string]string{
+		"nodeId":      "1:2",
+		"parentId":    "3:4",
+		"pageId":      "0:1",
+		"componentId": "5:6",
+		"key":         "abc-def",
+	} {
+		if got, _ := params[key].(string); got != want {
+			t.Fatalf("params[%q] = %q, want %q", key, got, want)
+		}
+	}
+}
+
 // ── ValidateRPC ───────────────────────────────────────────────────────────────
 
 func TestValidateRPC_GetNode(t *testing.T) {
@@ -302,6 +336,70 @@ func TestValidateRPC_CreateFrame(t *testing.T) {
 	}
 }
 
+func TestValidateRPC_SetAutoLayout_GridAndExtras(t *testing.T) {
+	const nid = "1:1"
+	// GRID layoutMode is now accepted.
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"layoutMode": "GRID", "gridRowCount": float64(2), "gridColumnCount": float64(3),
+	}); msg != "" {
+		t.Errorf("GRID layoutMode should be valid, got: %s", msg)
+	}
+	// counterAxisAlignContent enum
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"counterAxisAlignContent": "SPACE_BETWEEN",
+	}); msg != "" {
+		t.Errorf("counterAxisAlignContent SPACE_BETWEEN should be valid, got: %s", msg)
+	}
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"counterAxisAlignContent": "WHATEVER",
+	}); msg == "" {
+		t.Error("expected error for invalid counterAxisAlignContent")
+	}
+	// overflowDirection enum
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"overflowDirection": "BOTH",
+	}); msg != "" {
+		t.Errorf("overflowDirection BOTH should be valid, got: %s", msg)
+	}
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"overflowDirection": "DIAGONAL",
+	}); msg == "" {
+		t.Error("expected error for invalid overflowDirection")
+	}
+}
+
+func TestValidateRPC_ImportImage_Filters(t *testing.T) {
+	// valid filter values within -1..1
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "exposure": float64(0.5), "contrast": float64(-1),
+	}); msg != "" {
+		t.Errorf("valid filters should pass, got: %s", msg)
+	}
+	// out-of-range filter
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "saturation": float64(2),
+	}); msg == "" {
+		t.Error("expected error for saturation out of range")
+	}
+}
+
+func TestValidateRPC_SetBlendMode_LinearModes(t *testing.T) {
+	for _, bm := range []string{"LINEAR_BURN", "LINEAR_DODGE"} {
+		if msg := ValidateRPC("set_blend_mode", []string{"1:1"}, map[string]interface{}{"blendMode": bm}); msg != "" {
+			t.Errorf("%s should be a valid blend mode, got: %s", bm, msg)
+		}
+	}
+}
+
+func TestValidateRPC_ResizeNodes_MinMaxOnly(t *testing.T) {
+	// resize_nodes with ONLY min/max params (no width/height/sizing) should be valid.
+	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{
+		"minWidth": float64(50), "maxWidth": float64(300),
+	}); msg != "" {
+		t.Errorf("resize_nodes with min/max only should be valid, got: %s", msg)
+	}
+}
+
 func TestValidateRPC_SetText(t *testing.T) {
 	// missing nodeId
 	if msg := ValidateRPC("set_text", nil, map[string]interface{}{"text": "hello"}); msg == "" {
@@ -482,6 +580,27 @@ func TestValidateRPC_CreateRectangleEllipse(t *testing.T) {
 		if msg := ValidateRPC(tool, nil, map[string]interface{}{"width": float64(50), "parentId": "1:1"}); msg != "" {
 			t.Errorf("%s unexpected error: %s", tool, msg)
 		}
+	}
+}
+
+func TestValidateRPC_CreatePolygonStarContracts(t *testing.T) {
+	if msg := ValidateRPC("create_polygon", nil, map[string]interface{}{"pointCount": float64(2)}); msg == "" {
+		t.Error("expected error for polygon pointCount below the Figma minimum")
+	}
+	if msg := ValidateRPC("create_polygon", nil, map[string]interface{}{"pointCount": float64(3)}); msg != "" {
+		t.Errorf("unexpected error for polygon pointCount=3: %s", msg)
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"pointCount": float64(2)}); msg == "" {
+		t.Error("expected error for star pointCount below the Figma minimum")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"innerRadius": float64(-0.1)}); msg == "" {
+		t.Error("expected error for star innerRadius below 0")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"innerRadius": float64(1.1)}); msg == "" {
+		t.Error("expected error for star innerRadius above 1")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"pointCount": float64(3), "innerRadius": float64(1)}); msg != "" {
+		t.Errorf("unexpected error for valid star bounds: %s", msg)
 	}
 }
 

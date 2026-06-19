@@ -113,14 +113,24 @@ export const applyAutoLayout = async (frame: FrameNode, p: any): Promise<void> =
   if (p.paddingRight != null) { const v = n(p.paddingRight); if (v !== null) frame.paddingRight = v; }
   if (p.paddingBottom != null) { const v = n(p.paddingBottom); if (v !== null) frame.paddingBottom = v; }
   if (p.paddingLeft != null) { const v = n(p.paddingLeft); if (v !== null) frame.paddingLeft = v; }
-  if (p.itemSpacing != null) { const v = n(p.itemSpacing); if (v !== null) frame.itemSpacing = v; }
+  // itemSpacing is flex-only — GRID uses gridRowGap/gridColumnGap instead, and writing
+  // itemSpacing in GRID mode is out-of-mode. Gate it (padding IS valid in GRID).
+  if (p.itemSpacing != null && frame.layoutMode !== "GRID") { const v = n(p.itemSpacing); if (v !== null) frame.itemSpacing = v; }
   // Variable bindings (additive — only when *VariableId params are provided).
   if (p.paddingTopVariableId) await bindSpacingVariable(frame, "paddingTop", p.paddingTopVariableId);
   if (p.paddingRightVariableId) await bindSpacingVariable(frame, "paddingRight", p.paddingRightVariableId);
   if (p.paddingBottomVariableId) await bindSpacingVariable(frame, "paddingBottom", p.paddingBottomVariableId);
   if (p.paddingLeftVariableId) await bindSpacingVariable(frame, "paddingLeft", p.paddingLeftVariableId);
-  if (p.itemSpacingVariableId) await bindSpacingVariable(frame, "itemSpacing", p.itemSpacingVariableId);
-  if (frame.layoutMode !== "NONE") {
+  if (p.itemSpacingVariableId && frame.layoutMode !== "GRID") await bindSpacingVariable(frame, "itemSpacing", p.itemSpacingVariableId);
+  if (frame.layoutMode === "GRID") {
+    // CSS-grid auto-layout: row/column counts + per-axis gaps replace itemSpacing.
+    if (p.gridRowCount != null) { const v = n(p.gridRowCount); if (v !== null) frame.gridRowCount = v; }
+    if (p.gridColumnCount != null) { const v = n(p.gridColumnCount); if (v !== null) frame.gridColumnCount = v; }
+    if (p.gridRowGap != null) { const v = n(p.gridRowGap); if (v !== null) frame.gridRowGap = v; }
+    if (p.gridColumnGap != null) { const v = n(p.gridColumnGap); if (v !== null) frame.gridColumnGap = v; }
+    if (p.gridRowGapVariableId) await bindSpacingVariable(frame, "gridRowGap", p.gridRowGapVariableId);
+    if (p.gridColumnGapVariableId) await bindSpacingVariable(frame, "gridColumnGap", p.gridColumnGapVariableId);
+  } else if (frame.layoutMode !== "NONE") {
     if (p.primaryAxisAlignItems) frame.primaryAxisAlignItems = p.primaryAxisAlignItems;
     if (p.counterAxisAlignItems) frame.counterAxisAlignItems = p.counterAxisAlignItems;
     if (p.primaryAxisSizingMode) frame.primaryAxisSizingMode = p.primaryAxisSizingMode;
@@ -129,13 +139,34 @@ export const applyAutoLayout = async (frame: FrameNode, p: any): Promise<void> =
     if (p.counterAxisSpacing != null && frame.layoutWrap === "WRAP") {
       const v = n(p.counterAxisSpacing); if (v !== null) frame.counterAxisSpacing = v;
     }
+    if (p.counterAxisSpacingVariableId && frame.layoutWrap === "WRAP") {
+      await bindSpacingVariable(frame, "counterAxisSpacing", p.counterAxisSpacingVariableId);
+    }
+    if (p.counterAxisAlignContent && frame.layoutWrap === "WRAP") {
+      frame.counterAxisAlignContent = p.counterAxisAlignContent;
+    }
+    // Per the Plugin API, strokesIncludedInLayout / itemReverseZIndex only apply to
+    // HORIZONTAL/VERTICAL auto-layout (not GRID, not NONE) — scope them to this branch.
+    if (p.strokesIncludedInLayout != null) frame.strokesIncludedInLayout = !!p.strokesIncludedInLayout;
+    if (p.itemReverseZIndex != null) frame.itemReverseZIndex = !!p.itemReverseZIndex;
   }
+  // Frame-level min/max constraints — valid on any frame (null clears the constraint).
+  if (p.minWidth !== undefined) frame.minWidth = p.minWidth === null ? null : n(p.minWidth);
+  if (p.maxWidth !== undefined) frame.maxWidth = p.maxWidth === null ? null : n(p.maxWidth);
+  if (p.minHeight !== undefined) frame.minHeight = p.minHeight === null ? null : n(p.minHeight);
+  if (p.maxHeight !== undefined) frame.maxHeight = p.maxHeight === null ? null : n(p.maxHeight);
+  if (p.overflowDirection != null) frame.overflowDirection = p.overflowDirection;
 };
 
 // Text styling shared by set_text + create_text. Loads a NEW font only when
 // fontFamily/fontStyle change; the caller must already have the node's current
 // font loaded (set_text/create_text both do). All props are opt-in (null = skip).
 export const applyTextStyleProps = async (node: any, p: any) => {
+  // Link to a named text style FIRST (it sets a bundle of font/size/spacing), so any
+  // explicit props below act as overrides on top of the style.
+  if (p.textStyleId != null && typeof node.setTextStyleIdAsync === "function") {
+    await node.setTextStyleIdAsync(p.textStyleId);
+  }
   if (p.fontFamily != null || p.fontStyle != null) {
     const cur = typeof node.fontName === "symbol" ? { family: "Inter", style: "Regular" } : node.fontName;
     const family = p.fontFamily != null ? String(p.fontFamily) : cur.family;
@@ -152,6 +183,16 @@ export const applyTextStyleProps = async (node: any, p: any) => {
   if (p.lineHeightUnit === "AUTO") node.lineHeight = { unit: "AUTO" };
   else if (p.lineHeightValue != null) node.lineHeight = { value: Number(p.lineHeightValue), unit: p.lineHeightUnit || "PIXELS" };
   if (p.letterSpacingValue != null) node.letterSpacing = { value: Number(p.letterSpacingValue), unit: p.letterSpacingUnit || "PIXELS" };
+  // Paragraph / list rhythm and truncation (whole-node).
+  if (p.paragraphIndent != null) node.paragraphIndent = Number(p.paragraphIndent);
+  if (p.paragraphSpacing != null) node.paragraphSpacing = Number(p.paragraphSpacing);
+  if (p.listSpacing != null) node.listSpacing = Number(p.listSpacing);
+  if (p.hangingPunctuation != null) node.hangingPunctuation = !!p.hangingPunctuation;
+  if (p.hangingList != null) node.hangingList = !!p.hangingList;
+  if (p.leadingTrim != null) node.leadingTrim = p.leadingTrim;
+  if (p.textTruncation != null) node.textTruncation = p.textTruncation;
+  // maxLines only takes effect with textTruncation = "ENDING"; null restores unlimited.
+  if (p.maxLines !== undefined) node.maxLines = p.maxLines === null ? null : Number(p.maxLines);
 };
 
 // Sizing-WITHIN-parent props (FILL/HUG/FIXED etc). Require an auto-layout parent —

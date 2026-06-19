@@ -148,6 +148,70 @@ export const handleWriteVariableRequest = async (request: any) => {
       }
     }
 
+    case "update_variable": {
+      const p = request.params || {};
+      if (!p.variableId) throw new Error("variableId is required");
+      const variable = await figma.variables.getVariableByIdAsync(p.variableId);
+      if (!variable) throw new Error(`Variable not found: ${p.variableId}`);
+      if (p.name != null) variable.name = String(p.name);
+      if (Array.isArray(p.scopes)) variable.scopes = p.scopes as VariableScope[];
+      if (p.hiddenFromPublishing != null) variable.hiddenFromPublishing = !!p.hiddenFromPublishing;
+      if (p.codeSyntax != null && typeof p.codeSyntax === "object") {
+        for (const platform of ["WEB", "ANDROID", "iOS"] as const) {
+          if (p.codeSyntax[platform] != null) {
+            variable.setVariableCodeSyntax(platform, String(p.codeSyntax[platform]));
+          }
+        }
+      }
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: {
+          variableId: variable.id,
+          name: variable.name,
+          scopes: variable.scopes,
+          hiddenFromPublishing: variable.hiddenFromPublishing,
+          codeSyntax: variable.codeSyntax,
+        },
+      };
+    }
+
+    case "update_variable_collection": {
+      const p = request.params || {};
+      if (!p.collectionId) throw new Error("collectionId is required");
+      const collection = await figma.variables.getVariableCollectionByIdAsync(p.collectionId);
+      if (!collection) throw new Error(`Collection not found: ${p.collectionId}`);
+      if (p.name != null) collection.name = String(p.name);
+      if (p.hiddenFromPublishing != null) collection.hiddenFromPublishing = !!p.hiddenFromPublishing;
+      if (p.renameMode != null) {
+        if (!p.renameMode.modeId || p.renameMode.newName == null) {
+          throw new Error("renameMode requires { modeId, newName }");
+        }
+        collection.renameMode(p.renameMode.modeId, String(p.renameMode.newName));
+      }
+      if (p.removeMode != null) {
+        // Figma throws if you remove the last remaining mode — surface a clear message.
+        try {
+          collection.removeMode(String(p.removeMode));
+        } catch (err: unknown) {
+          const origMessage = err instanceof Error ? err.message : String(err);
+          throw new Error(`Cannot remove mode (a collection must keep at least one mode): ${origMessage}`);
+        }
+      }
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: {
+          collectionId: collection.id,
+          name: collection.name,
+          hiddenFromPublishing: collection.hiddenFromPublishing,
+          modes: collection.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
+        },
+      };
+    }
+
     default:
       return null;
   }
