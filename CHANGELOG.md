@@ -21,6 +21,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **Responsive min/max constraints.** `minWidth`, `maxWidth`, `minHeight`, `maxHeight` are now settable
   on `set_auto_layout` / `create_frame` (frame-level) and `resize_nodes` (auto-layout child level).
   Pass `null` to clear a constraint.
+- **`import_image` now exposes the full ImagePaint surface:** `rotation` (FILL/FIT/TILE),
+  `scalingFactor` (TILE density), `imageTransform` (CROP crop/zoom matrix), and all 7 `ImageFilters`
+  (`exposure`, `contrast`, `saturation`, `temperature`, `tint`, `highlights`, `shadows`, each -1..1).
+  The filter object is built only from explicitly-provided fields so unintended zeros are never sent.
 - **More auto-layout properties on `set_auto_layout`:** `counterAxisAlignContent` (`AUTO` /
   `SPACE_BETWEEN`, wrapped-track distribution), `overflowDirection` (`NONE` / `HORIZONTAL` /
   `VERTICAL` / `BOTH`), `strokesIncludedInLayout`, `itemReverseZIndex`, and `counterAxisSpacingVariableId`

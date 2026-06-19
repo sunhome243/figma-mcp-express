@@ -121,7 +121,21 @@ export const handleWriteCreateRequest = async (request: any) => {
       rect.x = p.x != null ? p.x : 0;
       rect.y = p.y != null ? p.y : 0;
       if (p.name) rect.name = p.name;
-      rect.fills = [{ type: "IMAGE", imageHash: image.hash, scaleMode: scaleMode as ImagePaint["scaleMode"] }];
+      const paint: any = { type: "IMAGE", imageHash: image.hash, scaleMode };
+      // Optional ImagePaint fields — scaleMode-gated by Figma (rotation: FILL/FIT/TILE,
+      // imageTransform: CROP, scalingFactor: TILE). We pass through; Figma enforces the rules.
+      if (p.rotation != null) paint.rotation = Number(p.rotation);
+      if (p.scalingFactor != null) paint.scalingFactor = Number(p.scalingFactor);
+      if (Array.isArray(p.imageTransform)) paint.imageTransform = p.imageTransform;
+      // ImageFilters — build only with explicitly-provided fields so we never send
+      // unintended zeros (every filter defaults to 0).
+      const FILTER_KEYS = ["exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"];
+      const filters: any = {};
+      for (const k of FILTER_KEYS) {
+        if (p[k] != null) filters[k] = Number(p[k]);
+      }
+      if (Object.keys(filters).length > 0) paint.filters = filters;
+      rect.fills = [paint as ImagePaint];
       (parent as any).appendChild(rect);
       figma.commitUndo();
       return {

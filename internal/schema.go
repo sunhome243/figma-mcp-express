@@ -600,6 +600,12 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 				return fmt.Sprintf("scaleMode must be FILL, FIT, CROP, or TILE, got: %s", sm)
 			}
 		}
+		// ImageFilters fields are each constrained to -1..1.
+		for _, k := range []string{"exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"} {
+			if v, ok := params[k].(float64); ok && (v < -1 || v > 1) {
+				return fmt.Sprintf("%s must be between -1 and 1, got: %v", k, v)
+			}
+		}
 		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
 		}

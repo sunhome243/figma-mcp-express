@@ -143,8 +143,8 @@ export const applyAutoLayout = async (frame: FrameNode, p: any): Promise<void> =
     if (p.counterAxisAlignContent && frame.layoutWrap === "WRAP") {
       frame.counterAxisAlignContent = p.counterAxisAlignContent;
     }
-  }
-  if (frame.layoutMode !== "NONE") {
+    // Per the Plugin API, strokesIncludedInLayout / itemReverseZIndex only apply to
+    // HORIZONTAL/VERTICAL auto-layout (not GRID, not NONE) — scope them to this branch.
     if (p.strokesIncludedInLayout != null) frame.strokesIncludedInLayout = !!p.strokesIncludedInLayout;
     if (p.itemReverseZIndex != null) frame.itemReverseZIndex = !!p.itemReverseZIndex;
   }

@@ -125,6 +125,19 @@ func registerWriteCreateTools(s *server.MCPServer, node *Node) {
 		mcp.WithNumber("height", mcp.Description("Height in pixels (default 200)")),
 		mcp.WithString("name", mcp.Description("Node name")),
 		mcp.WithString("scaleMode", mcp.Description("Image scale mode: FILL (default), FIT, CROP, or TILE")),
+		mcp.WithNumber("rotation", mcp.Description("Image rotation within the fill, in increments of +90 (FILL/FIT/TILE only; automatic for CROP)")),
+		mcp.WithNumber("scalingFactor", mcp.Description("Tile density / repeat scale (TILE scaleMode only)")),
+		mcp.WithArray("imageTransform",
+			mcp.Description("2×3 affine transform matrix [[a,b,tx],[c,d,ty]] controlling crop position/zoom (CROP scaleMode only)"),
+			mcp.Items(map[string]any{"type": "array", "items": map[string]any{"type": "number"}}),
+		),
+		mcp.WithNumber("exposure", mcp.Description("Image filter: exposure, -1 to 1 (default 0)")),
+		mcp.WithNumber("contrast", mcp.Description("Image filter: contrast, -1 to 1 (default 0)")),
+		mcp.WithNumber("saturation", mcp.Description("Image filter: saturation, -1 to 1 (default 0)")),
+		mcp.WithNumber("temperature", mcp.Description("Image filter: temperature, -1 to 1 (default 0)")),
+		mcp.WithNumber("tint", mcp.Description("Image filter: tint, -1 to 1 (default 0)")),
+		mcp.WithNumber("highlights", mcp.Description("Image filter: highlights, -1 to 1 (default 0)")),
+		mcp.WithNumber("shadows", mcp.Description("Image filter: shadows, -1 to 1 (default 0)")),
 		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -167,6 +180,15 @@ func registerWriteCreateTools(s *server.MCPServer, node *Node) {
 		}
 		if sm, ok := req.GetArguments()["scaleMode"].(string); ok && sm != "" {
 			params["scaleMode"] = sm
+		}
+		// Optional ImagePaint fields + ImageFilters — forward when present.
+		for _, k := range []string{"rotation", "scalingFactor", "exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"} {
+			if v, ok := req.GetArguments()[k].(float64); ok {
+				params[k] = v
+			}
+		}
+		if it, ok := req.GetArguments()["imageTransform"]; ok {
+			params["imageTransform"] = it
 		}
 		if pid, ok := req.GetArguments()["parentId"].(string); ok && pid != "" {
 			params["parentId"] = pid

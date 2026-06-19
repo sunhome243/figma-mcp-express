@@ -521,3 +521,44 @@ describe("create_table", () => {
     expect(cells["1,0"]).toBeUndefined();
   });
 });
+
+// ── import_image (ImagePaint fields + ImageFilters) ───────────────────────────
+
+describe("import_image filters & transform", () => {
+  let rect: any;
+  beforeEach(() => {
+    rect = { id: "rect:img", name: "Rectangle", type: "RECTANGLE", x: 0, y: 0, width: 200, height: 200,
+      fills: [] as any[], resize(w: number, h: number) { this.width = w; this.height = h; } };
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      currentPage: { id: "0:1", appendChild: () => {} },
+      createImage: (_bytes: Uint8Array) => ({ hash: "img-hash" }),
+      createRectangle: () => rect,
+    };
+  });
+
+  it("builds the filters object with only provided fields", async () => {
+    await handleWriteCreateRequest(makeRequest("import_image", [], {
+      imageData: "TWFu", exposure: 0.5, contrast: -0.2,
+    }));
+    const paint = rect.fills[0];
+    expect(paint.type).toBe("IMAGE");
+    expect(paint.filters).toEqual({ exposure: 0.5, contrast: -0.2 });
+  });
+
+  it("omits filters entirely when none provided", async () => {
+    await handleWriteCreateRequest(makeRequest("import_image", [], { imageData: "TWFu" }));
+    expect(rect.fills[0].filters).toBeUndefined();
+  });
+
+  it("passes through rotation, scalingFactor, imageTransform", async () => {
+    await handleWriteCreateRequest(makeRequest("import_image", [], {
+      imageData: "TWFu", scaleMode: "TILE", rotation: 90, scalingFactor: 2,
+      imageTransform: [[1, 0, 0], [0, 1, 0]],
+    }));
+    const paint = rect.fills[0];
+    expect(paint.rotation).toBe(90);
+    expect(paint.scalingFactor).toBe(2);
+    expect(paint.imageTransform).toEqual([[1, 0, 0], [0, 1, 0]]);
+  });
+});

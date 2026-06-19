@@ -334,6 +334,21 @@ func TestValidateRPC_SetAutoLayout_GridAndExtras(t *testing.T) {
 	}
 }
 
+func TestValidateRPC_ImportImage_Filters(t *testing.T) {
+	// valid filter values within -1..1
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "exposure": float64(0.5), "contrast": float64(-1),
+	}); msg != "" {
+		t.Errorf("valid filters should pass, got: %s", msg)
+	}
+	// out-of-range filter
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "saturation": float64(2),
+	}); msg == "" {
+		t.Error("expected error for saturation out of range")
+	}
+}
+
 func TestValidateRPC_SetBlendMode_LinearModes(t *testing.T) {
 	for _, bm := range []string{"LINEAR_BURN", "LINEAR_DODGE"} {
 		if msg := ValidateRPC("set_blend_mode", []string{"1:1"}, map[string]interface{}{"blendMode": bm}); msg != "" {
