@@ -64,6 +64,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **`create_table` cell text now loads each distinct target cell font before mutation.** New Figma
   tables normally share one cell font, but loading per distinct cell font avoids the single-font
   assumption if a table cell font differs before text insertion.
+- **Skill docs now route SVG ingestion through `import_svg`.** The old gotcha still described SVG
+  import as a missing MCP capability.
 
 ## [2.5.3] — 2026-06-19
 
