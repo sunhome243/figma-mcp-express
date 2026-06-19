@@ -33,6 +33,52 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 			return renderResponse(resp, err)
 		})
 
+	s.AddTool(mcp.NewTool("set_text_range",
+		mcp.WithDescription("Apply styling to a CHARACTER RANGE within a TEXT node (per-span formatting): mixed fonts/sizes, per-span color, hyperlinks, lists, indentation, decoration. Offsets are character indices with 0 <= startOffset < endOffset <= text length. Fonts covering the range are loaded automatically. Use set_text for whole-node changes."),
+		mcp.WithString("nodeId",
+			mcp.Required(),
+			mcp.Description("TEXT node ID in colon format e.g. '4029:12345'"),
+		),
+		mcp.WithNumber("startOffset",
+			mcp.Required(),
+			mcp.Description("Start character index (inclusive, 0-based)"),
+		),
+		mcp.WithNumber("endOffset",
+			mcp.Required(),
+			mcp.Description("End character index (exclusive). Must be > startOffset and <= text length."),
+		),
+		mcp.WithString("fontFamily", mcp.Description("Font family for the range (e.g. 'Inter'). Loaded automatically.")),
+		mcp.WithString("fontStyle", mcp.Description("Font style for the range (e.g. 'Bold', 'Italic'). Loaded automatically.")),
+		mcp.WithNumber("fontSize", mcp.Description("Font size in pixels for the range")),
+		mcp.WithString("color", mcp.Description("Text color for the range as hex e.g. #FF0000 (sets a solid fill on the span)")),
+		mcp.WithString("textCase", mcp.Description("Text case for the range: ORIGINAL, UPPER, LOWER, TITLE, SMALL_CAPS, or SMALL_CAPS_FORCED")),
+		mcp.WithString("textDecoration", mcp.Description("Decoration for the range: NONE, UNDERLINE, or STRIKETHROUGH")),
+		mcp.WithNumber("letterSpacingValue", mcp.Description("Letter spacing value for the range (unit via letterSpacingUnit)")),
+		mcp.WithString("letterSpacingUnit", mcp.Description("Letter spacing unit: PIXELS (default) or PERCENT")),
+		mcp.WithNumber("lineHeightValue", mcp.Description("Line height value for the range (unit via lineHeightUnit)")),
+		mcp.WithString("lineHeightUnit", mcp.Description("Line height unit: PIXELS (default), PERCENT, or AUTO")),
+		mcp.WithObject("hyperlink",
+			mcp.Description("Hyperlink for the range: {url:\"https://…\"} for a web link, or {nodeId:\"1:23\"} for an in-file link. Omit to leave unchanged; pass null to clear."),
+		),
+		mcp.WithObject("listOptions",
+			mcp.Description("List formatting for the range: {type:\"ORDERED\"|\"UNORDERED\"|\"NONE\"}"),
+		),
+		mcp.WithNumber("indentation", mcp.Description("Indentation level for the range (0-based)")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		nodeID, _ := args["nodeId"].(string)
+		nodeID = NormalizeNodeID(nodeID)
+		params := map[string]interface{}{}
+		for _, k := range setTextRangeKeys {
+			if v, ok := args[k]; ok {
+				params[k] = v
+			}
+		}
+		resp, err := node.Send(ctx, "set_text_range", []string{nodeID}, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
 	s.AddTool(mcp.NewTool("set_fills",
 		mcp.WithDescription("Set the fill color on a single node (this top-level tool takes one nodeId, not an array). Returns {results:[{nodeId,…}]}, a 1-element array. PREFER variableId over a raw hex — bind a design token, don't bake a raw color (the project invariant). Use mode='append' to stack a new fill on top of existing fills instead of replacing them. "+
 			"Also a `batch` op type — and in `batch` it accepts nodeIds[] (all→all bulk: the same fill applied to every node) and returns {results:[{nodeId,…}]}. Fan a scan into it in ONE round-trip with the projection ref nodeIds:[\"$0.matchingNodes[*].id\"]."),

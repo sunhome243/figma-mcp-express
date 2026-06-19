@@ -32,6 +32,61 @@ export const handleWriteModifyRequest = async (request: any) => {
       };
     }
 
+    case "set_text_range": {
+      const p = request.params || {};
+      const nodeId = request.nodeIds && request.nodeIds[0];
+      if (!nodeId) throw new Error("nodeId is required");
+      const node = await figma.getNodeByIdAsync(nodeId) as any;
+      if (!node) throw new Error(`Node not found: ${nodeId}`);
+      if (node.type !== "TEXT") throw new Error(`Node ${nodeId} is not a TEXT node`);
+      const len = node.characters.length;
+      const start = Number(p.startOffset);
+      const end = Number(p.endOffset);
+      if (!Number.isInteger(start) || !Number.isInteger(end)) {
+        throw new Error("startOffset and endOffset must be integers");
+      }
+      if (start < 0 || end > len || start >= end) {
+        throw new Error(`Invalid range [${start}, ${end}) for text of length ${len} (need 0 <= start < end <= length)`);
+      }
+      // Load EVERY font already present in the range before any mutation — a range can
+      // span multiple fonts, and setRange* throws if any covering font is unloaded.
+      const rangeFonts: FontName[] = node.getRangeAllFontNames(start, end);
+      for (const f of rangeFonts) await figma.loadFontAsync(f);
+      // Font change: resolve target family/style (fall back to the range's first font),
+      // load the NEW font, then apply.
+      if (p.fontFamily != null || p.fontStyle != null) {
+        const base = rangeFonts[0] || { family: "Inter", style: "Regular" };
+        const family = p.fontFamily != null ? String(p.fontFamily) : base.family;
+        const style = p.fontStyle != null ? String(p.fontStyle) : base.style;
+        await figma.loadFontAsync({ family, style });
+        node.setRangeFontName(start, end, { family, style });
+      }
+      if (p.fontSize != null) node.setRangeFontSize(start, end, Number(p.fontSize));
+      if (p.color != null) node.setRangeFills(start, end, [makeSolidPaint(p.color)]);
+      if (p.textCase != null) node.setRangeTextCase(start, end, p.textCase);
+      if (p.textDecoration != null) node.setRangeTextDecoration(start, end, p.textDecoration);
+      if (p.letterSpacingValue != null) {
+        node.setRangeLetterSpacing(start, end, { value: Number(p.letterSpacingValue), unit: p.letterSpacingUnit || "PIXELS" });
+      }
+      if (p.lineHeightUnit === "AUTO") node.setRangeLineHeight(start, end, { unit: "AUTO" });
+      else if (p.lineHeightValue != null) {
+        node.setRangeLineHeight(start, end, { value: Number(p.lineHeightValue), unit: p.lineHeightUnit || "PIXELS" });
+      }
+      if (p.hyperlink !== undefined) {
+        if (p.hyperlink === null) node.setRangeHyperlink(start, end, null);
+        else if (p.hyperlink.url) node.setRangeHyperlink(start, end, { type: "URL", value: String(p.hyperlink.url) });
+        else if (p.hyperlink.nodeId) node.setRangeHyperlink(start, end, { type: "NODE", value: String(p.hyperlink.nodeId) });
+      }
+      if (p.listOptions != null) node.setRangeListOptions(start, end, { type: p.listOptions.type || "NONE" });
+      if (p.indentation != null) node.setRangeIndentation(start, end, Number(p.indentation));
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { id: node.id, name: node.name, startOffset: start, endOffset: end },
+      };
+    }
+
     case "set_fills": {
       const p = request.params || {};
       // Advanced paints: a direct paints[] (gradient / image / mixed solids) is applied to the

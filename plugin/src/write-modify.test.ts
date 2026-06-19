@@ -978,6 +978,140 @@ describe("set_text styling", () => {
     await expect(handleWriteModifyRequest(makeRequest("set_text", ["1:1"], { textAlignHorizontal: "LEFT" })))
       .rejects.toThrow("is not a TEXT node");
   });
+
+  it("sets whole-node paragraph/truncation/leadingTrim props", async () => {
+    const t: any = makeText();
+    mockNodes["1:1"] = t;
+    await handleWriteModifyRequest(makeRequest("set_text", ["1:1"], {
+      paragraphIndent: 12, paragraphSpacing: 8, listSpacing: 4,
+      textTruncation: "ENDING", maxLines: 2, leadingTrim: "CAP_HEIGHT",
+      hangingPunctuation: true, hangingList: true,
+    }));
+    expect(t.paragraphIndent).toBe(12);
+    expect(t.paragraphSpacing).toBe(8);
+    expect(t.listSpacing).toBe(4);
+    expect(t.textTruncation).toBe("ENDING");
+    expect(t.maxLines).toBe(2);
+    expect(t.leadingTrim).toBe("CAP_HEIGHT");
+    expect(t.hangingPunctuation).toBe(true);
+    expect(t.hangingList).toBe(true);
+  });
+
+  it("clears maxLines when null is passed", async () => {
+    const t: any = makeText();
+    t.maxLines = 3;
+    mockNodes["1:1"] = t;
+    await handleWriteModifyRequest(makeRequest("set_text", ["1:1"], { maxLines: null }));
+    expect(t.maxLines).toBeNull();
+  });
+
+  it("links a named text style via setTextStyleIdAsync", async () => {
+    let linkedId: string | null = null;
+    const t: any = { ...makeText(), setTextStyleIdAsync: async (id: string) => { linkedId = id; } };
+    mockNodes["1:1"] = t;
+    await handleWriteModifyRequest(makeRequest("set_text", ["1:1"], { textStyleId: "S:123" }));
+    expect(linkedId).toBe("S:123");
+  });
+});
+
+// ── set_text_range (per-span styling) ─────────────────────────────────────────
+
+describe("set_text_range", () => {
+  let loadedFonts: any[];
+  const makeRangeText = (id = "1:1") => {
+    const calls: Record<string, any> = {};
+    return {
+      node: {
+        id, name: "Para", type: "TEXT", characters: "Hello world",
+        fontName: { family: "Inter", style: "Regular" },
+        getRangeAllFontNames: (_s: number, _e: number) => [{ family: "Inter", style: "Regular" }],
+        setRangeFontName: (s: number, e: number, v: any) => { calls.fontName = { s, e, v }; },
+        setRangeFontSize: (s: number, e: number, v: any) => { calls.fontSize = { s, e, v }; },
+        setRangeFills: (s: number, e: number, v: any) => { calls.fills = { s, e, v }; },
+        setRangeTextCase: (s: number, e: number, v: any) => { calls.textCase = { s, e, v }; },
+        setRangeTextDecoration: (s: number, e: number, v: any) => { calls.textDecoration = { s, e, v }; },
+        setRangeLetterSpacing: (s: number, e: number, v: any) => { calls.letterSpacing = { s, e, v }; },
+        setRangeLineHeight: (s: number, e: number, v: any) => { calls.lineHeight = { s, e, v }; },
+        setRangeHyperlink: (s: number, e: number, v: any) => { calls.hyperlink = { s, e, v }; },
+        setRangeListOptions: (s: number, e: number, v: any) => { calls.listOptions = { s, e, v }; },
+        setRangeIndentation: (s: number, e: number, v: any) => { calls.indentation = { s, e, v }; },
+      },
+      calls,
+    };
+  };
+
+  beforeEach(() => {
+    loadedFonts = [];
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      loadFontAsync: async (f: any) => { loadedFonts.push(f); },
+    };
+  });
+
+  it("applies font, size and color to a range and loads covering fonts first", async () => {
+    const { node, calls } = makeRangeText();
+    mockNodes["1:1"] = node;
+    await handleWriteModifyRequest(makeRequest("set_text_range", ["1:1"], {
+      startOffset: 0, endOffset: 5, fontFamily: "Geist", fontStyle: "Bold", fontSize: 18, color: "#FF0000",
+    }));
+    expect(loadedFonts).toContainEqual({ family: "Inter", style: "Regular" }); // covering font
+    expect(loadedFonts).toContainEqual({ family: "Geist", style: "Bold" });    // new font
+    expect(calls.fontName).toEqual({ s: 0, e: 5, v: { family: "Geist", style: "Bold" } });
+    expect(calls.fontSize.v).toBe(18);
+    expect(calls.fills.v[0].type).toBe("SOLID");
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("sets a URL hyperlink on the range", async () => {
+    const { node, calls } = makeRangeText();
+    mockNodes["1:1"] = node;
+    await handleWriteModifyRequest(makeRequest("set_text_range", ["1:1"], {
+      startOffset: 6, endOffset: 11, hyperlink: { url: "https://x.com" },
+    }));
+    expect(calls.hyperlink.v).toEqual({ type: "URL", value: "https://x.com" });
+  });
+
+  it("clears a hyperlink when null", async () => {
+    const { node, calls } = makeRangeText();
+    mockNodes["1:1"] = node;
+    await handleWriteModifyRequest(makeRequest("set_text_range", ["1:1"], {
+      startOffset: 0, endOffset: 5, hyperlink: null,
+    }));
+    expect(calls.hyperlink).toEqual({ s: 0, e: 5, v: null });
+  });
+
+  it("applies list options and indentation", async () => {
+    const { node, calls } = makeRangeText();
+    mockNodes["1:1"] = node;
+    await handleWriteModifyRequest(makeRequest("set_text_range", ["1:1"], {
+      startOffset: 0, endOffset: 11, listOptions: { type: "ORDERED" }, indentation: 2,
+    }));
+    expect(calls.listOptions.v).toEqual({ type: "ORDERED" });
+    expect(calls.indentation.v).toBe(2);
+  });
+
+  it("rejects an invalid range", async () => {
+    const { node } = makeRangeText();
+    mockNodes["1:1"] = node;
+    await expect(handleWriteModifyRequest(makeRequest("set_text_range", ["1:1"], {
+      startOffset: 5, endOffset: 5,
+    }))).rejects.toThrow("Invalid range");
+  });
+
+  it("rejects a range past the end of the text", async () => {
+    const { node } = makeRangeText();
+    mockNodes["1:1"] = node;
+    await expect(handleWriteModifyRequest(makeRequest("set_text_range", ["1:1"], {
+      startOffset: 0, endOffset: 99,
+    }))).rejects.toThrow("Invalid range");
+  });
+
+  it("rejects a non-TEXT node", async () => {
+    mockNodes["1:1"] = { id: "1:1", name: "Frame", type: "FRAME" };
+    await expect(handleWriteModifyRequest(makeRequest("set_text_range", ["1:1"], {
+      startOffset: 0, endOffset: 1,
+    }))).rejects.toThrow("is not a TEXT node");
+  });
 });
 
 // ── resize_nodes layout sizing (1B) ─────────────────────────────────────────────

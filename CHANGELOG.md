@@ -8,6 +8,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`set_text_range` — per-span (character-range) text styling.** Apply mixed fonts/sizes,
+  per-span color, hyperlinks (`{url}` or `{nodeId}`), list options (`ORDERED`/`UNORDERED`/`NONE`),
+  indentation, decoration, and per-range spacing to a `[startOffset, endOffset)` slice of a TEXT node.
+  All fonts covering the range are loaded before mutation; offsets are validated. Also a `batch` op.
+- **Whole-node text properties on `set_text` / `create_text`:** `textStyleId` (link a named text
+  style), `textTruncation` + `maxLines` (modern truncation), `paragraphIndent`, `paragraphSpacing`,
+  `listSpacing`, `leadingTrim`, `hangingPunctuation`, `hangingList`.
 - **Five new node-creation tools** (also available as `batch` ops):
   - `create_line` — straight LineNode for dividers/rules (defaults to a visible 1px stroke; `strokeWeight`, `strokeColor`, `strokeCap`, `rotation`, `length`).
   - `create_polygon` — regular PolygonNode (`pointCount` ≥3, `fillColor`).

@@ -461,6 +461,48 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return "set_text requires `text` or at least one styling param (e.g. textAlignHorizontal, textAutoResize)"
 		}
 
+	case "set_text_range":
+		if len(nodeIDs) == 0 || nodeIDs[0] == "" {
+			return "nodeId is required"
+		}
+		if !ValidNodeID(nodeIDs[0]) {
+			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeIDs[0])
+		}
+		start, hasStart := params["startOffset"].(float64)
+		if !hasStart {
+			return "startOffset is required"
+		}
+		end, hasEnd := params["endOffset"].(float64)
+		if !hasEnd {
+			return "endOffset is required"
+		}
+		if start < 0 || end <= start {
+			return fmt.Sprintf("invalid range: need 0 <= startOffset < endOffset, got [%v, %v)", start, end)
+		}
+		if v, ok := params["textCase"].(string); ok && v != "" {
+			switch v {
+			case "ORIGINAL", "UPPER", "LOWER", "TITLE", "SMALL_CAPS", "SMALL_CAPS_FORCED":
+			default:
+				return fmt.Sprintf("textCase must be ORIGINAL, UPPER, LOWER, TITLE, SMALL_CAPS, or SMALL_CAPS_FORCED, got: %s", v)
+			}
+		}
+		if v, ok := params["textDecoration"].(string); ok && v != "" {
+			switch v {
+			case "NONE", "UNDERLINE", "STRIKETHROUGH":
+			default:
+				return fmt.Sprintf("textDecoration must be NONE, UNDERLINE, or STRIKETHROUGH, got: %s", v)
+			}
+		}
+		if lo, ok := params["listOptions"].(map[string]interface{}); ok {
+			if t, ok := lo["type"].(string); ok && t != "" {
+				switch t {
+				case "ORDERED", "UNORDERED", "NONE":
+				default:
+					return fmt.Sprintf("listOptions.type must be ORDERED, UNORDERED, or NONE, got: %s", t)
+				}
+			}
+		}
+
 	case "set_fills":
 		if len(nodeIDs) == 0 || nodeIDs[0] == "" {
 			return "nodeId is required"
@@ -1314,6 +1356,20 @@ func validateTextStyleParams(params map[string]interface{}) string {
 		case "PIXELS", "PERCENT":
 		default:
 			return fmt.Sprintf("letterSpacingUnit must be PIXELS or PERCENT, got: %s", v)
+		}
+	}
+	if v, ok := params["textTruncation"].(string); ok && v != "" {
+		switch v {
+		case "DISABLED", "ENDING":
+		default:
+			return fmt.Sprintf("textTruncation must be DISABLED or ENDING, got: %s", v)
+		}
+	}
+	if v, ok := params["leadingTrim"].(string); ok && v != "" {
+		switch v {
+		case "CAP_HEIGHT", "NONE":
+		default:
+			return fmt.Sprintf("leadingTrim must be CAP_HEIGHT or NONE, got: %s", v)
 		}
 	}
 	return ""

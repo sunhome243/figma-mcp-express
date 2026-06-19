@@ -256,6 +256,20 @@ var textStyleKeys = []string{
 	"letterSpacingValue", "letterSpacingUnit",
 	"lineHeightValue", "lineHeightUnit",
 	"textCase", "textDecoration",
+	"textStyleId", "textTruncation", "maxLines",
+	"paragraphIndent", "paragraphSpacing", "listSpacing",
+	"leadingTrim", "hangingPunctuation", "hangingList",
+}
+
+// setTextRangeKeys are the params set_text_range forwards to the plugin (per-span
+// character-range styling). startOffset/endOffset are required; the rest are opt-in.
+var setTextRangeKeys = []string{
+	"startOffset", "endOffset",
+	"fontFamily", "fontStyle", "fontSize", "color",
+	"textCase", "textDecoration",
+	"letterSpacingValue", "letterSpacingUnit",
+	"lineHeightValue", "lineHeightUnit",
+	"hyperlink", "listOptions", "indentation",
 }
 
 // createTextKeys is the full allowlist of params create_text accepts. Anything
@@ -375,6 +389,15 @@ func textStyleParams() []mcp.ToolOption {
 		mcp.WithString("lineHeightUnit", mcp.Description("Line height unit: PIXELS (default), PERCENT, or AUTO (no value needed)")),
 		mcp.WithString("textCase", mcp.Description("Text case: ORIGINAL, UPPER, LOWER, TITLE, SMALL_CAPS, or SMALL_CAPS_FORCED")),
 		mcp.WithString("textDecoration", mcp.Description("Text decoration: NONE, UNDERLINE, or STRIKETHROUGH")),
+		mcp.WithString("textStyleId", mcp.Description("Link the node to a named text style by ID (from get_styles). Sets a bundle of typography props; explicit params here override it.")),
+		mcp.WithString("textTruncation", mcp.Description("Truncation: DISABLED or ENDING (ellipsis). Pair with maxLines.")),
+		mcp.WithNumber("maxLines", mcp.Description("Max lines before truncation (only with textTruncation=ENDING). Pass null to restore unlimited.")),
+		mcp.WithNumber("paragraphIndent", mcp.Description("First-line indent for paragraphs, in pixels")),
+		mcp.WithNumber("paragraphSpacing", mcp.Description("Vertical space between paragraphs, in pixels")),
+		mcp.WithNumber("listSpacing", mcp.Description("Vertical space between list items, in pixels")),
+		mcp.WithString("leadingTrim", mcp.Description("Trim vertical whitespace above/below glyphs: CAP_HEIGHT or NONE")),
+		mcp.WithBoolean("hangingPunctuation", mcp.Description("Whether punctuation hangs outside the text box")),
+		mcp.WithBoolean("hangingList", mcp.Description("Whether list markers hang outside the text box")),
 	}
 }
 

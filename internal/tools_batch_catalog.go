@@ -117,6 +117,7 @@ var pluginSupportedBatchOps = []string{
 	"set_reactions",
 	"set_strokes",
 	"set_text",
+	"set_text_range",
 	"set_variable_mode",
 	"set_variable_value",
 	"set_visible",

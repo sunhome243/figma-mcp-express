@@ -160,6 +160,11 @@ export const applyAutoLayout = async (frame: FrameNode, p: any): Promise<void> =
 // fontFamily/fontStyle change; the caller must already have the node's current
 // font loaded (set_text/create_text both do). All props are opt-in (null = skip).
 export const applyTextStyleProps = async (node: any, p: any) => {
+  // Link to a named text style FIRST (it sets a bundle of font/size/spacing), so any
+  // explicit props below act as overrides on top of the style.
+  if (p.textStyleId != null && typeof node.setTextStyleIdAsync === "function") {
+    await node.setTextStyleIdAsync(p.textStyleId);
+  }
   if (p.fontFamily != null || p.fontStyle != null) {
     const cur = typeof node.fontName === "symbol" ? { family: "Inter", style: "Regular" } : node.fontName;
     const family = p.fontFamily != null ? String(p.fontFamily) : cur.family;
@@ -176,6 +181,16 @@ export const applyTextStyleProps = async (node: any, p: any) => {
   if (p.lineHeightUnit === "AUTO") node.lineHeight = { unit: "AUTO" };
   else if (p.lineHeightValue != null) node.lineHeight = { value: Number(p.lineHeightValue), unit: p.lineHeightUnit || "PIXELS" };
   if (p.letterSpacingValue != null) node.letterSpacing = { value: Number(p.letterSpacingValue), unit: p.letterSpacingUnit || "PIXELS" };
+  // Paragraph / list rhythm and truncation (whole-node).
+  if (p.paragraphIndent != null) node.paragraphIndent = Number(p.paragraphIndent);
+  if (p.paragraphSpacing != null) node.paragraphSpacing = Number(p.paragraphSpacing);
+  if (p.listSpacing != null) node.listSpacing = Number(p.listSpacing);
+  if (p.hangingPunctuation != null) node.hangingPunctuation = !!p.hangingPunctuation;
+  if (p.hangingList != null) node.hangingList = !!p.hangingList;
+  if (p.leadingTrim != null) node.leadingTrim = p.leadingTrim;
+  if (p.textTruncation != null) node.textTruncation = p.textTruncation;
+  // maxLines only takes effect with textTruncation = "ENDING"; null restores unlimited.
+  if (p.maxLines !== undefined) node.maxLines = p.maxLines === null ? null : Number(p.maxLines);
 };
 
 // Sizing-WITHIN-parent props (FILL/HUG/FIXED etc). Require an auto-layout parent —
