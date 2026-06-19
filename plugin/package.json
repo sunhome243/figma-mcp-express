@@ -7,6 +7,7 @@
     "build": "vite build && vite build -c vite.config.main.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
     "lint": "eslint . --max-warnings 0"
   },
   "devDependencies": {
