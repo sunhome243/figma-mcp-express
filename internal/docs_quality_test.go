@@ -205,6 +205,25 @@ func TestDocsTrackAPIGapCoverageSurface(t *testing.T) {
 	}
 }
 
+func TestToolsDocTracksNativeEffectsSurface(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "TOOLS.md"))
+	for _, required := range []string{
+		"### set_effects",
+		"### create_effect_style",
+		"GLASS",
+		"NOISE",
+		"TEXTURE",
+		"PROGRESSIVE",
+		"noiseSizeVector",
+		"startOffset",
+		"endOffset",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("TOOLS.md must document native/progressive effect surface; missing %q", required)
+		}
+	}
+}
+
 func TestNpmReadmeHasSingleLimitationsSection(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "npm", "README.md"))
 	count := strings.Count(body, "\n## Limitations\n") + strings.Count(body, "\n## Known limitations\n")

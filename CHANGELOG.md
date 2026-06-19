@@ -8,6 +8,20 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Native `GLASS` / `NOISE` / `TEXTURE` effects** in `set_effects` and `create_effect_style`
+  (top-level tools + `batch` ops). Previously only `DROP_SHADOW`/`INNER_SHADOW`/`LAYER_BLUR`/
+  `BACKGROUND_BLUR` were accepted, forcing callers to fake frosted glass with a background-blur +
+  translucent-fill recipe. Now a caller can request Figma's real 2025 **Glass** effect
+  (`{type:"GLASS", lightIntensity, lightAngle, refraction, depth, dispersion, radius}` — all
+  defaulted), plus `TEXTURE` (`noiseSize, radius, clipToShape`) and `NOISE`
+  (`noiseType MONOTONE|DUOTONE|MULTITONE, color, secondaryColor, opacity, noiseSize, density`).
+  `TEXTURE` and `NOISE` also preserve optional anisotropic `noiseSizeVector:{x,y}` when provided.
+  The plugin builds the effect via `buildAdvancedEffect` and assigns it to `node.effects` /
+  `style.effects`; the Go schema validator accepts the three new type literals.
+- **PROGRESSIVE (gradual) blur** for `LAYER_BLUR` / `BACKGROUND_BLUR`. Pass `blurType:"PROGRESSIVE"`
+  (with optional `startRadius`, `radius` end, and normalized `startOffset`/`endOffset` vectors,
+  defaulting to a top→bottom ramp `{0.5,0}`→`{0.5,1}`) to get an iOS-style gradual blur instead of a
+  uniform one. Omitting `blurType` still builds a uniform `NORMAL` blur (unchanged default).
 - **`update_variable` / `update_variable_collection` — variable & collection metadata management.**
   `update_variable`: rename, set publishing `scopes` (validated against the 22-value VariableScope
   enum), `hiddenFromPublishing`, and per-platform `codeSyntax` (`WEB`/`ANDROID`/`iOS`).

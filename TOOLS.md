@@ -745,13 +745,13 @@ Set the stroke color and weight on a single node. Use `mode='append'` to stack. 
 
 ### set_effects
 
-Apply one or more effects (drop shadow, inner shadow, layer blur, background blur) directly to a node. Replaces all existing effects. Pass an empty array to clear all effects.
+Apply one or more effects directly to a node. Supports shadows, normal/progressive blurs, and native `GLASS`, `NOISE`, and `TEXTURE` effects. Replaces all existing effects. Pass an empty array to clear all effects.
 
-| Name    | Type     | Required | Description                                                                                                                                                 |
-| ------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| nodeId  | string   | Yes      | Target node ID                                                                                                                                              |
-| effects | object[] | Yes      | Array of effect objects. Each has: `type`, `radius`, `color` (hex, shadows only), `opacity` (0–1), `offsetX`, `offsetY`, `spread`, `visible` (default true) |
-| channel | string   | No       | Target a specific connected file by channel id.                                                                                                             |
+| Name    | Type     | Required | Description                                                                                                                                                                                                 |
+| ------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| nodeId  | string   | Yes      | Target node ID                                                                                                                                                                                              |
+| effects | object[] | Yes      | Array of effect objects. `type`: `DROP_SHADOW`, `INNER_SHADOW`, `LAYER_BLUR`, `BACKGROUND_BLUR`, `GLASS`, `NOISE`, or `TEXTURE`. Shadows use `color`, `opacity`, `offsetX`, `offsetY`, `spread`, and `radius`. Blurs use `radius`, optional `blurType:"PROGRESSIVE"`, `startRadius`, `startOffset`, and `endOffset`. Native effects use their Figma fields; `NOISE`/`TEXTURE` support `noiseSizeVector:{x,y}`. |
+| channel | string   | No       | Target a specific connected file by channel id.                                                                                                                                                             |
 
 ### set_blend_mode [BATCH OP]
 
@@ -953,19 +953,34 @@ Create a new local text style (typography preset). Returns the new style's ID.
 
 ### create_effect_style
 
-Create a new local effect style (drop shadow, inner shadow, or blur). Pass `effects[]` for full control over multiple effects including `blendMode` and `showShadowBehindNode` — takes precedence over the individual shorthand params when provided.
+Create a new local effect style. Supports shadows, normal/progressive blurs, and native `GLASS`, `NOISE`, and `TEXTURE` effects. Pass `effects[]` for full control over multiple effects; it takes precedence over the single-effect shorthand params.
 
 | Name                | Type     | Required | Description                                                                                                                                                  |
 | ------------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | name                | string   | Yes      | Style name e.g. `Shadow/Card`                                                                                                                                |
-| type                | string   | No       | `DROP_SHADOW` (default), `INNER_SHADOW`, `LAYER_BLUR`, or `BACKGROUND_BLUR`                                                                                 |
+| type                | string   | No       | `DROP_SHADOW` (default), `INNER_SHADOW`, `LAYER_BLUR`, `BACKGROUND_BLUR`, `GLASS`, `NOISE`, or `TEXTURE`                                                     |
 | color               | string   | No       | Shadow color as hex (default `#000000`, shadows only)                                                                                                        |
 | opacity             | number   | No       | Shadow color opacity 0–1 (default 0.25, shadows only)                                                                                                        |
-| radius              | number   | No       | Blur radius in pixels                                                                                                                                        |
+| radius              | number   | No       | Shadow, blur, or native effect radius in pixels                                                                                                              |
 | offsetX             | number   | No       | Shadow X offset (shadows only)                                                                                                                               |
 | offsetY             | number   | No       | Shadow Y offset (default 4, shadows only)                                                                                                                    |
 | spread              | number   | No       | Shadow spread (default 0, shadows only)                                                                                                                      |
-| effects             | object[] | No       | Full effect array (Figma Effect objects). Takes precedence over shorthand params. Each object supports `type`, `radius`, `color`, `opacity`, `offsetX`, `offsetY`, `spread`, `visible`, `blendMode`, `showShadowBehindNode`. |
+| blurType            | string   | No       | For `LAYER_BLUR`/`BACKGROUND_BLUR`: `NORMAL` or `PROGRESSIVE`                                                                                                |
+| startRadius         | number   | No       | Start radius for `PROGRESSIVE` blur                                                                                                                          |
+| startOffset         | object   | No       | Normalized `{x,y}` start point for `PROGRESSIVE` blur                                                                                                        |
+| endOffset           | object   | No       | Normalized `{x,y}` end point for `PROGRESSIVE` blur                                                                                                          |
+| lightIntensity      | number   | No       | `GLASS` light intensity, 0-1                                                                                                                                  |
+| lightAngle          | number   | No       | `GLASS` light angle in degrees                                                                                                                               |
+| refraction          | number   | No       | `GLASS` refraction, 0-1                                                                                                                                       |
+| depth               | number   | No       | `GLASS` depth                                                                                                                                                |
+| dispersion          | number   | No       | `GLASS` dispersion, 0-1                                                                                                                                       |
+| noiseType           | string   | No       | `NOISE` type: `MONOTONE`, `DUOTONE`, or `MULTITONE`                                                                                                          |
+| secondaryColor      | string   | No       | Secondary color for `NOISE` duotone effects                                                                                                                  |
+| noiseSize           | number   | No       | `NOISE`/`TEXTURE` noise size                                                                                                                                  |
+| noiseSizeVector     | object   | No       | Optional anisotropic `{x,y}` noise size for `NOISE`/`TEXTURE`                                                                                                |
+| density             | number   | No       | `NOISE` density, 0-1                                                                                                                                          |
+| clipToShape         | boolean  | No       | `TEXTURE` clip-to-shape flag                                                                                                                                  |
+| effects             | object[] | No       | Full effect array. Each object supports the shadow, blur, `GLASS`, `NOISE`, and `TEXTURE` fields above.                                                       |
 | description         | string   | No       | Optional style description                                                                                                                                   |
 | channel             | string   | No       | Target a specific connected file by channel id.                                                                                                              |
 

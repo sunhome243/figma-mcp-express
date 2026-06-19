@@ -710,9 +710,9 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		}
 		if t, ok := params["type"].(string); ok && t != "" {
 			switch t {
-			case "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR":
+			case "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR", "GLASS", "NOISE", "TEXTURE":
 			default:
-				return fmt.Sprintf("type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, or BACKGROUND_BLUR, got: %s", t)
+				return fmt.Sprintf("type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", t)
 			}
 		}
 
@@ -1249,9 +1249,9 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			}
 			t, _ := em["type"].(string)
 			switch t {
-			case "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR":
+			case "DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR", "GLASS", "NOISE", "TEXTURE":
 			default:
-				return fmt.Sprintf("effects[%d].type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, or BACKGROUND_BLUR, got: %s", i, t)
+				return fmt.Sprintf("effects[%d].type must be DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR, GLASS, NOISE, or TEXTURE, got: %s", i, t)
 			}
 		}
 

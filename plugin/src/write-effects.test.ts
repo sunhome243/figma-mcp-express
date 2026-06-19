@@ -73,6 +73,70 @@ describe("set_effects", () => {
     expect(mockNodes["1:1"].effects[0].type).toBe("BACKGROUND_BLUR");
   });
 
+  it("sets a native GLASS effect with defaults + overrides", async () => {
+    mockNodes["1:1"] = { id: "1:1", effects: [] };
+    await handleWriteStyleRequest(makeRequest("set_effects", ["1:1"], {
+      effects: [{ type: "GLASS", refraction: 0.4, radius: 14 }],
+    }));
+    const fx = mockNodes["1:1"].effects[0];
+    expect(fx.type).toBe("GLASS");
+    expect(fx.refraction).toBe(0.4);     // override
+    expect(fx.radius).toBe(14);          // override (frost)
+    expect(fx.lightIntensity).toBe(0.5); // default
+    expect(fx.depth).toBe(10);           // default
+    expect(fx.visible).toBe(true);
+  });
+
+  it("sets native TEXTURE and NOISE effects", async () => {
+    mockNodes["1:1"] = { id: "1:1", effects: [] };
+    await handleWriteStyleRequest(makeRequest("set_effects", ["1:1"], {
+      effects: [
+        { type: "TEXTURE", noiseSize: 2, clipToShape: false },
+        { type: "NOISE", noiseType: "DUOTONE", color: "#000000", secondaryColor: "#FFFFFF" },
+      ],
+    }));
+    expect(mockNodes["1:1"].effects[0].type).toBe("TEXTURE");
+    expect(mockNodes["1:1"].effects[0].clipToShape).toBe(false);
+    expect(mockNodes["1:1"].effects[1].type).toBe("NOISE");
+    expect(mockNodes["1:1"].effects[1].noiseType).toBe("DUOTONE");
+    expect(mockNodes["1:1"].effects[1].secondaryColor).toBeDefined();
+  });
+
+  it("preserves native noiseSizeVector for TEXTURE and NOISE effects", async () => {
+    mockNodes["1:1"] = { id: "1:1", effects: [] };
+    await handleWriteStyleRequest(makeRequest("set_effects", ["1:1"], {
+      effects: [
+        { type: "TEXTURE", noiseSize: 2, noiseSizeVector: { x: 2, y: 5 } },
+        { type: "NOISE", noiseSize: 3, noiseSizeVector: { x: 3, y: 7 } },
+      ],
+    }));
+    expect(mockNodes["1:1"].effects[0].noiseSizeVector).toEqual({ x: 2, y: 5 });
+    expect(mockNodes["1:1"].effects[1].noiseSizeVector).toEqual({ x: 3, y: 7 });
+  });
+
+  it("sets a PROGRESSIVE (gradual) background blur with defaults + overrides", async () => {
+    mockNodes["1:1"] = { id: "1:1", effects: [] };
+    await handleWriteStyleRequest(makeRequest("set_effects", ["1:1"], {
+      effects: [{ type: "BACKGROUND_BLUR", blurType: "PROGRESSIVE", radius: 20 }],
+    }));
+    const fx = mockNodes["1:1"].effects[0];
+    expect(fx.type).toBe("BACKGROUND_BLUR");
+    expect(fx.blurType).toBe("PROGRESSIVE");
+    expect(fx.radius).toBe(20);            // end radius (override)
+    expect(fx.startRadius).toBe(0);        // default
+    expect(fx.startOffset).toEqual({ x: 0.5, y: 0 }); // default top→bottom
+    expect(fx.endOffset).toEqual({ x: 0.5, y: 1 });
+  });
+
+  it("still builds a uniform NORMAL blur when blurType is omitted", async () => {
+    mockNodes["1:1"] = { id: "1:1", effects: [] };
+    await handleWriteStyleRequest(makeRequest("set_effects", ["1:1"], {
+      effects: [{ type: "LAYER_BLUR", radius: 6 }],
+    }));
+    expect(mockNodes["1:1"].effects[0].blurType).toBe("NORMAL");
+    expect(mockNodes["1:1"].effects[0].radius).toBe(6);
+  });
+
   it("sets multiple effects at once", async () => {
     mockNodes["1:1"] = { id: "1:1", effects: [] };
     await handleWriteStyleRequest(makeRequest("set_effects", ["1:1"], {
