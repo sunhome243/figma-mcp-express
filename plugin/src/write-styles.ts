@@ -18,6 +18,7 @@ const buildGlassEffect = (e: any): Effect => ({
 const buildTextureEffect = (e: any): Effect => ({
   type: "TEXTURE",
   noiseSize: Number(e.noiseSize ?? 1),
+  ...(e.noiseSizeVector != null ? { noiseSizeVector: e.noiseSizeVector } : {}),
   radius: Number(e.radius ?? 4),
   clipToShape: e.clipToShape ?? true,
   visible: e.visible ?? true,
@@ -35,6 +36,9 @@ const buildNoiseEffect = (e: any): Effect => {
     density: Number(e.density ?? 0.5),
     visible: e.visible ?? true,
   };
+  if (e.noiseSizeVector != null) {
+    base.noiseSizeVector = e.noiseSizeVector;
+  }
   if (noiseType === "DUOTONE") {
     const s = hexToRgb(e.secondaryColor || "#FFFFFF");
     base.secondaryColor = { r: s.r, g: s.g, b: s.b, a: s.a };

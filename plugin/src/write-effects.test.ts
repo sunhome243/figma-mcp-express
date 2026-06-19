@@ -102,6 +102,18 @@ describe("set_effects", () => {
     expect(mockNodes["1:1"].effects[1].secondaryColor).toBeDefined();
   });
 
+  it("preserves native noiseSizeVector for TEXTURE and NOISE effects", async () => {
+    mockNodes["1:1"] = { id: "1:1", effects: [] };
+    await handleWriteStyleRequest(makeRequest("set_effects", ["1:1"], {
+      effects: [
+        { type: "TEXTURE", noiseSize: 2, noiseSizeVector: { x: 2, y: 5 } },
+        { type: "NOISE", noiseSize: 3, noiseSizeVector: { x: 3, y: 7 } },
+      ],
+    }));
+    expect(mockNodes["1:1"].effects[0].noiseSizeVector).toEqual({ x: 2, y: 5 });
+    expect(mockNodes["1:1"].effects[1].noiseSizeVector).toEqual({ x: 3, y: 7 });
+  });
+
   it("sets a PROGRESSIVE (gradual) background blur with defaults + overrides", async () => {
     mockNodes["1:1"] = { id: "1:1", effects: [] };
     await handleWriteStyleRequest(makeRequest("set_effects", ["1:1"], {

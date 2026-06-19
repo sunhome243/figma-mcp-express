@@ -378,8 +378,8 @@ overrides. This is the mechanics; whether/where to apply an effect is a design c
 | `DROP_SHADOW` / `INNER_SHADOW` | `color`(#000000) · `opacity`(0.25) · `offsetX`(0) · `offsetY`(4) · `radius`(8/4) · `spread`(0) · `showShadowBehindNode`(DROP only) |
 | `LAYER_BLUR` / `BACKGROUND_BLUR` | `radius`(4) |
 | `GLASS` | `lightIntensity` 0–1 (0.5) · `lightAngle` deg (130) · `refraction` 0–1 (0.3) · `depth` ≥1 (10) · `dispersion` 0–1 (0.1) · `radius` frost (12) |
-| `TEXTURE` | `noiseSize`(1) · `radius`(4) · `clipToShape`(true) |
-| `NOISE` | `noiseType` `MONOTONE`\|`DUOTONE`\|`MULTITONE` · `color` · `secondaryColor`(duotone) · `opacity`(multitone) · `noiseSize`(1) · `density`(0.5) |
+| `TEXTURE` | `noiseSize`(1) · `noiseSizeVector`({x,y}, optional) · `radius`(4) · `clipToShape`(true) |
+| `NOISE` | `noiseType` `MONOTONE`\|`DUOTONE`\|`MULTITONE` · `color` · `secondaryColor`(duotone) · `opacity`(multitone) · `noiseSize`(1) · `noiseSizeVector`({x,y}, optional) · `density`(0.5) |
 
 ```jsonc
 { "type": "set_effects", "nodeIds": ["<id>"], "params": { "effects": [
