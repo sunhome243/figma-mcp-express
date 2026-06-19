@@ -8,6 +8,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Five new node-creation tools** (also available as `batch` ops):
+  - `create_line` — straight LineNode for dividers/rules (defaults to a visible 1px stroke; `strokeWeight`, `strokeColor`, `strokeCap`, `rotation`, `length`).
+  - `create_polygon` — regular PolygonNode (`pointCount` ≥3, `fillColor`).
+  - `create_star` — StarNode (`pointCount`, `innerRadius` 0–1, `fillColor`).
+  - `import_svg` — vector nodes from raw SVG markup via `figma.createNodeFromSvg` (the simplest way to add custom icons without a library component).
+  - `create_table` — TableNode (`numRows`, `numColumns`, optional `cells` 2D text array).
 - **GRID auto-layout mode.** `set_auto_layout` (and `create_frame`) now accept `layoutMode: "GRID"`
   with `gridRowCount`, `gridColumnCount`, `gridRowGap`, `gridColumnGap`, plus `gridRowGapVariableId` /
   `gridColumnGapVariableId` for token-bound grid gaps. Previously the Go schema rejected `"GRID"`

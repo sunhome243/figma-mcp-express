@@ -368,6 +368,61 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
 		}
 
+	case "create_polygon", "create_star":
+		if w, ok := params["width"].(float64); ok && w <= 0 {
+			return "width must be positive"
+		}
+		if h, ok := params["height"].(float64); ok && h <= 0 {
+			return "height must be positive"
+		}
+		if pc, ok := params["pointCount"].(float64); ok && pc < 3 {
+			return "pointCount must be at least 3"
+		}
+		if tool == "create_star" {
+			if ir, ok := params["innerRadius"].(float64); ok && (ir < 0 || ir > 1) {
+				return "innerRadius must be between 0 and 1"
+			}
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "create_line":
+		if l, ok := params["length"].(float64); ok && l <= 0 {
+			return "length must be positive"
+		}
+		if sc, ok := params["strokeCap"].(string); ok && sc != "" {
+			switch sc {
+			case "NONE", "ROUND", "SQUARE", "ARROW_LINES", "ARROW_EQUILATERAL", "DIAMOND_FILLED", "TRIANGLE_FILLED", "CIRCLE_FILLED":
+			default:
+				return fmt.Sprintf("strokeCap %q is not a valid Figma stroke cap", sc)
+			}
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "import_svg":
+		if svg, _ := params["svg"].(string); svg == "" {
+			return "svg (raw SVG markup string) is required"
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
+	case "create_table":
+		nr, hasNR := params["numRows"].(float64)
+		if !hasNR || nr < 1 {
+			return "numRows is required and must be at least 1"
+		}
+		nc, hasNC := params["numColumns"].(float64)
+		if !hasNC || nc < 1 {
+			return "numColumns is required and must be at least 1"
+		}
+		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
+			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
+		}
+
 	case "create_text":
 		if text, _ := params["text"].(string); text == "" {
 			return "text is required"

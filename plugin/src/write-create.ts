@@ -184,6 +184,128 @@ export const handleWriteCreateRequest = async (request: any) => {
       };
     }
 
+    case "create_line": {
+      const p = request.params || {};
+      const parent = await getParentNode(p.parentId);
+      const line = figma.createLine();
+      const length = p.length != null ? Number(p.length) : 100;
+      // A LineNode is always 0-height; length is set via the width dimension.
+      line.resize(length, 0);
+      line.x = p.x != null ? p.x : 0;
+      line.y = p.y != null ? p.y : 0;
+      if (p.name) line.name = p.name;
+      // Lines render nothing without a stroke — default to a visible 1px black stroke.
+      line.strokes = [makeSolidPaint(p.strokeColor || "#000000")];
+      line.strokeWeight = p.strokeWeight != null ? Number(p.strokeWeight) : 1;
+      if (p.strokeCap != null) line.strokeCap = p.strokeCap;
+      if (p.rotation != null) line.rotation = Number(p.rotation);
+      (parent as any).appendChild(line);
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { id: line.id, name: line.name, type: line.type, bounds: getBounds(line) },
+      };
+    }
+
+    case "create_polygon": {
+      const p = request.params || {};
+      const parent = await getParentNode(p.parentId);
+      const polygon = figma.createPolygon();
+      polygon.resize(p.width || 100, p.height || 100);
+      polygon.x = p.x != null ? p.x : 0;
+      polygon.y = p.y != null ? p.y : 0;
+      if (p.name) polygon.name = p.name;
+      // pointCount must be >= 3 (triangle). Figma clamps lower values but we guard for clarity.
+      if (p.pointCount != null) polygon.pointCount = Math.max(3, Math.round(Number(p.pointCount)));
+      if (p.fillColor) polygon.fills = [makeSolidPaint(p.fillColor)];
+      (parent as any).appendChild(polygon);
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { id: polygon.id, name: polygon.name, type: polygon.type, bounds: getBounds(polygon) },
+      };
+    }
+
+    case "create_star": {
+      const p = request.params || {};
+      const parent = await getParentNode(p.parentId);
+      const star = figma.createStar();
+      star.resize(p.width || 100, p.height || 100);
+      star.x = p.x != null ? p.x : 0;
+      star.y = p.y != null ? p.y : 0;
+      if (p.name) star.name = p.name;
+      if (p.pointCount != null) star.pointCount = Math.max(3, Math.round(Number(p.pointCount)));
+      // innerRadius is a 0–1 ratio of the outer radius; clamp to the valid range.
+      if (p.innerRadius != null) star.innerRadius = Math.min(1, Math.max(0, Number(p.innerRadius)));
+      if (p.fillColor) star.fills = [makeSolidPaint(p.fillColor)];
+      (parent as any).appendChild(star);
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { id: star.id, name: star.name, type: star.type, bounds: getBounds(star) },
+      };
+    }
+
+    case "import_svg": {
+      const p = request.params || {};
+      if (!p.svg || typeof p.svg !== "string") throw new Error("svg (raw SVG markup string) is required");
+      const parent = await getParentNode(p.parentId);
+      let frame: FrameNode;
+      try {
+        frame = figma.createNodeFromSvg(p.svg);
+      } catch (e: any) {
+        throw new Error(`Invalid SVG markup: ${e?.message ?? e}`);
+      }
+      frame.x = p.x != null ? p.x : 0;
+      frame.y = p.y != null ? p.y : 0;
+      if (p.name) frame.name = p.name;
+      (parent as any).appendChild(frame);
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { id: frame.id, name: frame.name, type: frame.type, bounds: getBounds(frame) },
+      };
+    }
+
+    case "create_table": {
+      const p = request.params || {};
+      const numRows = p.numRows != null ? Math.max(1, Math.round(Number(p.numRows))) : 2;
+      const numColumns = p.numColumns != null ? Math.max(1, Math.round(Number(p.numColumns))) : 2;
+      const parent = await getParentNode(p.parentId);
+      let table: TableNode;
+      try {
+        table = figma.createTable(numRows, numColumns);
+      } catch (e: any) {
+        throw new Error(`createTable failed (tables may be unavailable in this editor): ${e?.message ?? e}`);
+      }
+      table.x = p.x != null ? p.x : 0;
+      table.y = p.y != null ? p.y : 0;
+      if (p.name) table.name = p.name;
+      // Optional cell text: a 2D array [rowIndex][colIndex] of strings. The cell's text
+      // sublayer font must be loaded before assigning characters.
+      if (Array.isArray(p.cells)) {
+        await figma.loadFontAsync(table.cellAt(0, 0).text.fontName as FontName);
+        for (let r = 0; r < p.cells.length && r < numRows; r++) {
+          const row = p.cells[r];
+          if (!Array.isArray(row)) continue;
+          for (let c = 0; c < row.length && c < numColumns; c++) {
+            if (row[c] != null) table.cellAt(r, c).text.characters = String(row[c]);
+          }
+        }
+      }
+      (parent as any).appendChild(table);
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { id: table.id, name: table.name, type: table.type, numRows: table.numRows, numColumns: table.numColumns, bounds: getBounds(table) },
+      };
+    }
+
     default:
       return null;
   }

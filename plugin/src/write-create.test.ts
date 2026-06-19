@@ -356,3 +356,168 @@ describe("import_image scaleMode validation", () => {
     expect(res?.data.id).toBe("rect:img");
   });
 });
+
+// ── create_line ───────────────────────────────────────────────────────────────
+
+describe("create_line", () => {
+  let line: any;
+  beforeEach(() => {
+    line = { id: "line:1", name: "Line", type: "LINE", x: 0, y: 0, width: 0, height: 0,
+      strokes: [] as any[], strokeWeight: 1, strokeCap: "NONE", rotation: 0,
+      resize(w: number, h: number) { this.width = w; this.height = h; } };
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      currentPage: { id: "0:1", appendChild: () => {} },
+      createLine: () => line,
+    };
+  });
+
+  it("creates a line with default visible stroke", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_line", [], { length: 200 }));
+    expect(res?.data.type).toBe("LINE");
+    expect(line.width).toBe(200);
+    expect(line.strokes).toHaveLength(1);
+    expect(line.strokes[0].type).toBe("SOLID");
+    expect(line.strokeWeight).toBe(1);
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("applies strokeWeight, strokeCap, color, rotation", async () => {
+    await handleWriteCreateRequest(makeRequest("create_line", [], {
+      length: 100, strokeWeight: 4, strokeCap: "ROUND", strokeColor: "#FF0000", rotation: 90,
+    }));
+    expect(line.strokeWeight).toBe(4);
+    expect(line.strokeCap).toBe("ROUND");
+    expect(line.rotation).toBe(90);
+  });
+});
+
+// ── create_polygon / create_star ──────────────────────────────────────────────
+
+describe("create_polygon", () => {
+  let poly: any;
+  beforeEach(() => {
+    poly = { id: "poly:1", name: "Polygon", type: "POLYGON", x: 0, y: 0, width: 100, height: 100,
+      pointCount: 3, fills: [] as any[], resize(w: number, h: number) { this.width = w; this.height = h; } };
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      currentPage: { id: "0:1", appendChild: () => {} },
+      createPolygon: () => poly,
+    };
+  });
+
+  it("creates a polygon with pointCount and fill", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_polygon", [], { pointCount: 6, fillColor: "#3B82F6", width: 80, height: 80 }));
+    expect(res?.data.type).toBe("POLYGON");
+    expect(poly.pointCount).toBe(6);
+    expect(poly.width).toBe(80);
+    expect(poly.fills).toHaveLength(1);
+  });
+
+  it("clamps pointCount below 3 up to 3", async () => {
+    await handleWriteCreateRequest(makeRequest("create_polygon", [], { pointCount: 2 }));
+    expect(poly.pointCount).toBe(3);
+  });
+});
+
+describe("create_star", () => {
+  let star: any;
+  beforeEach(() => {
+    star = { id: "star:1", name: "Star", type: "STAR", x: 0, y: 0, width: 100, height: 100,
+      pointCount: 5, innerRadius: 0.5, fills: [] as any[], resize(w: number, h: number) { this.width = w; this.height = h; } };
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      currentPage: { id: "0:1", appendChild: () => {} },
+      createStar: () => star,
+    };
+  });
+
+  it("creates a star with pointCount and innerRadius", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_star", [], { pointCount: 6, innerRadius: 0.3 }));
+    expect(res?.data.type).toBe("STAR");
+    expect(star.pointCount).toBe(6);
+    expect(star.innerRadius).toBe(0.3);
+  });
+
+  it("clamps innerRadius into 0–1", async () => {
+    await handleWriteCreateRequest(makeRequest("create_star", [], { innerRadius: 2 }));
+    expect(star.innerRadius).toBe(1);
+  });
+});
+
+// ── import_svg ────────────────────────────────────────────────────────────────
+
+describe("import_svg", () => {
+  let frame: any;
+  beforeEach(() => {
+    frame = { id: "svg:1", name: "svg-frame", type: "FRAME", x: 0, y: 0, width: 24, height: 24 };
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      currentPage: { id: "0:1", appendChild: () => {} },
+      createNodeFromSvg: (_svg: string) => frame,
+    };
+  });
+
+  it("creates a frame from SVG markup", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("import_svg", [], { svg: "<svg></svg>", name: "icon", x: 10, y: 20 }));
+    expect(res?.data.type).toBe("FRAME");
+    expect(frame.name).toBe("icon");
+    expect(frame.x).toBe(10);
+    expect(frame.y).toBe(20);
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("throws when svg missing", async () => {
+    await expect(handleWriteCreateRequest(makeRequest("import_svg", [], {}))).rejects.toThrow("svg");
+  });
+});
+
+// ── create_table ──────────────────────────────────────────────────────────────
+
+describe("create_table", () => {
+  let table: any;
+  let cells: Record<string, any>;
+  beforeEach(() => {
+    cells = {};
+    table = { id: "table:1", name: "Table", type: "TABLE", x: 0, y: 0, width: 200, height: 100,
+      numRows: 2, numColumns: 2,
+      cellAt(r: number, c: number) {
+        const key = `${r},${c}`;
+        if (!cells[key]) cells[key] = { text: { fontName: { family: "Inter", style: "Regular" }, characters: "" } };
+        return cells[key];
+      } };
+    (globalThis as any).figma = {
+      ...(globalThis as any).figma,
+      currentPage: { id: "0:1", appendChild: () => {} },
+      createTable: (_r: number, _c: number) => { table.numRows = _r; table.numColumns = _c; return table; },
+      loadFontAsync: async () => {},
+    };
+  });
+
+  it("creates a table with given dimensions", async () => {
+    const res = await handleWriteCreateRequest(makeRequest("create_table", [], { numRows: 3, numColumns: 4 }));
+    expect(res?.data.type).toBe("TABLE");
+    expect(res?.data.numRows).toBe(3);
+    expect(res?.data.numColumns).toBe(4);
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("fills cells from a 2D array", async () => {
+    await handleWriteCreateRequest(makeRequest("create_table", [], {
+      numRows: 2, numColumns: 2, cells: [["A", "B"], ["1", "2"]],
+    }));
+    expect(cells["0,0"].text.characters).toBe("A");
+    expect(cells["0,1"].text.characters).toBe("B");
+    expect(cells["1,0"].text.characters).toBe("1");
+    expect(cells["1,1"].text.characters).toBe("2");
+  });
+
+  it("ignores out-of-range cell entries", async () => {
+    await handleWriteCreateRequest(makeRequest("create_table", [], {
+      numRows: 1, numColumns: 1, cells: [["A", "B"], ["C"]],
+    }));
+    expect(cells["0,0"].text.characters).toBe("A");
+    expect(cells["0,1"]).toBeUndefined();
+    expect(cells["1,0"]).toBeUndefined();
+  });
+});

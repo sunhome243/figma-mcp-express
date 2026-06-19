@@ -226,4 +226,99 @@ func registerWriteCreateTools(s *server.MCPServer, node *Node) {
 		resp, err := node.Send(ctx, "create_section", nil, withChannel(req, params))
 		return renderResponse(resp, err)
 	})
+
+	s.AddTool(mcp.NewTool("create_line",
+		mcp.WithDescription("Create a straight line (LineNode) on the current page or inside a parent. Lines render via their stroke — a visible 1px black stroke is applied by default. Useful for dividers and rules."),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithNumber("length", mcp.Description("Line length in pixels (default 100)")),
+		mcp.WithString("name", mcp.Description("Line name")),
+		mcp.WithNumber("strokeWeight", mcp.Description("Stroke thickness in pixels (default 1)")),
+		mcp.WithString("strokeColor", mcp.Description("Stroke color as hex e.g. #000000 (default black)")),
+		mcp.WithString("strokeCap", mcp.Description("Line end cap: NONE (default), ROUND, SQUARE, ARROW_LINES, ARROW_EQUILATERAL, DIAMOND_FILLED, TRIANGLE_FILLED, or CIRCLE_FILLED")),
+		mcp.WithNumber("rotation", mcp.Description("Rotation in degrees (default 0 = horizontal). 90 = vertical.")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "create_line", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("create_polygon",
+		mcp.WithDescription("Create a regular polygon (PolygonNode) with a configurable number of sides on the current page or inside a parent."),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithNumber("width", mcp.Description("Width in pixels (default 100)")),
+		mcp.WithNumber("height", mcp.Description("Height in pixels (default 100)")),
+		mcp.WithNumber("pointCount", mcp.Description("Number of sides/points, minimum 3 (default 3 = triangle)")),
+		mcp.WithString("name", mcp.Description("Polygon name")),
+		mcp.WithString("fillColor", mcp.Description("Fill color as hex e.g. #3B82F6")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "create_polygon", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("create_star",
+		mcp.WithDescription("Create a star (StarNode) with a configurable number of points and inner-radius ratio on the current page or inside a parent."),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithNumber("width", mcp.Description("Width in pixels (default 100)")),
+		mcp.WithNumber("height", mcp.Description("Height in pixels (default 100)")),
+		mcp.WithNumber("pointCount", mcp.Description("Number of star points, minimum 3 (default 5)")),
+		mcp.WithNumber("innerRadius", mcp.Description("Inner-radius ratio 0–1 (depth of the points; default 0.5). Smaller = spikier.")),
+		mcp.WithString("name", mcp.Description("Star name")),
+		mcp.WithString("fillColor", mcp.Description("Fill color as hex e.g. #FBBF24")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "create_star", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("import_svg",
+		mcp.WithDescription("Create Figma vector nodes from raw SVG markup (figma.createNodeFromSvg). Returns a FrameNode wrapping the imported vectors. The simplest way to add custom icons/illustrations that have no library component."),
+		mcp.WithString("svg",
+			mcp.Required(),
+			mcp.Description("Raw SVG markup string e.g. '<svg ...>...</svg>'"),
+		),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithString("name", mcp.Description("Name for the wrapping frame")),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "import_svg", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("create_table",
+		mcp.WithDescription("Create a Table node (figma.createTable) with the given rows and columns. Optionally fill cells with text. Returns the table ID plus numRows/numColumns. Tables may be unavailable in some editor types."),
+		mcp.WithNumber("numRows",
+			mcp.Required(),
+			mcp.Description("Number of rows, minimum 1"),
+		),
+		mcp.WithNumber("numColumns",
+			mcp.Required(),
+			mcp.Description("Number of columns, minimum 1"),
+		),
+		mcp.WithNumber("x", mcp.Description("X position (default 0)")),
+		mcp.WithNumber("y", mcp.Description("Y position (default 0)")),
+		mcp.WithString("name", mcp.Description("Table name")),
+		mcp.WithArray("cells",
+			mcp.Description("Optional 2D array of cell text, indexed [row][column] e.g. [[\"A\",\"B\"],[\"1\",\"2\"]]. Out-of-range entries are ignored."),
+			mcp.Items(map[string]any{"type": "array", "items": map[string]any{"type": "string"}}),
+		),
+		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "create_table", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
 }
