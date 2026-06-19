@@ -276,6 +276,16 @@ func TestToolsDocTracksNativeEffectsSurface(t *testing.T) {
 	}
 }
 
+func TestSkillDocsDoNotReferenceRemovedWorkflowSections(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "multi-agent.md"))
+	if strings.Contains(body, "SKILL.md § Workflow") {
+		t.Fatal("multi-agent.md must not point readers at removed SKILL.md Workflow sections")
+	}
+	if !strings.Contains(body, "Reference Router") {
+		t.Fatal("multi-agent.md should point readers at the current SKILL.md Reference Router")
+	}
+}
+
 func TestNpmReadmeHasSingleLimitationsSection(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "npm", "README.md"))
 	count := strings.Count(body, "\n## Limitations\n") + strings.Count(body, "\n## Known limitations\n")

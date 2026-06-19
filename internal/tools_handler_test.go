@@ -293,7 +293,7 @@ func TestHandlers_WriteCreateTools(t *testing.T) {
 	// import_image minimal
 	callTool(t, s, "import_image", map[string]any{"imageData": "abc123"})
 	callTool(t, s, "import_image", map[string]any{"imageUrl": "https://example.com/image.png"})
-	callTool(t, s, "create_video", map[string]any{"videoData": "abc123", "scaleMode": "FIT"})
+	callTool(t, s, "create_video", map[string]any{"videoData": "abc123", "scaleMode": "FIT", "exposure": float64(0.25)})
 	callTool(t, s, "create_gif", map[string]any{"imageHash": "hash-1", "width": float64(120), "height": float64(80)})
 	callTool(t, s, "create_link_preview", map[string]any{"url": "https://example.com", "name": "Docs"})
 	callTool(t, s, "create_vector", map[string]any{"vectorPaths": []any{map[string]any{"data": "M 0 0 L 10 10", "windingRule": "NONZERO"}}})

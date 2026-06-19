@@ -620,6 +620,7 @@ Create a rectangle with a VIDEO fill from `videoPath` or base64 `videoData` usin
 | rotation    | number | No       | Video fill rotation for `FILL`/`FIT`/`TILE`                     |
 | scalingFactor | number | No     | Tile density / repeat scale for `TILE`                          |
 | videoTransform | array | No     | 2x3 video crop transform matrix for `CROP`                       |
+| exposure, contrast, saturation, temperature, tint, highlights, shadows | number | No | Video filter fields, each -1..1 |
 | parentId    | string | No       | Parent node ID. Defaults to current page.                       |
 | channel     | string | No       | Target a specific connected file by channel id.                 |
 

@@ -231,6 +231,13 @@ func registerWriteCreateTools(s *server.MCPServer, node *Node) {
 			mcp.Description("2×3 affine transform matrix [[a,b,tx],[c,d,ty]] controlling video crop position/zoom (CROP scaleMode only)"),
 			mcp.Items(map[string]any{"type": "array", "items": map[string]any{"type": "number"}}),
 		),
+		mcp.WithNumber("exposure", mcp.Description("Video filter: exposure, -1 to 1 (default 0)")),
+		mcp.WithNumber("contrast", mcp.Description("Video filter: contrast, -1 to 1 (default 0)")),
+		mcp.WithNumber("saturation", mcp.Description("Video filter: saturation, -1 to 1 (default 0)")),
+		mcp.WithNumber("temperature", mcp.Description("Video filter: temperature, -1 to 1 (default 0)")),
+		mcp.WithNumber("tint", mcp.Description("Video filter: tint, -1 to 1 (default 0)")),
+		mcp.WithNumber("highlights", mcp.Description("Video filter: highlights, -1 to 1 (default 0)")),
+		mcp.WithNumber("shadows", mcp.Description("Video filter: shadows, -1 to 1 (default 0)")),
 		mcp.WithString("parentId", mcp.Description("Parent node ID in colon format. Defaults to current page.")),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

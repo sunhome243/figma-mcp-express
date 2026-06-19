@@ -637,7 +637,7 @@ describe("media/link creation APIs", () => {
   it("creates a video rectangle from base64 bytes", async () => {
     const res = await handleWriteCreateRequest(makeRequest("create_video", [], {
       videoData: "TWFu", name: "Clip", width: 400, height: 225, scaleMode: "CROP",
-      videoTransform: [[1, 0, 0], [0, 1, 0]],
+      videoTransform: [[1, 0, 0], [0, 1, 0]], exposure: 0.25, contrast: -0.5,
     }));
     expect(res?.data.type).toBe("RECTANGLE");
     expect(appended[0].name).toBe("Clip");
@@ -646,6 +646,7 @@ describe("media/link creation APIs", () => {
       videoHash: "video:hash",
       scaleMode: "CROP",
       videoTransform: [[1, 0, 0], [0, 1, 0]],
+      filters: { exposure: 0.25, contrast: -0.5 },
     });
     expect(commitUndoCalled).toBe(true);
   });
