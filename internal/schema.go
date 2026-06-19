@@ -966,6 +966,7 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		validBlendModes := map[string]bool{
 			"NORMAL": true, "MULTIPLY": true, "SCREEN": true, "OVERLAY": true,
 			"DARKEN": true, "LIGHTEN": true, "COLOR_DODGE": true, "COLOR_BURN": true,
+			"LINEAR_DODGE": true, "LINEAR_BURN": true,
 			"HARD_LIGHT": true, "SOFT_LIGHT": true, "DIFFERENCE": true, "EXCLUSION": true,
 			"HUE": true, "SATURATION": true, "COLOR": true, "LUMINOSITY": true,
 			"PASS_THROUGH": true,
@@ -1289,9 +1290,9 @@ func validateLayoutSizingParams(params map[string]interface{}) string {
 func validateAutoLayoutParams(params map[string]interface{}) string {
 	if lm, ok := params["layoutMode"].(string); ok && lm != "" {
 		switch lm {
-		case "HORIZONTAL", "VERTICAL", "NONE":
+		case "HORIZONTAL", "VERTICAL", "GRID", "NONE":
 		default:
-			return fmt.Sprintf("layoutMode must be HORIZONTAL, VERTICAL, or NONE, got: %s", lm)
+			return fmt.Sprintf("layoutMode must be HORIZONTAL, VERTICAL, GRID, or NONE, got: %s", lm)
 		}
 	}
 	if v, ok := params["primaryAxisAlignItems"].(string); ok && v != "" {
@@ -1320,6 +1321,20 @@ func validateAutoLayoutParams(params map[string]interface{}) string {
 		case "FIXED", "AUTO":
 		default:
 			return fmt.Sprintf("counterAxisSizingMode must be FIXED or AUTO, got: %s", v)
+		}
+	}
+	if v, ok := params["counterAxisAlignContent"].(string); ok && v != "" {
+		switch v {
+		case "AUTO", "SPACE_BETWEEN":
+		default:
+			return fmt.Sprintf("counterAxisAlignContent must be AUTO or SPACE_BETWEEN, got: %s", v)
+		}
+	}
+	if v, ok := params["overflowDirection"].(string); ok && v != "" {
+		switch v {
+		case "NONE", "HORIZONTAL", "VERTICAL", "BOTH":
+		default:
+			return fmt.Sprintf("overflowDirection must be NONE, HORIZONTAL, VERTICAL, or BOTH, got: %s", v)
 		}
 	}
 	if v, ok := params["layoutWrap"].(string); ok && v != "" {

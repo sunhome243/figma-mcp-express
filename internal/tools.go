@@ -338,6 +338,7 @@ func rejectUnknownToolParams(tool string, params map[string]interface{}) string 
 var layoutSizingKeys = []string{
 	"layoutSizingHorizontal", "layoutSizingVertical",
 	"layoutGrow", "layoutAlign", "layoutPositioning",
+	"minWidth", "maxWidth", "minHeight", "maxHeight",
 }
 
 // copyParams forwards any of the listed keys present on the request into params.
@@ -386,6 +387,10 @@ func layoutSizingParams() []mcp.ToolOption {
 		mcp.WithNumber("layoutGrow", mcp.Description("Grow factor along the parent's main axis (0 = don't grow, 1 = fill remaining)")),
 		mcp.WithString("layoutAlign", mcp.Description("Cross-axis self-alignment in an auto-layout parent: MIN, CENTER, MAX, STRETCH, or INHERIT")),
 		mcp.WithString("layoutPositioning", mcp.Description("AUTO (in-flow) or ABSOLUTE (free position inside an auto-layout parent)")),
+		mcp.WithNumber("minWidth", mcp.Description("Minimum width in px (null clears). Responsive constraint for an auto-layout child or frame.")),
+		mcp.WithNumber("maxWidth", mcp.Description("Maximum width in px (null clears).")),
+		mcp.WithNumber("minHeight", mcp.Description("Minimum height in px (null clears).")),
+		mcp.WithNumber("maxHeight", mcp.Description("Maximum height in px (null clears).")),
 	}
 }
 

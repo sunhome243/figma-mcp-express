@@ -302,6 +302,55 @@ func TestValidateRPC_CreateFrame(t *testing.T) {
 	}
 }
 
+func TestValidateRPC_SetAutoLayout_GridAndExtras(t *testing.T) {
+	const nid = "1:1"
+	// GRID layoutMode is now accepted.
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"layoutMode": "GRID", "gridRowCount": float64(2), "gridColumnCount": float64(3),
+	}); msg != "" {
+		t.Errorf("GRID layoutMode should be valid, got: %s", msg)
+	}
+	// counterAxisAlignContent enum
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"counterAxisAlignContent": "SPACE_BETWEEN",
+	}); msg != "" {
+		t.Errorf("counterAxisAlignContent SPACE_BETWEEN should be valid, got: %s", msg)
+	}
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"counterAxisAlignContent": "WHATEVER",
+	}); msg == "" {
+		t.Error("expected error for invalid counterAxisAlignContent")
+	}
+	// overflowDirection enum
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"overflowDirection": "BOTH",
+	}); msg != "" {
+		t.Errorf("overflowDirection BOTH should be valid, got: %s", msg)
+	}
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"overflowDirection": "DIAGONAL",
+	}); msg == "" {
+		t.Error("expected error for invalid overflowDirection")
+	}
+}
+
+func TestValidateRPC_SetBlendMode_LinearModes(t *testing.T) {
+	for _, bm := range []string{"LINEAR_BURN", "LINEAR_DODGE"} {
+		if msg := ValidateRPC("set_blend_mode", []string{"1:1"}, map[string]interface{}{"blendMode": bm}); msg != "" {
+			t.Errorf("%s should be a valid blend mode, got: %s", bm, msg)
+		}
+	}
+}
+
+func TestValidateRPC_ResizeNodes_MinMaxOnly(t *testing.T) {
+	// resize_nodes with ONLY min/max params (no width/height/sizing) should be valid.
+	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{
+		"minWidth": float64(50), "maxWidth": float64(300),
+	}); msg != "" {
+		t.Errorf("resize_nodes with min/max only should be valid, got: %s", msg)
+	}
+}
+
 func TestValidateRPC_SetText(t *testing.T) {
 	// missing nodeId
 	if msg := ValidateRPC("set_text", nil, map[string]interface{}{"text": "hello"}); msg == "" {

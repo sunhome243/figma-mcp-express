@@ -6,6 +6,26 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **GRID auto-layout mode.** `set_auto_layout` (and `create_frame`) now accept `layoutMode: "GRID"`
+  with `gridRowCount`, `gridColumnCount`, `gridRowGap`, `gridColumnGap`, plus `gridRowGapVariableId` /
+  `gridColumnGapVariableId` for token-bound grid gaps. Previously the Go schema rejected `"GRID"`
+  outright even though the plugin API supports it.
+- **Responsive min/max constraints.** `minWidth`, `maxWidth`, `minHeight`, `maxHeight` are now settable
+  on `set_auto_layout` / `create_frame` (frame-level) and `resize_nodes` (auto-layout child level).
+  Pass `null` to clear a constraint.
+- **More auto-layout properties on `set_auto_layout`:** `counterAxisAlignContent` (`AUTO` /
+  `SPACE_BETWEEN`, wrapped-track distribution), `overflowDirection` (`NONE` / `HORIZONTAL` /
+  `VERTICAL` / `BOTH`), `strokesIncludedInLayout`, `itemReverseZIndex`, and `counterAxisSpacingVariableId`
+  (token binding for the wrapped-track gap).
+
+### Fixed
+
+- **`set_blend_mode` rejecting `LINEAR_BURN` / `LINEAR_DODGE`.** Both are valid Figma blend modes (the
+  plugin handler already accepted them) but the Go schema allowlist omitted them, failing the call
+  before it reached the plugin. Added to `validBlendModes`.
+
 ## [2.5.3] — 2026-06-19
 
 ### Fixed

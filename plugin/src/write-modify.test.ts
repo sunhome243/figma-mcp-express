@@ -417,6 +417,32 @@ describe("reorder_nodes", () => {
 
 // ── set_blend_mode ────────────────────────────────────────────────────────────
 
+describe("resize_nodes — min/max constraints", () => {
+  it("sets min/max width/height on a node", async () => {
+    mockNodes["1:1"] = { id: "1:1", width: 100, height: 100, resize: function (w: number, h: number) { this.width = w; this.height = h; }, minWidth: null, maxWidth: null, minHeight: null, maxHeight: null };
+    const res = await handleWriteModifyRequest(makeRequest("resize_nodes", ["1:1"], { minWidth: 50, maxWidth: 300, minHeight: 40, maxHeight: 600 }));
+    expect(mockNodes["1:1"].minWidth).toBe(50);
+    expect(mockNodes["1:1"].maxWidth).toBe(300);
+    expect(mockNodes["1:1"].minHeight).toBe(40);
+    expect(mockNodes["1:1"].maxHeight).toBe(600);
+    expect(res?.data.results[0].nodeId).toBe("1:1");
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("clears a constraint when null is passed", async () => {
+    mockNodes["1:1"] = { id: "1:1", width: 100, height: 100, resize: function (w: number, h: number) { this.width = w; this.height = h; }, minWidth: 80 };
+    await handleWriteModifyRequest(makeRequest("resize_nodes", ["1:1"], { minWidth: null }));
+    expect(mockNodes["1:1"].minWidth).toBeNull();
+  });
+
+  it("ignores min/max on nodes that don't expose the field", async () => {
+    mockNodes["1:1"] = { id: "1:1", width: 100, height: 100, resize: function (w: number, h: number) { this.width = w; this.height = h; } };
+    const res = await handleWriteModifyRequest(makeRequest("resize_nodes", ["1:1"], { minWidth: 50 }));
+    expect(res?.data.results[0].nodeId).toBe("1:1");
+    expect("minWidth" in mockNodes["1:1"]).toBe(false);
+  });
+});
+
 describe("set_blend_mode", () => {
   it("sets blend mode on a node", async () => {
     mockNodes["1:1"] = { id: "1:1", blendMode: "NORMAL" };

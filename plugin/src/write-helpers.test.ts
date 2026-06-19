@@ -147,6 +147,18 @@ describe("applyAutoLayout", () => {
     counterAxisSizingMode: undefined as any,
     layoutWrap: undefined as any,
     counterAxisSpacing: undefined as any,
+    counterAxisAlignContent: undefined as any,
+    gridRowCount: undefined as any,
+    gridColumnCount: undefined as any,
+    gridRowGap: undefined as any,
+    gridColumnGap: undefined as any,
+    minWidth: undefined as any,
+    maxWidth: undefined as any,
+    minHeight: undefined as any,
+    maxHeight: undefined as any,
+    overflowDirection: undefined as any,
+    strokesIncludedInLayout: undefined as any,
+    itemReverseZIndex: undefined as any,
     setBoundVariable: (_field: string, _v: any) => {},
   });
 
@@ -212,6 +224,82 @@ describe("applyAutoLayout", () => {
       counterAxisSpacing: 8,
     });
     expect(frame.counterAxisSpacing).toBeUndefined();
+  });
+
+  it("sets counterAxisAlignContent only when WRAP", () => {
+    const frame = makeFrame();
+    applyAutoLayout(frame as any, {
+      layoutMode: "HORIZONTAL",
+      layoutWrap: "WRAP",
+      counterAxisAlignContent: "SPACE_BETWEEN",
+    });
+    expect(frame.counterAxisAlignContent).toBe("SPACE_BETWEEN");
+  });
+
+  it("sets GRID layout props and skips flex axis props", () => {
+    const frame = makeFrame();
+    applyAutoLayout(frame as any, {
+      layoutMode: "GRID",
+      gridRowCount: 2,
+      gridColumnCount: 3,
+      gridRowGap: 8,
+      gridColumnGap: 16,
+      primaryAxisAlignItems: "CENTER", // should be ignored in GRID mode
+    });
+    expect(frame.layoutMode).toBe("GRID");
+    expect(frame.gridRowCount).toBe(2);
+    expect(frame.gridColumnCount).toBe(3);
+    expect(frame.gridRowGap).toBe(8);
+    expect(frame.gridColumnGap).toBe(16);
+    expect(frame.primaryAxisAlignItems).toBeUndefined();
+  });
+
+  it("sets frame min/max constraints", () => {
+    const frame = makeFrame();
+    applyAutoLayout(frame as any, {
+      layoutMode: "VERTICAL",
+      minWidth: 100,
+      maxWidth: 400,
+      minHeight: 50,
+      maxHeight: 800,
+    });
+    expect(frame.minWidth).toBe(100);
+    expect(frame.maxWidth).toBe(400);
+    expect(frame.minHeight).toBe(50);
+    expect(frame.maxHeight).toBe(800);
+  });
+
+  it("clears a min/max constraint when null is passed", () => {
+    const frame = makeFrame();
+    frame.minWidth = 100;
+    applyAutoLayout(frame as any, { minWidth: null });
+    expect(frame.minWidth).toBeNull();
+  });
+
+  it("sets overflowDirection, strokesIncludedInLayout, itemReverseZIndex", () => {
+    const frame = makeFrame();
+    applyAutoLayout(frame as any, {
+      layoutMode: "VERTICAL",
+      overflowDirection: "VERTICAL",
+      strokesIncludedInLayout: true,
+      itemReverseZIndex: true,
+    });
+    expect(frame.overflowDirection).toBe("VERTICAL");
+    expect(frame.strokesIncludedInLayout).toBe(true);
+    expect(frame.itemReverseZIndex).toBe(true);
+  });
+
+  it("binds grid gap variables", async () => {
+    const bound: Record<string, any> = {};
+    const frame = { ...makeFrame(), layoutMode: "GRID", setBoundVariable: (f: string, v: any) => { bound[f] = v; } };
+    (globalThis as any).figma.variables.getVariableByIdAsync = async (id: string) => ({ id });
+    await applyAutoLayout(frame as any, {
+      layoutMode: "GRID",
+      gridRowGapVariableId: "var:gap",
+      gridColumnGapVariableId: "var:gap2",
+    });
+    expect(bound.gridRowGap).toEqual({ id: "var:gap" });
+    expect(bound.gridColumnGap).toEqual({ id: "var:gap2" });
   });
 });
 

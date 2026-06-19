@@ -120,7 +120,15 @@ export const applyAutoLayout = async (frame: FrameNode, p: any): Promise<void> =
   if (p.paddingBottomVariableId) await bindSpacingVariable(frame, "paddingBottom", p.paddingBottomVariableId);
   if (p.paddingLeftVariableId) await bindSpacingVariable(frame, "paddingLeft", p.paddingLeftVariableId);
   if (p.itemSpacingVariableId) await bindSpacingVariable(frame, "itemSpacing", p.itemSpacingVariableId);
-  if (frame.layoutMode !== "NONE") {
+  if (frame.layoutMode === "GRID") {
+    // CSS-grid auto-layout: row/column counts + per-axis gaps replace itemSpacing.
+    if (p.gridRowCount != null) { const v = n(p.gridRowCount); if (v !== null) frame.gridRowCount = v; }
+    if (p.gridColumnCount != null) { const v = n(p.gridColumnCount); if (v !== null) frame.gridColumnCount = v; }
+    if (p.gridRowGap != null) { const v = n(p.gridRowGap); if (v !== null) frame.gridRowGap = v; }
+    if (p.gridColumnGap != null) { const v = n(p.gridColumnGap); if (v !== null) frame.gridColumnGap = v; }
+    if (p.gridRowGapVariableId) await bindSpacingVariable(frame, "gridRowGap", p.gridRowGapVariableId);
+    if (p.gridColumnGapVariableId) await bindSpacingVariable(frame, "gridColumnGap", p.gridColumnGapVariableId);
+  } else if (frame.layoutMode !== "NONE") {
     if (p.primaryAxisAlignItems) frame.primaryAxisAlignItems = p.primaryAxisAlignItems;
     if (p.counterAxisAlignItems) frame.counterAxisAlignItems = p.counterAxisAlignItems;
     if (p.primaryAxisSizingMode) frame.primaryAxisSizingMode = p.primaryAxisSizingMode;
@@ -129,7 +137,23 @@ export const applyAutoLayout = async (frame: FrameNode, p: any): Promise<void> =
     if (p.counterAxisSpacing != null && frame.layoutWrap === "WRAP") {
       const v = n(p.counterAxisSpacing); if (v !== null) frame.counterAxisSpacing = v;
     }
+    if (p.counterAxisSpacingVariableId && frame.layoutWrap === "WRAP") {
+      await bindSpacingVariable(frame, "counterAxisSpacing", p.counterAxisSpacingVariableId);
+    }
+    if (p.counterAxisAlignContent && frame.layoutWrap === "WRAP") {
+      frame.counterAxisAlignContent = p.counterAxisAlignContent;
+    }
   }
+  if (frame.layoutMode !== "NONE") {
+    if (p.strokesIncludedInLayout != null) frame.strokesIncludedInLayout = !!p.strokesIncludedInLayout;
+    if (p.itemReverseZIndex != null) frame.itemReverseZIndex = !!p.itemReverseZIndex;
+  }
+  // Frame-level min/max constraints — valid on any frame (null clears the constraint).
+  if (p.minWidth !== undefined) frame.minWidth = p.minWidth === null ? null : n(p.minWidth);
+  if (p.maxWidth !== undefined) frame.maxWidth = p.maxWidth === null ? null : n(p.maxWidth);
+  if (p.minHeight !== undefined) frame.minHeight = p.minHeight === null ? null : n(p.minHeight);
+  if (p.maxHeight !== undefined) frame.maxHeight = p.maxHeight === null ? null : n(p.maxHeight);
+  if (p.overflowDirection != null) frame.overflowDirection = p.overflowDirection;
 };
 
 // Text styling shared by set_text + create_text. Loads a NEW font only when
