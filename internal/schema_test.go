@@ -715,12 +715,16 @@ func TestValidateRPC_APIGapCreateAndDevResourceTools(t *testing.T) {
 	if msg := ValidateRPC("create_video", nil, map[string]interface{}{
 		"videoData": "b64",
 		"scaleMode": "FIT",
+		"exposure":  float64(0.25),
 		"videoTransform": []interface{}{
 			[]interface{}{float64(1), float64(0), float64(0)},
 			[]interface{}{float64(0), float64(1), float64(0)},
 		},
 	}); msg != "" {
 		t.Errorf("unexpected error for create_video: %s", msg)
+	}
+	if msg := ValidateRPC("create_video", nil, map[string]interface{}{"videoData": "b64", "contrast": float64(1.5)}); msg == "" {
+		t.Error("expected error for out-of-range create_video filter")
 	}
 	if msg := ValidateRPC("create_gif", nil, map[string]interface{}{"imageHash": "abc"}); msg != "" {
 		t.Errorf("unexpected error for create_gif: %s", msg)

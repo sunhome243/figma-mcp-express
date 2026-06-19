@@ -113,6 +113,15 @@ func validateMediaScaleMode(scaleMode string) string {
 	}
 }
 
+func validateMediaFilters(params map[string]interface{}) string {
+	for _, k := range []string{"exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"} {
+		if v, ok := params[k].(float64); ok && (v < -1 || v > 1) {
+			return fmt.Sprintf("%s must be between -1 and 1, got: %v", k, v)
+		}
+	}
+	return ""
+}
+
 func validateCodeSyntaxPlatform(platform string) string {
 	switch platform {
 	case "WEB", "ANDROID", "iOS":
@@ -808,11 +817,8 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 				return msg
 			}
 		}
-		// ImageFilters fields are each constrained to -1..1.
-		for _, k := range []string{"exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"} {
-			if v, ok := params[k].(float64); ok && (v < -1 || v > 1) {
-				return fmt.Sprintf("%s must be between -1 and 1, got: %v", k, v)
-			}
+		if msg := validateMediaFilters(params); msg != "" {
+			return msg
 		}
 		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
@@ -828,6 +834,9 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			if msg := validateMediaScaleMode(sm); msg != "" {
 				return msg
 			}
+		}
+		if msg := validateMediaFilters(params); msg != "" {
+			return msg
 		}
 		if w, ok := params["width"].(float64); ok && w <= 0 {
 			return "width must be positive"

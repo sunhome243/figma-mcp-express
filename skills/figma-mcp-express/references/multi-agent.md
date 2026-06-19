@@ -1,7 +1,8 @@
 # Multi-Agent Orchestration with figma-mcp-express
 
 Deep reference for safely driving this MCP with multiple parallel agents.
-Read `SKILL.md § Workflow 5` first; this document is the full spec it points to.
+Read `SKILL.md` first; this document expands the multi-file/channel and
+parallel-agent guidance referenced from its Reference Router.
 
 ---
 
