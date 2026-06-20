@@ -225,6 +225,7 @@ const makePage = (id: string, name: string, nodes: any[]) => ({
   id,
   name,
   type: "PAGE" as const,
+  parent: { type: "DOCUMENT", id: "doc:1" },
   loadAsync: async () => {},
   findAllWithCriteria: ({ types }: { types: string[] }) =>
     nodes.filter((n) => types.includes(n.type)),
@@ -329,6 +330,87 @@ describe("get_local_components", () => {
     expect(componentSets).toHaveLength(0);
     expect(pageId).toBe("page:B");
     expect(pageName).toBe("Forms");
+  });
+
+  it("uses document-level scan to recover masters missed by page traversal", async () => {
+    const documentOnlyMaster = {
+      ...makeComponent(
+        "cmp:document-only",
+        "Nested/Orphan Master",
+        "key-document-only",
+      ),
+      parent: {
+        id: "page:A",
+        name: "Icons",
+        type: "PAGE",
+        parent: { type: "DOCUMENT", id: "doc:1" },
+      },
+    };
+    let loadedAllPages = false;
+    (globalThis as any).figma.loadAllPagesAsync = async () => {
+      loadedAllPages = true;
+    };
+    (globalThis as any).figma.root.findAllWithCriteria = ({ types }: { types: string[] }) => [
+      ...pageA.findAllWithCriteria({ types }),
+      ...pageB.findAllWithCriteria({ types }),
+      documentOnlyMaster,
+    ].filter((n) => types.includes(n.type));
+
+    const res = await handleReadStyleRequest(makeRequest("get_local_components"));
+    const ids = res!.data.components.map((c: any) => c.id);
+
+    expect(loadedAllPages).toBe(true);
+    expect(ids).toContain("cmp:document-only");
+    expect(
+      res!.data.components.find((c: any) => c.id === "cmp:document-only"),
+    ).toMatchObject({
+      id: "cmp:document-only",
+      name: "Nested/Orphan Master",
+      key: "key-document-only",
+      componentSetId: null,
+      variantProperties: null,
+    });
+    expect(res!.data.count).toBe(3);
+  });
+
+  it("keeps pageId on the bounded page traversal path", async () => {
+    const documentOnlyA = {
+      ...makeComponent("cmp:document-a", "Recovered A", "key-document-a"),
+      parent: {
+        id: "page:A",
+        name: "Icons",
+        type: "PAGE",
+        parent: { type: "DOCUMENT", id: "doc:1" },
+      },
+    };
+    const documentOnlyB = {
+      ...makeComponent("cmp:document-b", "Recovered B", "key-document-b"),
+      parent: {
+        id: "page:B",
+        name: "Forms",
+        type: "PAGE",
+        parent: { type: "DOCUMENT", id: "doc:1" },
+      },
+    };
+    (globalThis as any).figma.loadAllPagesAsync = async () => {
+      throw new Error("page-scoped scans must not load all pages");
+    };
+    (globalThis as any).figma.root.findAllWithCriteria = () => [
+      ...pageA.findAllWithCriteria({ types: ["COMPONENT", "COMPONENT_SET"] }),
+      ...pageB.findAllWithCriteria({ types: ["COMPONENT", "COMPONENT_SET"] }),
+      documentOnlyA,
+      documentOnlyB,
+    ];
+
+    const res = await handleReadStyleRequest(
+      makeRequest("get_local_components", { pageId: "page:A" }),
+    );
+    const ids = res!.data.components.map((c: any) => c.id);
+
+    expect(ids).not.toContain("cmp:document-a");
+    expect(ids).not.toContain("cmp:document-b");
+    expect(res!.data.count).toBe(1);
+    expect(res!.data.pageId).toBe("page:A");
   });
 
   it("component set includes defaultVariantKey when defaultVariant is present", async () => {

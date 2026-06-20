@@ -34,7 +34,7 @@ func registerReadStyleTools(s *server.MCPServer, node *Node) {
 	), makeHandler(node, "get_selection_colors", nil, nil))
 
 	s.AddTool(mcp.NewTool("get_local_components",
-		mcp.WithDescription("Get all components defined in the current Figma file. For large libraries pass pageId to scan ONE page (avoids timeout/jam); omit to scan all pages. Large results are saved to disk and returned as {spilled:true,path} — read with jq. Timeouts are server-managed; a read that times out should be re-scoped narrower, never given a longer timeout."),
+		mcp.WithDescription("Get all components defined in the current Figma file, including file-local masters needed by create_instance {componentId}. Omit pageId for the whole-file recovery scan (loads all pages and can find local masters missed by page traversal); pass pageId to scan ONE page in large libraries. Large results are saved to disk and returned as {spilled:true,path} — read with jq. Timeouts are server-managed; a read that times out should be re-scoped narrower, never given a longer timeout."),
 		mcp.WithString("pageId",
 			mcp.Description("Optional — scope scan to a single page by its node ID (colon format e.g. '0:1'). Omit to scan all pages."),
 		),
