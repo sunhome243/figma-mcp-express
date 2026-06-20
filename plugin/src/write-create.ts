@@ -38,15 +38,47 @@ const validatePaintScaleMode = (scaleMode: string) => {
 
 const isValidPageDividerName = (name: string) => /^(?:\*+|-+| +|\u2013+|\u2014+)$/.test(name);
 
+const finiteNumberField = (field: string, value: unknown): number => {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) {
+    throw new Error(`${field} must be a finite number`);
+  }
+  return numberValue;
+};
+
+const validateMediaTransform = (field: "imageTransform" | "videoTransform", value: unknown): Transform => {
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw new Error(`${field} must be a 2x3 numeric matrix`);
+  }
+  return value.map((row, rowIndex) => {
+    if (!Array.isArray(row) || row.length !== 3) {
+      throw new Error(`${field} must be a 2x3 numeric matrix`);
+    }
+    return row.map((cell, columnIndex) => finiteNumberField(`${field}[${rowIndex}][${columnIndex}]`, cell));
+  }) as Transform;
+};
+
 const applyMediaPaintFields = (paint: any, p: any, transformField: "imageTransform" | "videoTransform") => {
-  if (p.rotation != null) paint.rotation = Number(p.rotation);
-  if (p.scalingFactor != null) paint.scalingFactor = Number(p.scalingFactor);
-  if (Array.isArray(p[transformField])) paint[transformField] = p[transformField];
+  const next: any = {};
+  if (p.rotation != null) next.rotation = finiteNumberField("rotation", p.rotation);
+  if (p.scalingFactor != null) {
+    const scalingFactor = finiteNumberField("scalingFactor", p.scalingFactor);
+    if (scalingFactor <= 0) throw new Error("scalingFactor must be positive");
+    next.scalingFactor = scalingFactor;
+  }
+  if (p[transformField] != null) next[transformField] = validateMediaTransform(transformField, p[transformField]);
   const FILTER_KEYS = ["exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"];
   const filters: any = {};
   for (const k of FILTER_KEYS) {
-    if (p[k] != null) filters[k] = Number(p[k]);
+    if (p[k] != null) {
+      const filterValue = finiteNumberField(k, p[k]);
+      if (filterValue < -1 || filterValue > 1) {
+        throw new Error(`${k} must be between -1 and 1`);
+      }
+      filters[k] = filterValue;
+    }
   }
+  Object.assign(paint, next);
   if (Object.keys(filters).length > 0) paint.filters = filters;
 };
 export const handleWriteCreateRequest = async (request: any) => {

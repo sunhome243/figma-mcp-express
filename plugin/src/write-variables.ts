@@ -7,6 +7,79 @@ const requireStringField = (field: string, value: unknown): string => {
   return value;
 };
 
+const requireBooleanField = (field: string, value: unknown): boolean => {
+  if (typeof value !== "boolean") {
+    throw new Error(`${field} must be a boolean`);
+  }
+  return value;
+};
+
+const VALID_CODE_SYNTAX_PLATFORMS = new Set(["WEB", "ANDROID", "iOS"]);
+const VALID_VARIABLE_SCOPES = new Set([
+  "ALL_SCOPES",
+  "TEXT_CONTENT",
+  "CORNER_RADIUS",
+  "WIDTH_HEIGHT",
+  "GAP",
+  "ALL_FILLS",
+  "FRAME_FILL",
+  "SHAPE_FILL",
+  "TEXT_FILL",
+  "STROKE_COLOR",
+  "STROKE_FLOAT",
+  "EFFECT_FLOAT",
+  "EFFECT_COLOR",
+  "OPACITY",
+  "FONT_FAMILY",
+  "FONT_STYLE",
+  "FONT_WEIGHT",
+  "FONT_SIZE",
+  "LINE_HEIGHT",
+  "LETTER_SPACING",
+  "PARAGRAPH_SPACING",
+  "PARAGRAPH_INDENT",
+]);
+
+const requireCodeSyntaxPlatform = (platform: unknown): CodeSyntaxPlatform => {
+  const value = requireStringField("codeSyntax platform", platform);
+  if (!VALID_CODE_SYNTAX_PLATFORMS.has(value)) {
+    throw new Error(`codeSyntax platform must be WEB, ANDROID, or iOS, got: ${value}`);
+  }
+  return value as CodeSyntaxPlatform;
+};
+
+const validateScopes = (value: unknown): VariableScope[] => {
+  if (!Array.isArray(value)) {
+    throw new Error("scopes must be an array");
+  }
+  return value.map((scope) => {
+    const text = requireStringField("scopes[]", scope);
+    if (!VALID_VARIABLE_SCOPES.has(text)) {
+      throw new Error(`invalid variable scope: "${text}"`);
+    }
+    return text as VariableScope;
+  });
+};
+
+const validateCodeSyntaxUpdates = (value: unknown): Array<[CodeSyntaxPlatform, string]> => {
+  if (value == null) return [];
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("codeSyntax must be an object");
+  }
+  return Object.entries(value as Record<string, unknown>).map(([platform, syntax]) => [
+    requireCodeSyntaxPlatform(platform),
+    requireStringField(`codeSyntax.${platform}`, syntax),
+  ]);
+};
+
+const validateCodeSyntaxRemovals = (value: unknown): CodeSyntaxPlatform[] => {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error("removeCodeSyntax must be an array");
+  }
+  return value.map((platform) => requireCodeSyntaxPlatform(platform));
+};
+
 const parseVariableValue = (type: string, value: any): VariableValue => {
   // VARIABLE_ALIAS must be passed through unchanged before any type coercion: the other
   // branches would corrupt it (FLOAT → NaN, STRING → "[object Object]", BOOLEAN → false).
@@ -171,20 +244,21 @@ export const handleWriteVariableRequest = async (request: any) => {
       if (!p.variableId) throw new Error("variableId is required");
       const variable = await figma.variables.getVariableByIdAsync(p.variableId);
       if (!variable) throw new Error(`Variable not found: ${p.variableId}`);
-      if (p.name != null) variable.name = String(p.name);
-      if (Array.isArray(p.scopes)) variable.scopes = p.scopes as VariableScope[];
-      if (p.hiddenFromPublishing != null) variable.hiddenFromPublishing = !!p.hiddenFromPublishing;
-      if (p.codeSyntax != null && typeof p.codeSyntax === "object") {
-        for (const platform of ["WEB", "ANDROID", "iOS"] as const) {
-          if (p.codeSyntax[platform] != null) {
-            variable.setVariableCodeSyntax(platform, requireStringField(`codeSyntax.${platform}`, p.codeSyntax[platform]));
-          }
-        }
+      const nextName = p.name != null ? requireStringField("name", p.name) : undefined;
+      const nextScopes = p.scopes != null ? validateScopes(p.scopes) : undefined;
+      const nextHidden = p.hiddenFromPublishing != null
+        ? requireBooleanField("hiddenFromPublishing", p.hiddenFromPublishing)
+        : undefined;
+      const codeSyntaxUpdates = validateCodeSyntaxUpdates(p.codeSyntax);
+      const codeSyntaxRemovals = validateCodeSyntaxRemovals(p.removeCodeSyntax);
+      if (nextName !== undefined) variable.name = nextName;
+      if (nextScopes !== undefined) variable.scopes = nextScopes;
+      if (nextHidden !== undefined) variable.hiddenFromPublishing = nextHidden;
+      for (const [platform, value] of codeSyntaxUpdates) {
+        variable.setVariableCodeSyntax(platform, value);
       }
-      if (Array.isArray(p.removeCodeSyntax)) {
-        for (const platform of p.removeCodeSyntax) {
-          variable.removeVariableCodeSyntax(String(platform) as CodeSyntaxPlatform);
-        }
+      for (const platform of codeSyntaxRemovals) {
+        variable.removeVariableCodeSyntax(platform);
       }
       figma.commitUndo();
       return {
@@ -205,20 +279,44 @@ export const handleWriteVariableRequest = async (request: any) => {
       if (!p.collectionId) throw new Error("collectionId is required");
       const collection = await figma.variables.getVariableCollectionByIdAsync(p.collectionId);
       if (!collection) throw new Error(`Collection not found: ${p.collectionId}`);
-      if (p.name != null) collection.name = String(p.name);
-      if (p.hiddenFromPublishing != null) collection.hiddenFromPublishing = !!p.hiddenFromPublishing;
+      const nextName = p.name != null ? requireStringField("name", p.name) : undefined;
+      const nextHidden = p.hiddenFromPublishing != null
+        ? requireBooleanField("hiddenFromPublishing", p.hiddenFromPublishing)
+        : undefined;
+      let renameMode: { modeId: string; newName: string } | undefined;
       if (p.renameMode != null) {
+        if (typeof p.renameMode !== "object" || Array.isArray(p.renameMode)) {
+          throw new Error("renameMode must be an object");
+        }
         if (!p.renameMode.modeId || p.renameMode.newName == null) {
           throw new Error("renameMode requires { modeId, newName }");
         }
         const modeId = requireStringField("renameMode.modeId", p.renameMode.modeId);
         const newName = requireStringField("renameMode.newName", p.renameMode.newName);
-        collection.renameMode(modeId, newName);
+        if (!collection.modes.some((m: { modeId: string }) => m.modeId === modeId)) {
+          throw new Error(`Mode not found: ${modeId}`);
+        }
+        renameMode = { modeId, newName };
       }
+      let removeMode: string | undefined;
       if (p.removeMode != null) {
+        removeMode = requireStringField("removeMode", p.removeMode);
+        if (!collection.modes.some((m: { modeId: string }) => m.modeId === removeMode)) {
+          throw new Error(`Mode not found: ${removeMode}`);
+        }
+        if (collection.modes.length <= 1) {
+          throw new Error("Cannot remove mode (a collection must keep at least one mode)");
+        }
+      }
+      if (nextName !== undefined) collection.name = nextName;
+      if (nextHidden !== undefined) collection.hiddenFromPublishing = nextHidden;
+      if (renameMode) {
+        collection.renameMode(renameMode.modeId, renameMode.newName);
+      }
+      if (removeMode != null) {
         // Figma throws if you remove the last remaining mode — surface a clear message.
         try {
-          collection.removeMode(String(p.removeMode));
+          collection.removeMode(removeMode);
         } catch (err: unknown) {
           const origMessage = err instanceof Error ? err.message : String(err);
           throw new Error(`Cannot remove mode (a collection must keep at least one mode): ${origMessage}`);

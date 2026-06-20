@@ -373,6 +373,26 @@ describe("get_local_components", () => {
     expect(res!.data.count).toBe(3);
   });
 
+  it("deduplicates components returned by document-level recovery scan", async () => {
+    (globalThis as any).figma.loadAllPagesAsync = async () => {};
+    (globalThis as any).figma.root.findAllWithCriteria = ({ types }: { types: string[] }) => [
+      ...pageA.findAllWithCriteria({ types }),
+      ...pageA.findAllWithCriteria({ types }),
+      ...pageB.findAllWithCriteria({ types }),
+      makeComponent("cmp:1", "Button/Primary Duplicate", "key-cmp-1-duplicate", "set:1"),
+      makeComponentSet("set:1", "Button Duplicate", "key-set-1-duplicate"),
+    ].filter((n) => types.includes(n.type));
+
+    const res = await handleReadStyleRequest(makeRequest("get_local_components"));
+    const componentIds = res!.data.components.map((c: any) => c.id);
+    const componentSetIds = res!.data.componentSets.map((s: any) => s.id);
+
+    expect(componentIds.filter((id: string) => id === "cmp:1")).toHaveLength(1);
+    expect(componentIds.filter((id: string) => id === "cmp:2")).toHaveLength(1);
+    expect(componentSetIds.filter((id: string) => id === "set:1")).toHaveLength(1);
+    expect(res!.data.count).toBe(2);
+  });
+
   it("keeps pageId on the bounded page traversal path", async () => {
     const documentOnlyA = {
       ...makeComponent("cmp:document-a", "Recovered A", "key-document-a"),

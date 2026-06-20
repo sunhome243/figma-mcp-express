@@ -87,6 +87,21 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`create_variable_alias` → `set_variable_value` workflow now validates end-to-end.**
+  `set_variable_value.value` is no longer advertised as string-only, so a `VARIABLE_ALIAS` object
+  returned by `create_variable_alias` passes both MCP tool schema inspection and validated `batch`
+  plans.
+- **Variable metadata updates validate before mutating.** `update_variable` and
+  `update_variable_collection` now reject invalid code-syntax, scope, rename-mode, and last-mode
+  removal inputs before changing names, scopes, hidden flags, or modes.
+- **Media paint inputs reject non-finite values and malformed transforms.** `import_image` and
+  `create_video` now validate filter values, `rotation`, `scalingFactor`, and 2x3 media transforms
+  at the Go schema and plugin runtime boundaries before writing fills.
+- **`reorder_local_style` now verifies resolved style types.** A mismatched `styleType`, target
+  `styleId`, or `afterStyleId` is rejected before calling the corresponding Figma move API.
+- **`get_local_components` #29 follow-up.** Docs and hints now distinguish the whole-file
+  local-master recovery scan from `pageId` bounded one-page enumeration, and tests cover duplicate
+  suppression in the recovery scan.
 - **`set_blend_mode` rejecting `LINEAR_BURN` / `LINEAR_DODGE`.** Both are valid Figma blend modes (the
   plugin handler already accepted them) but the Go schema allowlist omitted them, failing the call
   before it reached the plugin. Added to `validBlendModes`.

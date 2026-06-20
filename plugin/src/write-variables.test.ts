@@ -422,9 +422,35 @@ describe("update_variable", () => {
     };
     await expect(handleWriteRequest(makeRequest("update_variable", [], {
       variableId: "var:1",
+      name: "new-name",
+      scopes: ["TEXT_FILL"],
+      hiddenFromPublishing: true,
       codeSyntax: { WEB: { token: "bad" } },
     }))).rejects.toThrow("codeSyntax.WEB must be a string");
     expect(syntaxCalls).toEqual([]);
+    expect(mockVariables["var:1"].name).toBe("old");
+    expect(mockVariables["var:1"].scopes).toEqual(["ALL_SCOPES"]);
+    expect(mockVariables["var:1"].hiddenFromPublishing).toBe(false);
+    expect(commitUndoCalled).toBe(false);
+  });
+
+  it("rejects invalid removeCodeSyntax before mutating metadata", async () => {
+    mockVariables["var:1"] = {
+      id: "var:1", name: "old", resolvedType: "COLOR",
+      scopes: ["ALL_SCOPES"], hiddenFromPublishing: false, codeSyntax: { WEB: "token" },
+      setVariableCodeSyntax() {},
+      removeVariableCodeSyntax(platform: string) { delete this.codeSyntax[platform]; },
+    };
+    await expect(handleWriteRequest(makeRequest("update_variable", [], {
+      variableId: "var:1",
+      name: "new-name",
+      hiddenFromPublishing: true,
+      removeCodeSyntax: ["MAC"],
+    }))).rejects.toThrow("codeSyntax platform must be WEB, ANDROID, or iOS");
+    expect(mockVariables["var:1"].name).toBe("old");
+    expect(mockVariables["var:1"].hiddenFromPublishing).toBe(false);
+    expect(mockVariables["var:1"].codeSyntax).toEqual({ WEB: "token" });
+    expect(commitUndoCalled).toBe(false);
   });
 });
 
@@ -472,11 +498,33 @@ describe("update_variable_collection", () => {
 
   it("rejects non-string renameMode fields before mutating", async () => {
     const col: any = makeCollection("col:1", "Tokens");
+    col.hiddenFromPublishing = false;
     mockCollections["col:1"] = col;
     await expect(handleWriteRequest(makeRequest("update_variable_collection", [], {
       collectionId: "col:1",
+      name: "New Tokens",
+      hiddenFromPublishing: true,
       renameMode: { modeId: "mode:default", newName: { label: "bad" } },
     }))).rejects.toThrow("renameMode.newName must be a string");
+    expect(col.name).toBe("Tokens");
+    expect(col.hiddenFromPublishing).toBe(false);
     expect(col.modes[0].name).toBe("Mode 1");
+    expect(commitUndoCalled).toBe(false);
+  });
+
+  it("rejects last-mode removal before mutating collection metadata", async () => {
+    const col: any = makeCollection("col:1", "Tokens");
+    col.hiddenFromPublishing = false;
+    mockCollections["col:1"] = col;
+    await expect(handleWriteRequest(makeRequest("update_variable_collection", [], {
+      collectionId: "col:1",
+      name: "New Tokens",
+      hiddenFromPublishing: true,
+      removeMode: "mode:default",
+    }))).rejects.toThrow("Cannot remove mode (a collection must keep at least one mode)");
+    expect(col.name).toBe("Tokens");
+    expect(col.hiddenFromPublishing).toBe(false);
+    expect(col.modes).toHaveLength(1);
+    expect(commitUndoCalled).toBe(false);
   });
 });

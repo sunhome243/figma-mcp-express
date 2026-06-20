@@ -153,7 +153,7 @@ The original [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go)
 **This fork:** library discovery uses the narrowest available path:
 
 - `fetch_library_catalog` — fetch published components + thumbnails from Figma's REST API (requires `FIGMA_TOKEN`)
-- `get_local_components` — enumerate unpublished components page-by-page via the plugin (no token required)
+- `get_local_components` — enumerate unpublished components via the plugin; omit `pageId` for whole-file local-master recovery, or pass `pageId` for a bounded one-page scan (no token required)
 - `get_library_variables` / `list_library_variable_collections` — enumerate subscribed library variable collections through the plugin/team-library path, bypassing Enterprise REST 403 gates
 
 ### 10. fileKey auto-exposure

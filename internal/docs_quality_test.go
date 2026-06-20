@@ -132,7 +132,8 @@ func TestMultiAgentSkillDocumentsOriginRosterAndOrchestrator(t *testing.T) {
 		"batch(channel:\"auto-2\", origin:\"theo\", ops:[create_frame...])",
 		"Use exactly the origin assigned to you",
 		"Do not pick a random roster enum",
-		"`origin` works on reads, writes, and batch",
+		"`origin` works on plugin reads, writes, and batch",
+		"`fetch_library_catalog`",
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("multi-agent.md missing origin roster/orchestrator rule %q", required)
@@ -465,7 +466,8 @@ func TestToolsDocDocumentsCoreSurfaceContract(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "TOOLS.md"))
 	for _, required := range []string{
 		"FIGMA_MCP_TOOL_PROFILE=core",
-		"compact 21-tool MCP surface",
+		"compact 22-tool MCP surface",
+		"`set_presence`",
 		"batch",
 		"FigmaPlan",
 		"search_batch_ops",
@@ -477,6 +479,12 @@ func TestToolsDocDocumentsCoreSurfaceContract(t *testing.T) {
 		if !strings.Contains(body, required) {
 			t.Fatalf("TOOLS.md must document production tool-surface contract; missing %q", required)
 		}
+	}
+	if strings.Contains(body, "| status ") {
+		t.Fatal("TOOLS.md must not document status as a batch param; use set_presence")
+	}
+	if !strings.Contains(body, "Manual `status` and `task` go through `set_presence`, not `batch`") {
+		t.Fatal("TOOLS.md must route manual status/task through set_presence")
 	}
 }
 

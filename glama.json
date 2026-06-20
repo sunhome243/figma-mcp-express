@@ -23,7 +23,7 @@
     { "name": "export_frames_to_pdf", "description": "Export multiple frames as a single multi-page PDF" },
     { "name": "get_styles", "description": "Paint, text, effect, grid styles" },
     { "name": "get_variable_defs", "description": "Variable collections and values" },
-    { "name": "get_local_components", "description": "All components and component sets with variant properties" },
+    { "name": "get_local_components", "description": "Local components and component sets; whole-file recovery scan or pageId-bounded scan" },
     { "name": "export_tokens", "description": "Export design tokens" },
     { "name": "list_library_variable_collections", "description": "Enumerate subscribed library variable collections" },
     { "name": "fetch_library_catalog", "description": "Fetch published components + thumbnails via REST (requires FIGMA_TOKEN)" }

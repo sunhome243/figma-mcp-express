@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -426,6 +427,49 @@ func TestValidateRPC_ImportImage_Filters(t *testing.T) {
 		"imageData": "TWFu", "saturation": float64(2),
 	}); msg == "" {
 		t.Error("expected error for saturation out of range")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "exposure": "0.5",
+	}); msg == "" {
+		t.Error("expected error for non-numeric exposure")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "contrast": math.Inf(1),
+	}); msg == "" {
+		t.Error("expected error for infinite contrast")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "rotation": math.NaN(),
+	}); msg == "" {
+		t.Error("expected error for NaN rotation")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "scaleMode": "TILE", "scalingFactor": float64(0),
+	}); msg == "" {
+		t.Error("expected error for non-positive scalingFactor")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu",
+		"imageTransform": []interface{}{
+			[]interface{}{float64(1), float64(0)},
+			[]interface{}{float64(0), float64(1), float64(0)},
+		},
+	}); msg == "" {
+		t.Error("expected error for malformed imageTransform")
+	}
+	if msg := ValidateRPC("create_video", nil, map[string]interface{}{
+		"videoData": "TWFu", "shadows": math.Inf(-1),
+	}); msg == "" {
+		t.Error("expected error for infinite create_video filter")
+	}
+	if msg := ValidateRPC("create_video", nil, map[string]interface{}{
+		"videoData": "TWFu",
+		"videoTransform": []interface{}{
+			[]interface{}{float64(1), float64(0), float64(0)},
+			[]interface{}{float64(0), "bad", float64(0)},
+		},
+	}); msg == "" {
+		t.Error("expected error for non-numeric videoTransform entry")
 	}
 }
 

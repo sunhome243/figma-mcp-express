@@ -28,9 +28,10 @@ type toolsListResponse struct {
 }
 
 type propertySchema struct {
-	Type  string          `json:"type"`
-	Enum  []string        `json:"enum"`
-	Items json.RawMessage `json:"items"`
+	Type  string           `json:"type"`
+	Enum  []string         `json:"enum"`
+	Items json.RawMessage  `json:"items"`
+	AnyOf []propertySchema `json:"anyOf"`
 }
 
 // listTools calls tools/list through the server's HandleMessage path and returns
@@ -185,7 +186,40 @@ func TestToolSchemas_CreateEffectStyleExposesAdvancedShorthandParams(t *testing.
 	}
 }
 
-func TestToolSchemas_PluginFacingToolsExposeRequiredOrigin(t *testing.T) {
+func TestToolSchemas_SetVariableValueAcceptsAliasPayload(t *testing.T) {
+	resp := listTools(t)
+	var value propertySchema
+	found := false
+	for _, tool := range resp.Result.Tools {
+		if tool.Name != "set_variable_value" {
+			continue
+		}
+		var ok bool
+		value, ok = tool.InputSchema.Properties["value"]
+		if !ok {
+			t.Fatal("set_variable_value missing value property")
+		}
+		found = true
+		break
+	}
+	if !found {
+		t.Fatal("set_variable_value tool not found")
+	}
+	if value.Type == "string" {
+		t.Fatal("set_variable_value.value must accept VARIABLE_ALIAS objects, not only strings")
+	}
+	gotTypes := map[string]bool{}
+	for _, alt := range value.AnyOf {
+		gotTypes[alt.Type] = true
+	}
+	for _, typ := range []string{"string", "number", "boolean", "object"} {
+		if !gotTypes[typ] {
+			t.Fatalf("set_variable_value.value anyOf missing %q: %#v", typ, value.AnyOf)
+		}
+	}
+}
+
+func TestToolSchemas_AutoInjectsRequiredOriginOnPluginFacingTools(t *testing.T) {
 	resp := listTools(t)
 
 	if len(resp.Result.Tools) == 0 {
@@ -234,7 +268,7 @@ func TestToolSchemas_PluginFacingToolsExposeRequiredOrigin(t *testing.T) {
 		sort.Strings(notRequired)
 		sort.Strings(wrongShape)
 		sort.Strings(unexpected)
-		t.Fatalf("origin schema drift:\nmissing origin: %v\nnot required: %v\nwrong shape: %v\nunexpected on exempt tools: %v", missing, notRequired, wrongShape, unexpected)
+		t.Fatalf("origin auto-injection failed:\nnon-exempt tools without auto-filled origin: %v\norigin not marked required: %v\nwrong origin schema shape: %v\norigin unexpectedly present on exempt tools: %v", missing, notRequired, wrongShape, unexpected)
 	}
 }
 

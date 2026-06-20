@@ -120,9 +120,48 @@ func validateMediaScaleMode(scaleMode string) string {
 
 func validateMediaFilters(params map[string]interface{}) string {
 	for _, k := range []string{"exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows"} {
-		if v, ok := params[k].(float64); ok && (v < -1 || v > 1) {
-			return fmt.Sprintf("%s must be between -1 and 1, got: %v", k, v)
+		if msg := validateOptionalNumberRange(params, k, "", -1, 1); msg != "" {
+			return msg
 		}
+	}
+	return ""
+}
+
+func validateMediaTransform(params map[string]interface{}, key string) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	rows, ok := v.([]interface{})
+	if !ok || len(rows) != 2 {
+		return fmt.Sprintf("%s must be a 2x3 numeric matrix", key)
+	}
+	for i, rowRaw := range rows {
+		row, ok := rowRaw.([]interface{})
+		if !ok || len(row) != 3 {
+			return fmt.Sprintf("%s must be a 2x3 numeric matrix", key)
+		}
+		for j, cell := range row {
+			n, ok := cell.(float64)
+			if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+				return fmt.Sprintf("%s[%d][%d] must be a finite number", key, i, j)
+			}
+		}
+	}
+	return ""
+}
+
+func validateOptionalPositiveNumber(params map[string]interface{}, key, prefix string) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	n, ok := v.(float64)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return fmt.Sprintf("%s%s must be a number", prefix, key)
+	}
+	if n <= 0 {
+		return fmt.Sprintf("%s%s must be positive", prefix, key)
 	}
 	return ""
 }
@@ -1051,6 +1090,15 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		if msg := validateMediaFilters(params); msg != "" {
 			return msg
 		}
+		if msg := validateOptionalNumber(params, "rotation", ""); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalPositiveNumber(params, "scalingFactor", ""); msg != "" {
+			return msg
+		}
+		if msg := validateMediaTransform(params, "imageTransform"); msg != "" {
+			return msg
+		}
 		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
 		}
@@ -1067,6 +1115,15 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			}
 		}
 		if msg := validateMediaFilters(params); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalNumber(params, "rotation", ""); msg != "" {
+			return msg
+		}
+		if msg := validateOptionalPositiveNumber(params, "scalingFactor", ""); msg != "" {
+			return msg
+		}
+		if msg := validateMediaTransform(params, "videoTransform"); msg != "" {
 			return msg
 		}
 		if w, ok := params["width"].(float64); ok && w <= 0 {
