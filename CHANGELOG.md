@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-06-20
+
 ### Added
 
 - **Figma Plugin API gap coverage for media/link, dev resources, style organization, and variable helpers.**
