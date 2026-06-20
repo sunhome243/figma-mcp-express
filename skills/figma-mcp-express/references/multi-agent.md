@@ -230,7 +230,7 @@ Each row also shows *what* the agent is doing. Statuses come from two tiers:
 
 | Tier | Cost | Statuses | How it's set |
 |---|---|---|---|
-| **Auto** | **0 LLM tokens** | `building` (Building…/Styling…/Moving…/Resizing…/Removing…), `importing` (⤵ Importing…), `screenshotting` (📸 Capturing…), `scanning` (🔍 Looking around…), `theming` (🎨 Theming…), `error`, `idle` (30–60 s), `away` (>60 s), `joined` (entrance anim) | Plugin/server derive it from the op the agent already sends — no extra call. `building`/`importing`/`theming` from write op type, `screenshotting` from `save_screenshots`, `scanning` from any `get_`/`scan_`/`search_`/`list_`/`fetch_` read. |
+| **Auto** | **0 LLM tokens** | `building` (Building…/Styling…/Moving…/Resizing…/Removing…), `importing` (⤵ Importing…), `screenshotting` (📸 Capturing…), `scanning` (🔍 Looking around…), `theming` (🎨 Theming…), `error`, `idle` (30–60 s), `away` (>60 s), `joined` (entrance anim) | Plugin/server derive it from the op the agent already sends — no extra call. `building`/`importing`/`theming` from write op type, `screenshotting` from `save_screenshots`, `scanning` from plugin reads (`get_`/`scan_`/`search_`/`list_`; REST/local meta tools such as `fetch_library_catalog` are origin-exempt). |
 | **Auto (server)** | **0 LLM tokens** | `queued` (Queued · #N) | The **server** pushes the per-channel serial-slot waiting list to the plugin as an unsolicited `presence_queue` WS frame. The agent is by definition not yet running, so only the server (which owns the FIFO) can report it. |
 | **LLM-set** | tiny | `thinking`, `waiting_review`, `reviewing`, `approved` (reviewer PASS), `escalated` (asset missing → STOP), `done` | The orchestrator/reviewer calls **`set_presence`** at **workflow transitions only**, never per op (see below). |
 
@@ -296,9 +296,10 @@ apart by a per-`(sessionId, origin)` avatar (distinct face) and a per-session ac
 colour (shown only when ≥2 sessions are live). You don't pass `sessionId` — it's
 injected for you. So you may freely reuse roster names across separate orchestrators.
 
-### `origin` works on reads, writes, and batch
+### `origin` works on plugin reads, writes, and batch
 
-`origin` is not batch-only. Pass the assigned `origin` on reads
-(`get_`/`scan_`/`search_`/`list_`/`fetch_`), writes, and outer `batch` calls so the
-panel can attribute both exploration and mutation. For `batch`, `origin` is a
-top-level argument next to `channel`; do not put it inside individual ops.
+`origin` is not batch-only. Pass the assigned `origin` on plugin-facing reads
+(`get_`/`scan_`/`search_`/`list_` except REST/local meta tools such as
+`fetch_library_catalog`), writes, and outer `batch` calls so the panel can attribute
+both exploration and mutation. For `batch`, `origin` is a top-level argument next to
+`channel`; do not put it inside individual ops.

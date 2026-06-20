@@ -7,6 +7,18 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+func variableValuePropertySchema() map[string]any {
+	return map[string]any{
+		"description": "Value to set. COLOR: hex or RGBA object. FLOAT: number. STRING: text. BOOLEAN: true/false. VARIABLE_ALIAS: object returned by create_variable_alias.",
+		"anyOf": []map[string]any{
+			{"type": "string"},
+			{"type": "number"},
+			{"type": "boolean"},
+			{"type": "object"},
+		},
+	}
+}
+
 func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 	s.AddTool(mcp.NewTool("create_variable_collection",
 		mcp.WithDescription("Create a new local variable collection with an optional initial mode name. "+
@@ -81,7 +93,7 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
-	s.AddTool(mcp.NewTool("set_variable_value",
+	setVariableValueTool := mcp.NewTool("set_variable_value",
 		mcp.WithDescription("Set a variable's value for a specific mode."),
 		mcp.WithString("variableId",
 			mcp.Required(),
@@ -93,10 +105,12 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 		),
 		mcp.WithString("value",
 			mcp.Required(),
-			mcp.Description("Value to set. COLOR: hex e.g. #FF5733. FLOAT: number e.g. 16. STRING: text. BOOLEAN: true or false."),
+			mcp.Description("Value to set. COLOR: hex e.g. #FF5733. FLOAT: number e.g. 16. STRING: text. BOOLEAN: true or false. VARIABLE_ALIAS: object returned by create_variable_alias."),
 		),
 		channelParam(),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	)
+	setVariableValueTool.InputSchema.Properties["value"] = variableValuePropertySchema()
+	s.AddTool(setVariableValueTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := req.GetArguments()
 		resp, err := node.Send(ctx, "set_variable_value", nil, withChannel(req, params))
 		return renderResponse(resp, err)

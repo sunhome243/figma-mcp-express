@@ -593,6 +593,24 @@ describe("import_image filters & transform", () => {
     expect(paint.scalingFactor).toBe(2);
     expect(paint.imageTransform).toEqual([[1, 0, 0], [0, 1, 0]]);
   });
+
+  it("rejects non-finite filter values before assigning image fills", async () => {
+    await expect(handleWriteCreateRequest(makeRequest("import_image", [], {
+      imageData: "TWFu",
+      exposure: "bad",
+    }))).rejects.toThrow("exposure must be a finite number");
+    expect(rect.fills).toEqual([]);
+    expect(commitUndoCalled).toBe(false);
+  });
+
+  it("rejects malformed imageTransform before assigning image fills", async () => {
+    await expect(handleWriteCreateRequest(makeRequest("import_image", [], {
+      imageData: "TWFu",
+      imageTransform: [[1, 0, 0], [0, Number.POSITIVE_INFINITY, 0]],
+    }))).rejects.toThrow("imageTransform[1][1] must be a finite number");
+    expect(rect.fills).toEqual([]);
+    expect(commitUndoCalled).toBe(false);
+  });
 });
 
 // ── media/link creation APIs ─────────────────────────────────────────────────
@@ -649,6 +667,15 @@ describe("media/link creation APIs", () => {
       filters: { exposure: 0.25, contrast: -0.5 },
     });
     expect(commitUndoCalled).toBe(true);
+  });
+
+  it("rejects malformed videoTransform before appending a video rectangle", async () => {
+    await expect(handleWriteCreateRequest(makeRequest("create_video", [], {
+      videoData: "TWFu",
+      videoTransform: [[1, 0, 0], [0, Number.POSITIVE_INFINITY, 0]],
+    }))).rejects.toThrow("videoTransform[1][1] must be a finite number");
+    expect(appended).toHaveLength(0);
+    expect(commitUndoCalled).toBe(false);
   });
 
   it("creates a FigJam GIF media node from an image hash", async () => {

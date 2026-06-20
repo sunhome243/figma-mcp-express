@@ -87,6 +87,12 @@ const styleTypeDispatch = <T>(
   return handler();
 };
 
+const assertStyleMatchesType = (style: BaseStyle, styleType: string) => {
+  if (style.type !== styleType) {
+    throw new Error(`styleType ${styleType} does not match style ${style.id} type ${style.type}`);
+  }
+};
+
 export const handleWriteStyleRequest = async (request: any) => {
   switch (request.type) {
     case "create_paint_style": {
@@ -285,6 +291,8 @@ export const handleWriteStyleRequest = async (request: any) => {
       if (!target) throw new Error(`Style not found: ${p.styleId}`);
       const reference = p.afterStyleId ? await figma.getStyleByIdAsync(p.afterStyleId) : null;
       if (p.afterStyleId && !reference) throw new Error(`Style not found: ${p.afterStyleId}`);
+      assertStyleMatchesType(target, p.styleType);
+      if (reference) assertStyleMatchesType(reference, p.styleType);
       styleTypeDispatch(p.styleType, {
         PAINT: () => figma.moveLocalPaintStyleAfter(target as PaintStyle, reference as PaintStyle | null),
         TEXT: () => figma.moveLocalTextStyleAfter(target as TextStyle, reference as TextStyle | null),

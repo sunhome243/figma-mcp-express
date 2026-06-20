@@ -143,6 +143,31 @@ describe("style organization and selection colors", () => {
       ["folder", "Brand/Secondary", "Brand/Primary"],
     ]);
   });
+
+  it("rejects reorder_local_style when styleType does not match the target style", async () => {
+    const calls: any[] = [];
+    mockStyles["S:target"] = { id: "S:target", name: "B", type: "PAINT" };
+    (globalThis as any).figma.moveLocalTextStyleAfter = (target: any, reference: any) => calls.push(["text", target.id, reference?.id ?? null]);
+
+    await expect(handleWriteRequest(makeRequest("reorder_local_style", [], {
+      styleType: "TEXT", styleId: "S:target",
+    }))).rejects.toThrow("styleType TEXT does not match style S:target type PAINT");
+    expect(calls).toEqual([]);
+    expect(commitUndoCalled).toBe(false);
+  });
+
+  it("rejects reorder_local_style when styleType does not match afterStyleId", async () => {
+    const calls: any[] = [];
+    mockStyles["S:target"] = { id: "S:target", name: "B", type: "PAINT" };
+    mockStyles["S:ref"] = { id: "S:ref", name: "Heading", type: "TEXT" };
+    (globalThis as any).figma.moveLocalPaintStyleAfter = (target: any, reference: any) => calls.push(["paint", target.id, reference.id]);
+
+    await expect(handleWriteRequest(makeRequest("reorder_local_style", [], {
+      styleType: "PAINT", styleId: "S:target", afterStyleId: "S:ref",
+    }))).rejects.toThrow("styleType PAINT does not match style S:ref type TEXT");
+    expect(calls).toEqual([]);
+    expect(commitUndoCalled).toBe(false);
+  });
 });
 
 describe("variable helper APIs", () => {

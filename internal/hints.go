@@ -39,8 +39,9 @@ func hintFor(requestType, errText string) string {
 
 	switch {
 	case timedOut && requestType == "get_local_components":
-		return "Scope to a single page: get_local_components(pageId=…). Whole-file " +
-			"component enumeration is heavy and times out."
+		return "For a quick bounded result, pass get_local_components(pageId=…) to scan " +
+			"one page. Omit pageId only when you need whole-file local-master recovery; " +
+			"that path loads all pages and can be heavy."
 	case timedOut && isHeavyRead(requestType):
 		return "Request too large/slow. Retry narrower: target a specific nodeId " +
 			"(not a page), add a `types` filter and a `limit`, and reduce depth. " +

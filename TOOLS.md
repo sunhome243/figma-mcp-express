@@ -1,6 +1,6 @@
 # TOOLS.md — figma-mcp-express tool catalog
 
-The default `FIGMA_MCP_TOOL_PROFILE=core` exposes a compact 21-tool MCP surface.
+The default `FIGMA_MCP_TOOL_PROFILE=core` exposes a compact 22-tool MCP surface.
 Every plugin-supported operation remains available through validated
 `batch`/FigmaPlan op types. Use `search_batch_ops` to find an op,
 `get_batch_op_spec` for its authoritative schema, and
@@ -10,8 +10,8 @@ This file documents the current broader compatibility/catalog vocabulary. Set
 `FIGMA_MCP_TOOL_PROFILE=full` to expose the full top-level compatibility surface
 for debugging or clients that do not use the core batch-first profile.
 
-**The core 21 top-level tools** (everything else below is a `batch` op type or
-full-profile-only — NOT directly callable in `core`): `batch`, `search_batch_ops`,
+**The core 22 top-level tools** (everything else below is a `batch` op type or
+full-profile-only — NOT directly callable in `core`): `set_presence`, `batch`, `search_batch_ops`,
 `get_batch_op_spec`, `get_metadata`, `get_node`, `get_nodes_info`, `get_pages`,
 `get_selection`, `get_design_context`, `get_styles`, `get_variable_defs`,
 `scan_nodes_by_types`, `scan_text_nodes`, `search_nodes`, `get_local_components`,
@@ -235,11 +235,11 @@ Get Figma's computed colors from the current selection using `getSelectionColors
 
 ### get_local_components
 
-Get all components defined in the current Figma file. For large libraries, pass `pageId` to scan one page (avoids timeout/jam). Large results spill to disk. componentSets entries include a `defaultVariantKey` (import THAT, not the SET key); component entries include `variantProperties`.
+Get all components defined in the current Figma file. Omit `pageId` for the whole-file recovery scan, which loads all pages and uses the document-level typed search path to recover file-local component masters that bounded page traversal can miss. For very large libraries, pass `pageId` to scan exactly one page (bounded enumeration, not recovery). Large results spill to disk. componentSets entries include a `defaultVariantKey` (import THAT, not the SET key); component entries include `variantProperties`.
 
 | Name    | Type   | Required | Description                                                                                   |
 | ------- | ------ | -------- | --------------------------------------------------------------------------------------------- |
-| pageId  | string | No       | Scope scan to a single page by its node ID (colon format e.g. `0:1`). Omit to scan all pages. |
+| pageId  | string | No       | Scope scan to exactly one page by its node ID (colon format e.g. `0:1`). Omit for whole-file recovery scan. |
 | channel | string | No       | Target a specific connected file by channel id.                                               |
 
 ### get_annotations
@@ -1600,7 +1600,7 @@ Reads inside a batch are always live and bypass the singleflight cache. Do not u
 
 **Channel routing.** Put `channel` on the outer `batch` call only. Do not include `channel` in `ops[*].params`; per-op params are validated against `BatchOpCatalog` and `channel` is not part of any op schema.
 
-**Agent presence (2.3.0+).** `origin` is a required enum label (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`) the acting agent stamps on plugin-facing tools so the plugin's multi-agent "Watch agent" panel can show who is working where (avatar + last action + status); it's a schema requirement that schema-respecting clients enforce — the server doesn't hard-reject a missing value, it just isn't attributed. An optional `status` enum (`thinking`/`waiting_review`/`reviewing`/`approved`/`escalated`/`done`) lets the orchestrator announce non-editing workflow transitions; most statuses are auto-derived from the op and cost nothing. Pass the SAME `origin` on every call from one agent. Both are display-only — not routing metadata. (A server predating 2.3.0 rejects unknown top-level params, so only send these to a 2.3.0+ server.) See `references/multi-agent.md § 7`.
+**Agent presence (2.3.0+).** `origin` is a required enum label (`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`) the acting agent stamps on plugin-facing tools so the plugin's multi-agent "Watch agent" panel can show who is working where (avatar + last action + status); it's a schema requirement that schema-respecting clients enforce — the server doesn't hard-reject a missing value, it just isn't attributed. Manual `status` and `task` go through `set_presence`, not `batch`; most statuses are auto-derived from the op and cost nothing. Pass the SAME `origin` on every call from one agent. Both are display-only — not routing metadata. (A server predating 2.3.0 rejects unknown top-level params, so only send these to a 2.3.0+ server.) See `references/multi-agent.md § 7`.
 
 **Stop policy.** If any op uses a `$N` ref, the batch stops at the first failure (dependent chain). With no refs, it continues past failures (independent bulk). Override with `continueOnError`.
 
@@ -1640,6 +1640,5 @@ Reads inside a batch are always live and bypass the singleflight cache. Do not u
 | validateOnly    | boolean  | No       | Validate the plan and return a report without sending anything to the plugin.                                                                                          |
 | channel         | string   | No       | Target a specific connected file by channel id.                                                                                                                        |
 | origin          | string   | Yes      | Presence label from the fixed roster (`grace`/`theo`/`sunho`/`zoe`/`taewon`/`emma`/`alex`/`rick`/`wolfgang`). Attributes this write to a named agent in the plugin's Watch-agent panel. Schema-required (clients enforce; server doesn't hard-reject). Pass the same value on every call from one agent. (2.3.0+) |
-| status          | string   | No       | Presence status the orchestrator announces for `origin`: `thinking`/`waiting_review`/`reviewing`/`approved`/`escalated`/`done`. Display-only; auto statuses (building/scanning/queued/…) are derived without this param. (2.3.0+) |
 
 Returns `{results: [{i, type, data}|{i, type, error}], okCount, failCount, failedAt}`. Large aggregate results spill to disk via the response gate.

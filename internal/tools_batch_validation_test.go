@@ -2,6 +2,7 @@ package internal
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +40,40 @@ func TestBatchValidateOnly_CreateVariableWithTypePasses(t *testing.T) {
 	if valid, _ := structured["valid"].(bool); !valid {
 		raw, _ := json.Marshal(structured)
 		t.Fatalf("create_variable with type=FLOAT must validate as valid:true, got %s", raw)
+	}
+}
+
+func TestBatchValidateOnly_SetVariableValueAcceptsAliasObject(t *testing.T) {
+	valid, raw := batchValidateOnlyValid(t, map[string]any{
+		"type": "set_variable_value",
+		"params": map[string]any{
+			"variableId": "VariableID:123:456",
+			"modeId":     "1:0",
+			"value": map[string]any{
+				"type": "VARIABLE_ALIAS",
+				"id":   "VariableID:789:012",
+			},
+		},
+	})
+	if !valid {
+		t.Fatalf("set_variable_value with VARIABLE_ALIAS object must validate through the batch gate, got %s", raw)
+	}
+}
+
+func TestBatchValidateOnly_SetVariableValueRejectsUnsupportedValueShape(t *testing.T) {
+	valid, raw := batchValidateOnlyValid(t, map[string]any{
+		"type": "set_variable_value",
+		"params": map[string]any{
+			"variableId": "VariableID:123:456",
+			"modeId":     "1:0",
+			"value":      []any{"not", "a", "variable", "value"},
+		},
+	})
+	if valid {
+		t.Fatalf("set_variable_value with array value must be rejected by the batch schema, got %s", raw)
+	}
+	if !strings.Contains(raw, "set_variable_value.value") {
+		t.Fatalf("batch schema rejection should name set_variable_value.value, got %s", raw)
 	}
 }
 
