@@ -1,99 +1,88 @@
 # Auto Layout
 
-Auto layout is mandatory on every structural frame. Presence alone is not enough — the layout must respond correctly when the wrapper width changes. A rigid layout that looks right at one size but breaks at another is wrong.
+Every structural frame needs real auto layout, not fixed coordinates that only
+look right at one wrapper width.
+
+**Quick navigation:** [Sizing](#sizing) · [Resize test](#resize-test) · [Grid and wrap](#grid-and-wrap) · [Floating children](#floating-children-inside-auto-layout) · [Mistakes](#mistakes)
 
 ---
 
-## FILL vs HUG — decision table
+## Sizing
 
-| Pattern | Child sizing | Container axis | Notes |
-|---|---|---|---|
-| N equal-width items in a row (tab bar, stat strip, toolbar) | Each child `FILL` | `HORIZONTAL` | Never HUG children + giant gap to fake spread |
-| Sidebar + main content | Sidebar `FIXED`, main `FILL` | `HORIZONTAL` | Sidebar width from library component spec |
-| Card grid (N columns) | Each card `FIXED` = formula | `HORIZONTAL` + `WRAP` | See WRAP+FILL formula below |
-| Header: logo left, actions right | Both groups `HUG` | `HORIZONTAL` | `primaryAxisAlignItems = "SPACE_BETWEEN"` |
-| Section with title + stacked content | Children `FILL` width | `VERTICAL` | Width inherits from parent |
-| Full-screen page shell | Content area `FILL` both axes | — | After `appendChild`, before FILL |
-| Separator in a flex row | Separator `FIXED` 1px wide, `FILL` height | — | Surrounding items stay FILL |
-
----
-
-## The resize test (mandatory before DONE)
-
-Mentally (or actually) resize the wrapper to **1200px**, then **1920px**.
-
-Ask at each size:
-- Do items clip or overflow? → **layout is rigid**
-- Do gaps explode to fill all available space? → **wrong tool — switch children to FILL**
-- Does any column stack unexpectedly? → **WRAP+FILL problem — switch to FIXED**
-- Does the sidebar change width? → **sidebar must stay FIXED**
-
-If any answer is yes, fix the layout. Do not mark the section DONE first.
-
----
-
-## `itemSpacing > 48` = fake distribution (antipattern)
-
-```
-BAD — faking spread with a huge gap:
-  row.layoutMode = "HORIZONTAL"
-  row.itemSpacing = 200          // ← looks right at 1440px, breaks at every other width
-  // children are HUG
-
-GOOD — real distribution:
-  row.layoutMode = "HORIZONTAL"
-  row.itemSpacing = 16           // visual rhythm gap only
-  childA.layoutSizingHorizontal = "FILL"
-  childB.layoutSizingHorizontal = "FILL"
-  childC.layoutSizingHorizontal = "FILL"
-```
-
-`itemSpacing` sets **visual rhythm** (8 / 12 / 16 / 24 / 32 px) between sibling items. It never distributes space. If you're writing `itemSpacing = 100+` to make items "spread out," you're using the wrong tool — set children to `FILL` instead.
-
----
-
-## WRAP + FILL collapses to one row (antipattern)
-
-When `layoutWrap = "WRAP"` and children are `FILL`, Figma gives each child the full container width. Every card goes on its own row. Result: a single-column stack that looks like a grid only when 1 card fits per row.
-
-**Fix — compute FIXED card width:**
-
-```
-cardWidth = (containerInnerWidth - (columns - 1) * gap) / columns
-
-// Example: 1200px container, 24px padding each side, 16px gap, 3 columns
-innerWidth = 1200 - 24 - 24           = 1152
-cardWidth  = (1152 - (3-1)*16) / 3    = (1152 - 32) / 3  = 373.3 → round to 373
-```
-
-Set each card to `layoutSizingHorizontal = "FIXED"` and `resize(373, cardHeight)`.
-
-**Native alternative — GRID layout.** `set_auto_layout` / `create_frame` accept `layoutMode: "GRID"` with `gridRowCount`, `gridColumnCount`, `gridRowGap`, `gridColumnGap` (gaps token-bindable via `gridRowGapVariableId` / `gridColumnGapVariableId`). A true grid tiles children into rows/columns without the WRAP+FIXED-width formula above — prefer it for fixed-count card grids when the host Figma supports GRID (recent versions only; on older Figma it may no-op, so verify the result). Flex-only props (`primaryAxisAlignItems`, `itemSpacing`, `itemReverseZIndex`, `strokesIncludedInLayout`) do not apply in GRID mode.
-
-**Responsive bounds.** `minWidth` / `maxWidth` / `minHeight` / `maxHeight` are settable on frames (`set_auto_layout`) and on auto-layout children (`resize_nodes`) — use a `maxWidth` to cap a `FILL` content column instead of pinning it `FIXED`. Pass `null` to clear a bound.
-
----
-
-## FILL sizing must happen after placement
-
-```
-WRONG — FILL sizing on a parentless node is ignored:
-  batch op create_frame with layoutSizingHorizontal:"FILL" and no parentId
-
-CORRECT — establish parent first, then set FILL sizing:
-  op 0: create_frame with parentId:<row-id>
-  op 1: resize_nodes on $0.id with layoutSizingHorizontal:"FILL"
-```
-
----
-
-## Common mistakes
-
-| Mistake | Symptom | Fix |
+| Pattern | Child sizing | Container |
 |---|---|---|
-| Children HUG + `itemSpacing = 150` | Items bunch left at narrow widths | Set children to `FILL`, gap to ≤32 |
-| WRAP + FILL children | All cards collapse to single column | Compute FIXED card width with the formula |
-| FILL set before placement | Sizing silently ignored | Create/place the node under its parent first, then set FILL sizing |
-| Sidebar set to FILL | Sidebar grows with page, pushes content | Sidebar always `FIXED` width |
-| No auto layout on a wrapper frame | Frame is rigid, doesn't adapt | Add auto layout; set direction + gap |
-| `primaryAxisAlignItems = "SPACE_BETWEEN"` with 3+ items | Outer two pinned, middle items float | Use FILL children + small gap instead |
+| Equal-width tabs, stats, toolbar items | children `FILL` | `HORIZONTAL`, small gap |
+| Sidebar + main | sidebar `FIXED`, main `FILL` | `HORIZONTAL` |
+| Header logo left, actions right | groups `HUG` | `SPACE_BETWEEN` |
+| Section stack | children `FILL` width | `VERTICAL` |
+| Separator in row | `FIXED` width, `FILL` height | row stays stable |
+
+`itemSpacing` is visual rhythm only: usually 8 / 12 / 16 / 24 / 32. If you need
+`itemSpacing` above 48 to spread items, set children to `FILL` instead.
+
+Set FILL sizing after placement. A parentless node cannot meaningfully fill its
+future parent: create/place it first, then use `resize_nodes` with
+`layoutSizingHorizontal:"FILL"` or `layoutSizingVertical:"FILL"`.
+
+Responsive bounds: `minWidth` / `maxWidth` / `minHeight` / `maxHeight` are
+settable on frames (`set_auto_layout`) and on auto-layout children
+(`resize_nodes`). Use `maxWidth` to cap a FILL content column; pass `null` to
+clear a bound.
+
+## Resize test
+
+Before DONE, resize mentally or actually to **1200px** and **1920px**.
+
+| Failure | Meaning | Fix |
+|---|---|---|
+| Items clip or overflow | rigid layout | add auto layout/FILL/bounds |
+| Gaps explode | fake distribution | FILL children, small gap |
+| Cards stack unexpectedly | WRAP+FILL trap | fixed card width or GRID |
+| Sidebar changes width | wrong sizing | sidebar stays FIXED |
+
+## Grid and wrap
+
+For fixed-count card grids, prefer native GRID when available:
+`layoutMode:"GRID"`, row/column counts, row/column gaps, and gap variable IDs.
+Verify the result because older Figma hosts may no-op GRID.
+
+For WRAP grids, do not use FILL children. Compute fixed card width:
+
+```text
+cardWidth = (containerInnerWidth - (columns - 1) * gap) / columns
+```
+
+## Floating children inside auto-layout
+
+Use `layoutPositioning:"ABSOLUTE"` for decorative or floating children that must
+sit outside the flow inside an auto-layout parent: aurora blobs, floating glass
+tab bars, absolute badges, or overlays inside a composed screen.
+
+Pattern:
+
+1. Create/place the child under the auto-layout parent.
+2. Use `resize_nodes` on the child with `layoutPositioning:"ABSOLUTE"`.
+3. Position it with move/constraints.
+4. Fix z-order if needed.
+
+Do **not** use `pin_child` for this. `pin_child` is a prototype-scroll helper:
+it sets ABSOLUTE, reorders into the fixed-children band, and increments fixed
+child count. That is right for sticky scroll chrome, not for decoration or a
+floating tab bar that must stay visually on top.
+
+Figma limitation: x/y cannot bind to variables. Safe-area and spacing tokens can
+drive padding/size/gaps, but a floating child's absolute coordinates remain
+numeric. For floating chrome, document the safe-area constants and use
+constraints to prevent drift; do not promise token-bound x/y.
+
+## Mistakes
+
+| Mistake | Fix |
+|---|---|
+| HUG children + giant `itemSpacing` | FILL children + small gap |
+| WRAP + FILL cards | GRID or computed FIXED card width |
+| FILL before placement | Place first, then `resize_nodes` |
+| Sidebar set to FILL | Keep sidebar FIXED |
+| Wrapper has no auto layout | Add direction, padding, gap, child sizing |
+| `SPACE_BETWEEN` with many siblings | Use FILL children + small gap |
+| `pin_child` for decoration/chrome | Use `layoutPositioning:"ABSOLUTE"` via `resize_nodes` |

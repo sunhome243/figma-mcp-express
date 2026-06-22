@@ -1,6 +1,6 @@
 ---
 name: figma-design-md
-description: Use when extracting a DESIGN.md from a Figma file, including tokens, text styles, component inventory, design rationale, and optional Tailwind or DTCG exports.
+description: Use when extracting DESIGN.md from a Figma file, including tokens, styles, components, rationale, and optional Tailwind or DTCG exports.
 ---
 
 # Figma DESIGN.md Extraction
@@ -25,7 +25,8 @@ Extract `fileKey` from `figma.com/design/<fileKey>/...`. Default output is `./DE
 ## References
 
 - `references/token-extraction-spec.md` defines exactly what each Figma tool contributes and how gaps are handled.
-- `references/design-md-schema.md` defines YAML front matter, section order, token types, and prose requirements.
+- `references/design-md-schema.md` defines YAML front matter and token value types.
+- `references/design-md-sections.md` defines body section order, prose requirements, and component-token guidance.
 
 ## Delivery
 

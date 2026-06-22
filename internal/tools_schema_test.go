@@ -481,6 +481,21 @@ func TestCompactDescriptionsRecursesAndTruncates(t *testing.T) {
 	}
 }
 
+func TestCompactToolDescriptionsCoverCoreSurface(t *testing.T) {
+	for name := range coreToolSurface {
+		desc, ok := compactToolDescriptions[name]
+		if !ok {
+			t.Fatalf("core tool %q must have a curated compact description", name)
+		}
+		if strings.Contains(desc, "\n") {
+			t.Fatalf("core tool %q compact description must be one line: %q", name, desc)
+		}
+		if len(desc) > 160 {
+			t.Fatalf("core tool %q compact description is %d chars, want <= 160: %q", name, len(desc), desc)
+		}
+	}
+}
+
 func TestToolSchemas_CoreBatchDescriptionPointsToCatalogContract(t *testing.T) {
 	raw := listToolsRawDefaultProfile(t)
 	var resp toolsListResponse
