@@ -10,7 +10,7 @@ execution, serialization, routing, or op results.
 
 ## Origin roster
 
-Hard rule: `origin` is not a free-form string. Use exactly the origin assigned to you. Do not pick a random roster enum. Valid origins are `grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`.
+Hard rule: `origin` is not a free-form string. Use exactly the origin assigned to you. Do not pick a random roster enum. Valid origins are `wolfgang`, `grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`.
 
 The Watch-agent identity key is `sessionId+origin`, so concurrent agents in one
 session must use distinct origins. Separate orchestrator sessions can reuse roster

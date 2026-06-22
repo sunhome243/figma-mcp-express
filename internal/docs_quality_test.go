@@ -233,7 +233,7 @@ func TestMultiAgentSkillDocumentsOriginRosterAndOrchestrator(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "multi-agent.md")) +
 		"\n" + readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "presence.md"))
 	for _, required := range []string{
-		"`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`",
+		"`wolfgang`, `grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`",
 		"not a free-form string",
 		"sessionId+origin",
 		"orchestrator's own origin is `wolfgang`",

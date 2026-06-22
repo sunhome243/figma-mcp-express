@@ -28,10 +28,11 @@ type toolsListResponse struct {
 }
 
 type propertySchema struct {
-	Type  string           `json:"type"`
-	Enum  []string         `json:"enum"`
-	Items json.RawMessage  `json:"items"`
-	AnyOf []propertySchema `json:"anyOf"`
+	Type        string           `json:"type"`
+	Description string           `json:"description"`
+	Enum        []string         `json:"enum"`
+	Items       json.RawMessage  `json:"items"`
+	AnyOf       []propertySchema `json:"anyOf"`
 }
 
 // listTools calls tools/list through the server's HandleMessage path and returns
@@ -241,6 +242,8 @@ func TestToolSchemas_AutoInjectsRequiredOriginOnPluginFacingTools(t *testing.T) 
 	var notRequired []string
 	var wrongShape []string
 	var unexpected []string
+	var wrongDefault []string
+	var weakDescription []string
 	for _, tool := range resp.Result.Tools {
 		origin, hasOrigin := tool.InputSchema.Properties["origin"]
 		if originExemptTool(tool.Name) {
@@ -261,14 +264,22 @@ func TestToolSchemas_AutoInjectsRequiredOriginOnPluginFacingTools(t *testing.T) 
 		if origin.Type != "string" || !stringSlicesEqual(gotRoster, wantRoster) {
 			wrongShape = append(wrongShape, fmt.Sprintf("%s(type=%q enum=%v)", tool.Name, origin.Type, origin.Enum))
 		}
+		if len(origin.Enum) == 0 || origin.Enum[0] != "wolfgang" {
+			wrongDefault = append(wrongDefault, fmt.Sprintf("%s(enum=%v)", tool.Name, origin.Enum))
+		}
+		if !strings.Contains(origin.Description, "orchestrator/self=wolfgang") {
+			weakDescription = append(weakDescription, fmt.Sprintf("%s(description=%q)", tool.Name, origin.Description))
+		}
 	}
 
-	if len(missing) > 0 || len(notRequired) > 0 || len(wrongShape) > 0 || len(unexpected) > 0 {
+	if len(missing) > 0 || len(notRequired) > 0 || len(wrongShape) > 0 || len(unexpected) > 0 || len(wrongDefault) > 0 || len(weakDescription) > 0 {
 		sort.Strings(missing)
 		sort.Strings(notRequired)
 		sort.Strings(wrongShape)
 		sort.Strings(unexpected)
-		t.Fatalf("origin auto-injection failed:\nnon-exempt tools without auto-filled origin: %v\norigin not marked required: %v\nwrong origin schema shape: %v\norigin unexpectedly present on exempt tools: %v", missing, notRequired, wrongShape, unexpected)
+		sort.Strings(wrongDefault)
+		sort.Strings(weakDescription)
+		t.Fatalf("origin auto-injection failed:\nnon-exempt tools without auto-filled origin: %v\norigin not marked required: %v\nwrong origin schema shape: %v\norigin enum must default to orchestrator: %v\norigin description missing orchestrator guidance: %v\norigin unexpectedly present on exempt tools: %v", missing, notRequired, wrongShape, wrongDefault, weakDescription, unexpected)
 	}
 }
 

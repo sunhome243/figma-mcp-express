@@ -16,7 +16,8 @@ import re
 import sys
 import tempfile
 
-ROSTER = {"grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick", "wolfgang"}
+ROSTER = ("wolfgang", "grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick")
+ROSTER_SET = set(ROSTER)
 STATUSES = {"thinking", "waiting_review", "reviewing", "approved", "escalated", "done"}
 ORIGIN_EXEMPT_TOOLS = {
     "list_channels",
@@ -183,11 +184,10 @@ def validate(tool, args):
             "worker origin explicitly assigned in the prompt. Do not rely on the "
             "schema enum's first value."
         )
-    if origin not in ROSTER:
+    if origin not in ROSTER_SET:
         return (
             f"Blocked figma-mcp-express `{tool}`: unknown origin {origin!r}. "
-            "Valid origins are: grace, theo, sunho, zoe, taewon, emma, alex, "
-            "rick, wolfgang."
+            f"Valid origins are: {', '.join(ROSTER)}."
         )
 
     if tool == "set_presence" and "status" in args:

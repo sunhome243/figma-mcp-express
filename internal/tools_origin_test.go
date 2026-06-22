@@ -222,6 +222,9 @@ func TestPickOrigin(t *testing.T) {
 // Guard: every roster origin must round-trip through pickOrigin so the Go enum
 // and the validation list never drift apart.
 func TestPickOriginAcceptsEveryRosterMember(t *testing.T) {
+	if len(rosterOrigins) == 0 || rosterOrigins[0] != "wolfgang" {
+		t.Fatalf("rosterOrigins must put orchestrator/default origin first, got %v", rosterOrigins)
+	}
 	for _, o := range rosterOrigins {
 		got, ok := pickOrigin(map[string]interface{}{"origin": o})
 		if !ok || got != o {

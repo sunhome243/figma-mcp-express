@@ -115,12 +115,11 @@ func channelParam() mcp.ToolOption {
 }
 
 // rosterOrigins is the fixed presence roster for the multi-agent live-highlight
-// panel. The acting agent passes its identity as the `origin` param so the Figma
-// plugin can attribute each call to a named agent (avatar + last action) when the
-// plugin's "Watch agent" toggle is on. `wolfgang` is the orchestrator/conductor
-// identity (👑) — distinct from the eight worker agents. Keep in sync with
+// panel. Put the orchestrator first: schema-following agents often choose the
+// first enum value when no worker origin is assigned, and that default must be
+// `wolfgang`, not the first worker name. Keep in sync with
 // plugin/src/presence-roster.ts.
-var rosterOrigins = []string{"grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick", "wolfgang"}
+var rosterOrigins = []string{"wolfgang", "grace", "theo", "sunho", "zoe", "taewon", "emma", "alex", "rick"}
 
 // originParam is the presence label exposed on every plugin-reaching tool — the
 // acting agent's identity. Always REQUIRED so every call is attributed to a named
@@ -131,7 +130,7 @@ func originParam() mcp.ToolOption {
 	return mcp.WithString("origin",
 		mcp.Required(),
 		mcp.Enum(rosterOrigins...),
-		mcp.Description("Presence label: the acting agent's identity (from the roster enum). Pass the SAME value on every call from one agent so the Figma plugin's Watch-agent panel shows who is working where."),
+		mcp.Description("Origin: orchestrator/self=wolfgang; workers use assigned name. Keep the same origin on every call from one agent so Watch-agent attribution stays stable."),
 	)
 }
 
@@ -179,7 +178,7 @@ func ensureOriginParam(tool *mcp.Tool) {
 	tool.InputSchema.Properties["origin"] = map[string]any{
 		"type":        "string",
 		"enum":        rosterOrigins,
-		"description": "Presence label: the acting agent's identity from the fixed roster. Pass the same value on every call from one agent.",
+		"description": "Origin: orchestrator/self=wolfgang; workers use assigned name. Keep the same origin on every call from one agent so Watch-agent attribution stays stable.",
 	}
 	if !stringSliceContains(tool.InputSchema.Required, "origin") {
 		tool.InputSchema.Required = append(tool.InputSchema.Required, "origin")
