@@ -137,6 +137,7 @@ The craft checks that separate "structurally correct" from "actually shippable."
 - **Icon color is semantic and agrees with its label** — `muted` inactive, `foreground` default, `accent` active, status color for status; an icon at the kit's default fill, or full-contrast beside a muted label, is a FAIL.
 - **Status not by color alone** — every status reads via color **and** text/icon, and distinct statuses are visually distinct from each other (not two identical neutral chips).
 - **Active state uses a tint/indicator, not a flooded accent block** — unless the design system explicitly specifies a solid-accent fill.
+- **Element necessity — no redundant restatement** — every element adds information its neighbours don't already carry. A badge, pill, or label that restates what the headline, an adjacent value, the icon, or the screen's own context already says is a FAIL. Decide whether it *belongs* before judging how it looks — a refined treatment can't rescue an element that adds nothing (rule 11 / PC13 at review time; the easy miss is to assess styling and skip the question of whether it should exist at all).
 
 ---
 
