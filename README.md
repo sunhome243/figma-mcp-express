@@ -8,185 +8,98 @@
 [![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-compatible-8A2BE2?logo=anthropic)](https://claude.ai/code)
 [![Works with Codex](https://img.shields.io/badge/Codex-compatible-000000)](https://github.com/openai/codex)
 
-Enhanced fork of [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go).
+**Fast, quota-free, stable Figma automation for coding agents.** `figma-mcp-express` lets Claude Code, Codex, and other local agents read, edit, migrate, audit, screenshot, and prototype inside the real Figma Desktop file. It is built for serious design-system work: batch edits, multi-file routing, large-file reads, visible multi-agent activity, and prototype wiring without burning through official Figma MCP tool-call quotas.
 
----
+Use it when screenshots and comments are not enough. The agent can inspect actual nodes, components, variables, styles, frames, prototype reactions, and connected files, then make targeted changes in the file designers already use.
 
-**Fast, quota-free, agent-ready Figma MCP.** Give AI agents direct read/write access to Figma through a local Desktop plugin, with batch execution, multi-file routing, and stable concurrent sessions that are not capped by Figma's official MCP server tool-call limits.
+## Demo
 
-> **Claude Code, Codex, and other coding agents** that can use the local filesystem is **recommended.** Unlike cloud-only MCPs, figma-mcp-express uses the filesystem to optimize the performance and stability.
+<video src="assets/multi-agent-figma-build-demo.mp4" controls muted playsinline></video>
 
-If you are building design migration, audit, or handoff agents, give it a try.
+![Multiple AI agents building screens live in Figma](assets/figma-mcp-express-demo.png)
 
-| Promise         | What it means in practice                                                                                                                                  |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Fast**        | Build with fewer LLM ↔ plugin round-trips by batching dependent operations into one call.                                                                  |
-| **Quota-free**  | Plugin-side work is not capped by Figma's official MCP server limits, such as 6 calls/month for View/Collab seats or 200-600 calls/day for Dev/Full seats. |
-| **Agent-ready** | Multiple agents can share a compact default tool surface safely through channel routing, reconnects, read dedup, and a hardened request queue.             |
+Follow AI agents live as they fix issues, edit layouts, and design screens directly in Figma.
 
-### Why this fork exists
+## Why teams use it
 
-| Compared with        | What blocks real automation                                                                                                                                  | What figma-mcp-express adds                                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| Official Figma MCP   | Seat-based MCP server limits: View/Collab seats get up to 6 calls/month, while Dev/Full seats get daily and per-minute caps.                                 | Local plugin-side read/write access for open files without those official MCP tool-call quotas.                           |
-| Plain figma-mcp-go   | Single-connection assumptions, no batching, no parallel agents, weaker library automation, and reconnect flapping under multi-file or long-running sessions. | Multi-file channels, batch ops, library tooling, response spill-to-disk, reconnect safety, and concurrent agent handling. |
-| Manual Figma cleanup | Repetitive token binding, component replacement, audits, and design-to-code extraction.                                                                      | Agent workflows that can scan, modify, verify, and report across large files.                                             |
-
----
-
-## Who this is for
-
-- **Coding agents (Claude Code, Codex)** — the primary target. Skills ship with the server and load from the local filesystem, so the agent has structured guidance without burning context on docs. Spill-to-disk keeps large Figma reads out of the context window entirely.
-- Design systems teams migrating products to a new component library or token system
-- Product designers cleaning up large production files without doing every replacement by hand
-- Frontend engineers who need better design-to-code context than screenshots and comments
-- Teams experimenting with multi-agent workflows for audits, migrations, and handoff generation
-
-### Before / After
-
-| Situation                                | Without figma-mcp-express                                             | With figma-mcp-express                                                                       |
-| ---------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Official Figma MCP on a restricted seat  | You hit seat-based call caps quickly and have to ration automation.   | Normal plugin-side work is not capped by the official MCP server limits.                     |
-| Moving a product to a new design library | Designers swap components and fix spacing one screen at a time.       | An agent can inspect the old file, map the new library, and migrate frames in bulk.          |
-| Large file audit                         | The model gets flooded with raw node data or times out on huge reads. | Large reads spill to disk and the agent can inspect only the relevant slice.                 |
-| Parallel work                            | Multiple agents easily collide or queue uselessly on the same file.   | The bridge isolates channels, coordinates queueing, and supports safer multi-agent sessions. |
-
-### Example prompts
-
-```text
-Migrate these 120 product frames to the new library. Keep the new library's UX patterns, spacing rules, and component variants consistent.
-```
-
-```text
-Scan this file for detached buttons, hardcoded spacing, and off-system color usage. Group the findings by severity and suggest the cleanest replacement path.
-```
-
-```text
-Turn this React settings page into a Figma review artifact using the correct library components, token bindings, and dark-mode variables.
-```
-
-```text
-Read this design system file and generate a DESIGN.md with token scale, text styles, component inventory, and obvious consistency gaps.
-```
-
-```text
-Open the product file and the source library at the same time. Compare their components, then replace outdated instances page by page without touching unaffected areas.
-```
-
----
-
-## Use cases
-
-**For designers**
-
-- Automate dull work — find detached components, rebind hardcoded values to tokens, fix deviations from the design system at scale
-- Library swap — migrate a file from one design system to another: remap component keys, rebind tokens, update variants in bulk
-- Frame and layout setup — scaffold auto layout, bind spacing variables, pin color modes — Claude handles the structural work while you focus on designing
-- Design audit — scan for raw values, off-system components, token gaps, and repeated visuals that could become reusable local components
-
-**For developers**
-
-- Prompt → Figma — generate a Figma counterpart for an existing component or page for design review, using the correct library variants
-- Code handoff — extract token names, auto layout spec, and component references per frame, ready to implement without guessing
-- Learn a file — generate a DESIGN.md (token scale, text styles, color modes, component inventory) from any Figma file
-
-**For creators**
-
-- Prompt → Figma — describe a screen and have Claude build it end-to-end with real library components and bound tokens
-- Stitch → Figma — take a [Stitch](https://stitch.withgoogle.com) wireframe draft and re-render it in Figma with the correct components, spacing tokens, and variable modes
-- Pattern report — scan a file for what's there, what's reusable, and what's inconsistent before you start building
-
----
+- **More automation, fewer quota walls.** Normal plugin-side work is not capped by the official Figma MCP server's seat-based tool-call limits.
+- **Compact tool surface.** Compared with [`vkhanhqui/figma-mcp-go@fe6cd768`](https://github.com/vkhanhqui/figma-mcp-go) (the upstream fork baseline), the default `tools/list` drops from 73 tools / 12,214 `o200k_base` tokens to 21 tools / 3,283 tokens (73.1% smaller) — less context burned before the agent does any work.
+- **Real Figma context, not screenshots.** Agents work with live nodes, components, variables, styles, frames, screenshots, and prototype links in the open Desktop file.
+- **Built for design-system migration.** Route a source library and product file through separate channels, then rebuild screens with the right components and tokens.
+- **Made for multi-agent runs.** Watch agent activity live, follow one agent's edits, and keep file sessions separated by channel.
+- **Large files stay usable.** Big reads spill to disk so agents can inspect only the useful slice instead of flooding the model context.
+- **Prototype automation is part of the workflow.** Read prototype flows, set reactions, and set flow starting points.
 
 ## Capabilities
 
-| Track     | Capability                     | Why it matters                                                                                                           |
-| --------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Speed     | Fewer back-and-forth steps     | The agent can do several related Figma actions in one go, so building or editing a screen feels much faster.             |
-| Speed     | Compact default tool surface   | Compared with `vkhanhqui/figma-mcp-go@fe6cd768`, default `tools/list` drops from 73 tools / 12,214 `o200k_base` tokens to 21 tools / 3,283 tokens (73.1% smaller). |
-| Speed     | Large reads stay manageable    | Big files do not dump huge walls of data into the model at once, so the agent can stay focused on the part that matters. |
-| Free      | No official MCP quota limits   | You are not blocked by the official Figma MCP server's monthly or daily call caps for normal plugin-side work.           |
-| Access    | Direct Figma editing           | The agent works on the open Figma file itself, not a disconnected copy or a limited export.                              |
-| Access    | Uses your real design system   | It can work with your actual components, variables, and styles instead of rebuilding everything from raw shapes.         |
-| Access    | Can inspect shared libraries   | It can still look up published library assets when the plugin cannot run inside that file.                               |
-| Access    | Wire interactive prototypes    | The agent can read, audit, and wire prototype flows — clicks, navigation, overlays, transitions, and flow starting points — directly on the open file. |
-| Stability | Multiple files stay separate   | Working on one file does not knock another file offline or mix their state together.                                     |
-| Stability | Safe under parallel agent work | Multiple agents can share the same session without stepping on each other as easily.                                     |
-| Stability | Better recovery from drops     | If the connection breaks or the MCP client restarts, the system is designed to recover without forcing a full restart.   |
-| Scale     | Handles large production files | Big design files stay usable instead of freezing the plugin during long reads or scans.                                  |
-| Handoff   | Better design-to-code context  | Developers get cleaner output about tokens, layout rules, and component references when turning designs into code.       |
+- Watch live agent activity in the Figma plugin.
+- Build polished Figma screens with built-in AI agent skills.
+- Route multiple open files through separate channels.
+- Migrate design systems with real components, variables, and styles.
+- Read and wire prototype flows directly in the open Figma file.
 
-### One short demo story
+## Good fit
 
-A single automated run migrated **100+ production design frames** to a new library while following that library's UX patterns, components, and guidelines. Instead of swapping visuals one by one, the agent could inspect the old file, map the new system, replace structures in bulk, and keep the migration consistent across the whole set.
+- Design system migrations and component-library swaps
+- Large file audits, cleanup, and token rebinding
+- Design-to-code handoff that needs real token and component context
+- Prompt-to-Figma workflows that should use your actual library instead of raw shapes
+- Prototype audits and wiring for navigation, overlays, transitions, and flow starts
 
-### Architecture at a glance
+## Quick start
 
-```
-                 typed MCP tools
-AI client  ─────────────────────────▶  Go MCP server
-Claude / Codex                         bridge + queue + gate
-                                            │
-                                            │ JSON over WebSocket
-                                            ▼
-                                      Figma Desktop plugin
-                                      live file read/write
+### 1. Install the server
 
-large payloads ─▶ .figma-mcp-cache/       library catalog ─▶ Figma REST only when needed
-```
+Plugin install is the shortest path.
 
----
-
----
-
-## Installation
-
-Two paths depending on what you need.
-
-### Option A — Plugin install (recommended)
-
-Includes the MCP server + three skills (`/figma-mcp-express`, `/figma-design-patterns`, `/figma-design-md`) + a PreToolUse hook. No clone or build step required.
-
-> Reviewing an unreleased branch? Use Option B and build from source. Marketplace/release installs use the latest published artifact, not draft branch code.
-
-**Claude Code:**
+**Claude Code**
 
 ```bash
 claude plugin marketplace add sunhome243/figma-mcp-express
 claude plugin install figma-mcp-express@figma-mcp-express
 ```
 
-**Codex:**
+**Codex**
 
 ```bash
 codex plugin marketplace add sunhome243/figma-mcp-express
 codex plugin add figma-mcp-express@figma-mcp-express
 ```
 
-Codex installs from the configured marketplace snapshot. If you added this marketplace before a new release was published, refresh it first:
+### 2. Import the Figma Desktop plugin
 
-```bash
-codex plugin marketplace upgrade figma-mcp-express
-codex plugin add figma-mcp-express@figma-mcp-express
-```
+1. Download [`plugin.zip`](https://github.com/sunhome243/figma-mcp-express/releases/latest/download/plugin.zip) or build from source.
+2. In Figma Desktop, go to `Plugins -> Development -> Import plugin from manifest...`.
+3. Select `manifest.json` from the unzipped plugin folder or from this repo's `plugin/` directory.
 
-For project-scoped install (Claude Code only):
+### 3. Run it
 
-```bash
-claude plugin install figma-mcp-express@figma-mcp-express --scope project
-```
+1. Open the target file in Figma Desktop.
+2. Start `Plugins -> Development -> Figma MCP Express`.
+3. Keep the plugin running while the agent works.
+4. If you open multiple files, each file gets its own channel ID for multi-file workflows.
 
-### Option B — Build from source
+## Important limits
 
-For integrating into other MCP clients, or if you want to modify the server.
+- Most live tools require the target file to be open in Figma Desktop with the plugin running.
+- `fetch_library_catalog` is the main REST-only exception and requires `FIGMA_TOKEN`.
+- Plugin execution is still single-threaded per file; the server reduces contention, but it does not make one file fully parallel.
+- Community kits must be published as a library before `import_component_by_key` can use them.
+
+<details>
+<summary>Build from source</summary>
+
+For other MCP clients, or if you want to modify the server:
 
 ```bash
 git clone https://github.com/sunhome243/figma-mcp-express.git
 cd figma-mcp-express
-make build          # produces bin/figma-mcp-express + plugin/dist/
+make build
 ```
 
-Add to your `.mcp.json` (or `claude_desktop_config.json` for Claude Desktop):
+This produces `bin/figma-mcp-express` and `plugin/dist/`.
+
+Add it to your `.mcp.json`:
 
 ```json
 {
@@ -199,140 +112,58 @@ Add to your `.mcp.json` (or `claude_desktop_config.json` for Claude Desktop):
 }
 ```
 
-> The `command` path must match the Makefile output (`bin/figma-mcp-express`). Run `figma-mcp-express --version` to confirm the server reloaded your fresh build.
+Restart your MCP client after building.
+</details>
 
-Restart Claude Code / Codex. Tools load on demand.
+<details>
+<summary>Advanced environment variables</summary>
 
----
+### `FIGMA_TOKEN`
 
-## Figma Desktop plugin setup
+Most workflows do not need a token. Live read/write tools talk directly to Figma Desktop through the plugin.
 
-The plugin runs inside **Figma Desktop** (not the browser). It connects to the local MCP server over WebSocket and gives the AI agent direct access to the open file.
+You only need `FIGMA_TOKEN` for REST-backed library catalog lookups such as `fetch_library_catalog`.
 
-### Option A — Download from Releases (no clone required)
+- Generate it in Figma at `Account Settings -> Personal access tokens`
+- Read-only file access is enough for catalog lookup
+- Treat it like a password and never commit it
 
-1. Go to the [Releases page](https://github.com/sunhome243/figma-mcp-express/releases/latest) and download **plugin.zip**
-2. Unzip it anywhere — e.g. `~/figma-mcp-express-plugin/`
-3. In Figma Desktop: **Plugins → Development → Import plugin from manifest...**
-4. Navigate to the unzipped folder and select `manifest.json`
-
-### Option B — From a cloned repo (build from source)
-
-After running `make build` (see [DEV-SETUP.md](DEV-SETUP.md)):
-
-1. In Figma Desktop: **Plugins → Development → Import plugin from manifest...**
-2. Navigate to `plugin/` inside the cloned repo and select `manifest.json`
-
-> **Where is "Import plugin from manifest..."?**
-> Open any file in Figma Desktop → top menu bar → **Plugins** → hover **Development** → click **Import plugin from manifest...** in the submenu. If you don't see the Development submenu, make sure you are on Figma Desktop (not the web app).
-
-### Running the plugin
-
-1. Open a Figma file
-2. **Plugins → Development → Figma MCP Express**
-3. The plugin panel shows:
-   - **Status** — `Connected` once the MCP server is running, `Waiting for server` otherwise
-   - **WebSocket URL** — the address the plugin connected to (default `ws://127.0.0.1:1994`)
-   - **Channel ID** — a unique ID for this file's session (pass this as `channel:` in multi-file workflows)
-4. Minimize the panel with the **−** button — it collapses to a small pill and stays out of the way
-
-**Multiple files:** open each file and run the plugin in each — every file gets its own channel ID and can be targeted independently.
-
----
-
-## Environment variables
-
-| Variable                 | Default | Description                                                                                                                                                                                                                                       |
-| ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FIGMA_TOKEN`            | —       | Figma Personal Access Token. Required only for `fetch_library_catalog`. Auto-loaded from `.env`.                                                                                                                                                  |
-| `FIGMA_MCP_TOOL_PROFILE` | `core`  | Tool surface profile. `core` is the compact default; `full` restores the legacy top-level compatibility/debugging surface.                                                                                                                        |
-| `FIGMA_MCP_TOOL_SCHEMA_MODE` | `compact` | Tool schema verbosity. Default `compact` trims `tools/list` descriptions to reduce MCP context tokens; set `verbose` to expose the full in-schema guidance.                                                                                       |
-| `FIGMA_MCP_BATCH_MAX_OPS` | `200` | Maximum top-level `batch.ops` entries accepted before plugin execution. Split very large plans into logical sections; raise only for controlled local runs. |
-| `FIGMA_MCP_BATCH_MAX_BYTES` | `2097152` | Maximum encoded `batch.ops` payload size in bytes before plugin execution. Prevents oversized generated plans from occupying the plugin bridge. |
-| `FIGMA_MCP_SPILL_BYTES`  | `25000` | Response size threshold. Larger responses spill to `.figma-mcp-cache/`.                                                                                                                                                                           |
-| `FIGMA_MCP_TIMEOUT`      | `120`   | Inactivity ceiling in seconds for lightweight ops (writes, metadata reads, styles). Resets on each progress heartbeat.                                                                                                                            |
-| `FIGMA_MCP_READ_TIMEOUT` | `600`   | Inactivity ceiling in seconds for heavy reads (`get_node`, `get_nodes_info`, `get_design_context`, full-document reads, scan/search tools) and `batch`. Resets on each progress heartbeat. A firing timer means retry narrower, not raise the ceiling. |
-| `FIGMA_MCP_STALL_THRESHOLD` | `45` | Seconds an op may hold a channel's serial slot with **no progress** before a NEW call on that channel is fast-rejected (`ErrChannelStalled`) instead of queueing behind the likely-hung op. Protects concurrent agents from a single wedged call; the stuck op itself still resolves at its own ceiling, and the guard self-heals when the slot frees. |
-
-### FIGMA_TOKEN
-
-Most tools work without a token — the plugin talks directly to Figma Desktop. You only need `FIGMA_TOKEN` for `fetch_library_catalog`, which hits the REST API to enumerate published components from a read-only shared library.
-
-**Generate a token:** Figma → Account Settings → Personal access tokens → Generate new token. Read-only scope (`File content: Read`) is sufficient.
-
-**Setting it — depends on your install path:**
-
-**Option A (plugin):**
+If you installed from the marketplace, set it in your shell profile:
 
 ```bash
-echo 'export FIGMA_TOKEN=your_token_here' >> ~/.${SHELL##*/}rc && source ~/.${SHELL##*/}rc
+echo 'export FIGMA_TOKEN=your_token_here' >> ~/.zshrc
+source ~/.zshrc
 ```
 
-**Option B (build from source):** Add a `.env` file in the project root (already gitignored).
+If you built from source, you can either export it in your shell or place it in a local `.env` file:
 
 ```bash
+cat <<'EOF' > .env
 FIGMA_TOKEN=your_token_here
+EOF
 ```
 
-The binary loads `.env` from its working directory at startup. Shell env always takes precedence over `.env`.
+Shell environment variables take precedence over `.env`.
 
-> Treat it like a password — it grants read access to all Figma files visible to your account. Never commit it.
+| Variable | Default | Description |
+| --- | --- | --- |
+| `FIGMA_TOKEN` | - | Required only for `fetch_library_catalog`. |
+| `FIGMA_MCP_TOOL_PROFILE` | `core` | `core` keeps the compact default tool surface. `full` restores the legacy compatibility/debugging surface. |
+| `FIGMA_MCP_TOOL_SCHEMA_MODE` | `compact` | `compact` trims `tools/list` descriptions to reduce MCP context tokens. Use `verbose` for full in-schema guidance. |
+| `FIGMA_MCP_BATCH_MAX_OPS` | `200` | Maximum top-level `batch.ops` entries accepted before plugin execution. |
+| `FIGMA_MCP_BATCH_MAX_BYTES` | `2097152` | Maximum encoded `batch.ops` payload size in bytes before plugin execution. |
+| `FIGMA_MCP_SPILL_BYTES` | `25000` | Response size threshold. Larger responses spill to `.figma-mcp-cache/`. |
+| `FIGMA_MCP_TIMEOUT` | `120` | Inactivity ceiling in seconds for lightweight ops. Resets on each progress heartbeat. |
+| `FIGMA_MCP_READ_TIMEOUT` | `600` | Inactivity ceiling in seconds for heavy reads and `batch`. Resets on each progress heartbeat. |
+| `FIGMA_MCP_STALL_THRESHOLD` | `45` | Seconds an op may hold a channel's serial slot with no progress before a new call on that channel is fast-rejected. |
+</details>
 
----
+## More docs
 
-## See also
-
-- [TOOLS.md](TOOLS.md) — full tool catalog with parameter tables
-- [ARCHITECTURE.md](ARCHITECTURE.md) — batch ref resolution, response gating, singleflight, multi-channel routing
-- [DEV-SETUP.md](DEV-SETUP.md) — build instructions, plugin rebuild, test commands
-
----
+- [TOOLS.md](TOOLS.md) for the full tool catalog
+- [ARCHITECTURE.md](ARCHITECTURE.md) for queueing, routing, spill-to-disk, and recovery behavior
+- [DEV-SETUP.md](DEV-SETUP.md) for local build, rebuild, and test instructions
 
 ## Credits
 
-Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MIT). The original established the core insight: skip the REST API, talk directly to Figma Desktop over WebSocket. figma-mcp-express adds multi-channel routing, batch ops, response spill-to-disk, library automation, codegen context, library catalog discovery, cooperative yield, and depth-limited traversal.
-
----
-
-## Known limitations
-
-### Figma Desktop required for live operations
-
-Most tools require the target file open in Figma Desktop with the plugin running. The plugin cannot operate on unopened files. `fetch_library_catalog` is the main exception — it uses the REST API and only needs a `FIGMA_TOKEN`.
-
-### Single-threaded plugin execution
-
-The Figma plugin runs on a single thread. This server adds a per-channel queue, cooperative yield, and singleflight deduplication to reduce contention, but back-to-back operations on the same file still serialize.
-
-### Memory on large files
-
-Reads that exceed the inline response limit spill to disk. On very large files with many concurrent agents, this can drive up RAM. Scope reads narrowly (`nodeId` + `types` + `limit`) to keep payloads small.
-
-### Community UI kits are not importable by key unless published as a library
-
-Community kits are published to Community (viewable/duplicatable), but their components are **not** published as a library (importable via `import_component_by_key`). This is a Figma platform constraint.
-
-| "Published"                | What it means                                          | Community kits |
-| -------------------------- | ------------------------------------------------------ | -------------- |
-| Published **to Community** | File is shared; anyone can view or duplicate it        | ✅             |
-| Published **as a library** | Components are importable via `import_component_by_key` | ❌             |
-
-Note: REST `components: 0` / `404` is not the arbiter. A kit published as a library after the fact will import fine even while REST still returns 404. The live `import_component_by_key` probe is the real test.
-
-When a kit is not published as a library:
-
-- `import_component_by_key` fails with `Cannot import component ... since it is unpublished`
-- `fetch_library_catalog` may return `components: 0`
-- Cross-file linked instances are not possible; only detached copies
-
-> **Workaround**
->
-> **Option A — publish the duplicated kit as a library** _(linked instances)_
-> 1. Duplicate the kit into your drafts or team workspace.
-> 2. Open the duplicate and publish it from the **Assets** panel.
-> 3. Re-run `import_component_by_key` → `create_instance` in the target file.
->
-> **Option B — paste without publishing** _(detached copies)_
-> 1. Open both the kit file and the target file in Figma Desktop.
-> 2. Copy the needed components from the kit and paste them into the target file.
-> 3. Use those local copies for future instances — no link back to the kit.
+Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MIT). The original established the core idea: skip the REST API for live file work and talk directly to Figma Desktop over WebSocket.
