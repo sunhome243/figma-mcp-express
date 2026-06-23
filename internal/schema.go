@@ -743,7 +743,10 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		if msg := validateAutoLayoutParams(params); msg != "" {
 			return msg
 		}
-		if msg := validateLayoutSizingParams(params); msg != "" {
+		if msg := rejectChildLayoutSizingParamsForAutoLayout(params); msg != "" {
+			return msg
+		}
+		if msg := validateMinMaxParams(params); msg != "" {
 			return msg
 		}
 
@@ -1993,12 +1996,8 @@ func validateTextStyleParams(params map[string]interface{}) string {
 // validateLayoutSizingParams checks the optional sizing-within-parent enums
 // (resize_nodes, create_frame).
 func validateLayoutSizingParams(params map[string]interface{}) string {
-	for _, k := range []string{"minWidth", "maxWidth", "minHeight", "maxHeight"} {
-		if v, ok := params[k]; ok && v != nil {
-			if n, ok := v.(float64); ok && n <= 0 {
-				return fmt.Sprintf("%s must be positive", k)
-			}
-		}
+	if msg := validateMinMaxParams(params); msg != "" {
+		return msg
 	}
 	for _, k := range []string{"layoutSizingHorizontal", "layoutSizingVertical"} {
 		if v, ok := params[k].(string); ok && v != "" {
@@ -2021,6 +2020,26 @@ func validateLayoutSizingParams(params map[string]interface{}) string {
 		case "AUTO", "ABSOLUTE":
 		default:
 			return fmt.Sprintf("layoutPositioning must be AUTO or ABSOLUTE, got: %s", v)
+		}
+	}
+	return ""
+}
+
+func validateMinMaxParams(params map[string]interface{}) string {
+	for _, k := range []string{"minWidth", "maxWidth", "minHeight", "maxHeight"} {
+		if v, ok := params[k]; ok && v != nil {
+			if n, ok := v.(float64); ok && n <= 0 {
+				return fmt.Sprintf("%s must be positive", k)
+			}
+		}
+	}
+	return ""
+}
+
+func rejectChildLayoutSizingParamsForAutoLayout(params map[string]interface{}) string {
+	for _, k := range []string{"layoutSizingHorizontal", "layoutSizingVertical", "layoutGrow", "layoutAlign", "layoutPositioning"} {
+		if _, ok := params[k]; ok {
+			return fmt.Sprintf("%s belongs to resize_nodes/create_frame, not set_auto_layout", k)
 		}
 	}
 	return ""

@@ -1,160 +1,94 @@
 # Padding Strategy
 
-Padding and gap are the two mechanisms that control internal spacing in auto layout. They are **not interchangeable** — using the wrong one at the wrong level is the most common cause of layouts that look right once and break on resize.
+Padding and gap are distinct auto-layout controls. Use them deliberately; wrong
+ownership is the fastest way to make a screen look right once and break on resize.
+
+**Quick navigation:** [Concepts](#concepts) · [Ownership](#ownership) · [Token binding](#token-binding) · [Scale](#scale) · [Examples](#examples) · [Mistakes](#mistakes)
 
 ---
 
-## Container padding vs. item gap — what each one does
+## Concepts
 
-| Concept | API property | Controls | Level |
-|---|---|---|---|
-| **Container padding** | `paddingLeft/Right/Top/Bottom` | Space between the frame edge and its children | The frame that owns the children |
-| **Item gap** | `itemSpacing` | Space between adjacent siblings inside an auto-layout frame | Same frame that has `layoutMode` set |
-| **Counter-axis spacing** | `counterAxisSpacing` | Gap in the cross-axis direction (WRAP grids) | Same frame, only when `layoutWrap = "WRAP"` |
-
-They live on the **same frame** but serve completely different purposes. Do not use `itemSpacing` to create breathing room inside a card — that is the card's own `paddingLeft/Right/Top/Bottom`.
-
----
-
-## Which level owns spacing
-
-Every spacing value belongs to exactly one frame. Ownership follows a single rule: **the frame that directly parents the spaced content owns that space.**
-
-```
-Page
-└── Screen (wrapper)          → paddingLeft/Right = screen-edge inset token
-    └── ContentArea           → itemSpacing = section-gap token
-        ├── Header            → paddingLeft/Right/Top/Bottom = component internal padding
-        │   └── ...children
-        └── CardGrid          → itemSpacing = card-gap token, paddingLeft/Right = grid-inset token
-            ├── Card          → paddingLeft/Right/Top/Bottom = card internal padding
-            └── Card
-```
-
-Violations occur when a child tries to create its own external margin (Figma has no margin), or when a parent sets enormous `itemSpacing` to push children apart instead of setting children to `FILL`.
-
----
-
-## Binding every padding/gap to a token (mandatory)
-
-Raw integers for spacing are never correct. Every padding and gap property must be bound to a spacing variable from the design library.
-
-```
-WRONG — raw px hardcoded:
-  paddingLeft:24, paddingRight:24, paddingTop:16, paddingBottom:16, itemSpacing:12
-
-CORRECT — every value bound to a token through validated batch ops:
-  op 0-2: import_variable_by_key for spacing/large, spacing/medium, spacing/small
-  op 3: create_frame or set_auto_layout with padding/gap fields bound to those variables
-  op 4: get_node to verify boundVariables includes each spacing field
-```
-
-Import spacing variables **once per session/plan**, before creating frames that will use them. Waiting until you need them means you'll be tempted to hardcode a fallback.
-
----
-
-## Spacing scale discipline
-
-Use only the token values your design library provides. Round to the nearest available token — never invent a value between steps.
-
-Generic scale pattern (adapt to your library's actual tokens):
-
-| Semantic name | Typical value | Use for |
+| Concept | API property | Controls |
 |---|---|---|
-| `spacing/xs` | 4 px | Tight inline gaps (icon + text label) |
-| `spacing/sm` | 8 px | Chip + text, dense list rows |
-| `spacing/md` | 12–16 px | Standard row item gap, card internal padding top/bottom |
-| `spacing/lg` | 24 px | Section padding, panel-to-panel gap, card-to-card gap |
-| `spacing/xl` | 32–40 px | Page-level section breaks |
+| Container padding | `paddingLeft/Right/Top/Bottom` | space between frame edge and children |
+| Item gap | `itemSpacing` | space between siblings in the same auto-layout frame |
+| Wrap cross-gap | `counterAxisSpacing` | cross-axis gap for WRAP grids |
 
-If your library has no token near the value you need, go to the next available token up or down. If that still looks wrong, the problem is usually the layout model (FILL vs HUG) not the spacing value.
+Do not use `itemSpacing` to create card breathing room; that belongs to the card's
+own padding. Do not fake external margin on children; Figma has no margin.
 
-There is no 20px, 28px, or other between-step value in most scales — do not invent one.
+## Ownership
 
----
-
-## How consistent padding ownership makes resize survive
-
-When every frame owns only its own internal padding and gap, resizing the wrapper only changes the frame that explicitly uses `FILL`. Nothing else shifts. The predictability comes from ownership clarity:
+The direct parent owns the spacing between its own children.
 
 ```
-// Resize-safe structure: wrapper changes width → only ContentArea FILL adapts
-Screen (1440px → 1200px)
-  paddingLeft = sp6 token    ← stays 24px regardless of wrapper width
-  paddingRight = sp6 token   ← stays 24px
-  └── ContentArea (FILL)     ← absorbs the width change
-      itemSpacing = sp4 token ← stays fixed gap
-      ├── LeftPanel (FIXED)   ← stays at its fixed width
-      └── MainArea (FILL)     ← absorbs remaining space
-
-// Resize-broken structure: multiple frames with hardcoded padding fight over space
-Screen (1440px)
-  └── ContentArea
-      paddingLeft  = 120   ← arbitrary; was "centered at 1440" only
-      paddingRight = 120   ← same
+Screen -> padding = screen inset
+  ContentArea -> itemSpacing = section gap
+    CardGrid -> padding = grid inset, itemSpacing = card gap
+      Card -> padding = card internal padding
 ```
 
-Fixed padding tokens stay constant. FILL children absorb the width. This is why tokens + FILL children is the only combination that is truly resize-safe.
+If spacing disappears, doubles, or behaves differently at another width, the value is
+probably on the wrong frame.
 
----
+## Token binding
 
-## Worked examples: good vs. bad padding placement
+Every padding/gap should bind to a spacing variable. Import variables once up front,
+then create/update frames with token-bound padding/gap fields and verify
+`boundVariables`.
 
-### Example 1 — Card internal padding
+Allowed exception: when the library has no spacing variables, use documented scale
+integers such as 4/8/12/16/24/32 and record the exception. This does not allow raw
+colors, radii, shadows, or typography.
 
-```
-BAD: Card frame has no padding, child text node has paddingLeft
-  Card (frame, auto layout vertical, NO padding)
-  └── TitleText (paddingLeft = 16)   ← text nodes have no padding property; this is a layout hack
+## Scale
 
-GOOD: Card owns its padding; children have none
-  Card (frame, auto layout vertical, paddingLeft/Right/Top/Bottom bound to card-padding token)
-  └── TitleText (no padding — inherits visual inset from Card)
-  └── DescText  (no padding)
-```
+Use the library's actual scale. Generic mapping:
 
-### Example 2 — Page-level section gap
+| Token | Typical use |
+|---|---|
+| `xs` / 4 | icon-label micro gaps |
+| `sm` / 8 | chips, dense rows |
+| `md` / 12-16 | normal row gaps, card vertical padding |
+| `lg` / 24 | section padding, card gaps |
+| `xl` / 32-40 | page-level breaks |
 
-```
-BAD: Each section has marginTop = 40 (Figma has no margin; this is actually paddingTop on the section)
-  Page
-  └── Section1 (paddingTop = 40)   ← the first section shouldn't have top padding
-  └── Section2 (paddingTop = 40)   ← now spacing is uneven at top vs between
+Avoid invented between-step values such as 20 or 28 unless the design system defines
+them. If the nearest token looks wrong, revisit layout sizing before inventing spacing.
 
-GOOD: The page wrapper owns the gap between sections
-  Page (auto layout vertical, itemSpacing bound to section-gap token)
-  └── Section1 (no padding for external spacing)
-  └── Section2 (no padding for external spacing)
-  // Each section still has its own internal paddingLeft/Right for content inset
-```
+## Examples
 
-### Example 3 — Grid inset vs. card gap (two separate tokens)
+Card:
 
 ```
-CORRECT — two distinct concerns, two distinct bindings:
-  CardGrid
-    paddingLeft  = gridInsetToken   // space between grid edge and first card
-    paddingRight = gridInsetToken
-    itemSpacing  = cardGapToken     // space between cards
-
-  Do NOT set paddingLeft on individual Card children to fake the inset.
-  Do NOT set itemSpacing on CardGrid to a massive value to fake distribution.
+BAD: text node tries to create inset
+GOOD: Card frame owns padding; text children have none
 ```
 
----
+Sections:
 
-## Common mistakes
+```
+BAD: each section uses top padding as fake margin
+GOOD: page wrapper owns itemSpacing between sections
+```
 
-| Mistake | Symptom | Fix |
-|---|---|---|
-| Raw `paddingLeft:24` | Hardcoded spacing breaks token theming + dark mode | Bind the padding field to a spacing variable |
-| `itemSpacing` used for card-internal breathing room | Content crowds the card edge | Use `paddingLeft/Right/Top/Bottom` on the card frame |
-| Container padding on the child instead of the parent | Spacing disappears or doubles on resize | Move padding to the direct parent |
-| `itemSpacing = 200` on a HUG-child row | Looks spread at one width, broken at all others | Children to FILL + small gap token |
-| Different padding values at same semantic level | Inconsistent spacing across the design | Create and reuse one token per semantic role |
+Grid:
 
----
+```
+CardGrid padding = grid inset
+CardGrid itemSpacing = card gap
+Cards do not fake inset with child padding
+```
 
-## Cross-reference
+## Mistakes
 
-Gap values (the `itemSpacing` part of this reference) are also covered from the auto-layout angle in `references/auto-layout.md`. That file covers FILL/HUG decisions and the resize test. This file covers ownership, level discipline, and token binding — read both for a complete picture.
+| Mistake | Fix |
+|---|---|
+| Raw `paddingLeft:24` | bind padding to spacing variable |
+| `itemSpacing` used for internal card padding | put padding on the card frame |
+| Padding on child instead of direct parent | move it to the parent |
+| Huge `itemSpacing` to spread HUG children | use FILL children + small token gap |
+| Different values for same semantic role | define/reuse one token |
+
+Cross-reference: `auto-layout.md` covers FILL/HUG/GRID and resize testing.

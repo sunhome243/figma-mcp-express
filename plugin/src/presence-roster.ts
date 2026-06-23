@@ -23,6 +23,8 @@ const seedAvatar = (seed: string): string =>
   `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(seed)}&radius=50`;
 
 export const ROSTER: Record<string, AgentMeta> = {
+  // Orchestrator/conductor — distinct gold ring + crown, set apart from workers.
+  wolfgang: { name: "Wolfgang", color: "#eab308", avatar: seedAvatar("Wolfgang"), crown: true },
   grace: { name: "Grace", color: "#f43f5e", avatar: seedAvatar("Grace") },
   theo: { name: "Theo", color: "#f59e0b", avatar: seedAvatar("Theo") },
   sunho: { name: "Sunho", color: "#8b5cf6", avatar: seedAvatar("Sunho") },
@@ -31,8 +33,6 @@ export const ROSTER: Record<string, AgentMeta> = {
   emma: { name: "Emma", color: "#06b6d4", avatar: seedAvatar("Emma") },
   alex: { name: "Alex", color: "#22c55e", avatar: seedAvatar("Alex") },
   rick: { name: "Rick", color: "#f97316", avatar: seedAvatar("Rick") },
-  // Orchestrator/conductor — distinct gold ring + 👑, set apart from the workers.
-  wolfgang: { name: "Wolfgang", color: "#eab308", avatar: seedAvatar("Wolfgang"), crown: true },
 };
 
 const GENERIC: AgentMeta = {

@@ -1,111 +1,48 @@
-# batch-recipes.md — canonical batch chains + catalog validation rules
+# Batch Recipes
 
-Load this before composing any `batch` call. Part 1 = ready-to-use recipes (including map and projection bulk). For exact op params, use the live catalog: `search_batch_ops` to find an op, then `get_batch_op_spec` to inspect it. Use `batch(validateOnly:true)` before sending generated or unfamiliar mutations.
+Load before composing any `batch` call. This file covers refs, projection, `map`,
+validation, and failure behavior. Exact op params live in `BatchOpCatalog`.
 
-**Quick navigation:**
-
-| # | Recipe | Jump |
-|---|--------|------|
-| 1 | Create frame → bind fills → auto layout → verify | [→](#recipe-1-create-frame--bind-token-fills--set-auto-layout--verify) |
-| 2 | Library component — import → place → configure → pin mode | [→](#recipe-2-library-component--import--place--configure--pin-mode) |
-| 3 | Chain read — search → targeted deep read | [→](#recipe-3-chain-read--search--targeted-deep-read) |
-| 4 | `[*]` projection — scan → bulk-apply same param to N nodes | [→](#recipe-4--projection--scan--bulk-apply-same-param-to-n-nodes) |
-| 5 | `map` — per-item-varying params in one round-trip | [→](#recipe-5-map--per-item-varying-params-in-one-round-trip) |
-| 6 | Probe one instance — test → anatomy → screenshot → delete | [→](#recipe-6-probe-one-instance--test--anatomy--screenshot--delete) |
-| — | Batch failure semantics (not transactional) | [→](#batch-failure-semantics--not-transactional-resend-from-failedat) |
-| 7 | Bulk rename nodes | [→](#recipe-7-bulk-rename-nodes-to-a-naming-convention) |
-| 8 | Chunked text replacement with visual verification | [→](#recipe-8-chunked-text-replacement-with-visual-verification) |
-| 9 | Annotation analysis — map annotations to target nodes | [→](#recipe-9-annotation-analysis--map-manual-annotations-to-target-nodes) |
-| 10 | Prototype reaction flow map | [→](#recipe-10-prototype-reaction-flow-map) |
-| 11 | Transfer overrides between component instances | [→](#recipe-11-transfer-overrides-between-component-instances) |
-| — | **Part 2 — Catalog + validation rules** | [→](#part-2--catalog--validation-rules) |
+**Quick navigation:** [Discovery](#discovery) · [Shape](#batch-shape) · [Refs](#refs-and-projection) · [Map](#map) · [Validation](#validation) · [Failure](#failure-semantics) · [Examples](#minimal-examples)
 
 ---
 
-## Part 1 — Canonical recipes
+## Discovery
 
-> Every `type` used in the recipes below (`create_frame`, `set_fills`, `set_auto_layout`, `import_component_by_key`, …) is a **`batch` op type**, NOT a top-level tool in the default `core` profile. They are only callable inside a `batch(ops:[…])` call. Ref syntax is `$N.field` (dot-path, e.g. `$0.nodes.0.id`); the wildcard projection is `$N.field[*].id`. There is no top-level `create_frame`/`set_fills` to call directly in `core`.
->
-> **Node target = the op-level `nodeIds` field**, not a param: write `{ "type": "delete_nodes", "nodeIds": ["$0.id"] }`, not `{ …, "params": { "nodeIds": […] } }` — even though `get_batch_op_spec` lists `nodeIds` under `paramKeys` (a plural `params.nodeIds` is auto-hoisted, but op-level is canonical). The singular `nodeId` IS a real param for read/scan ops (`scan_nodes_by_types`, `get_design_context`) — there it's the subtree root, kept in `params`.
->
-> `search_batch_ops` matches intent words with AND semantics and normalizes common query mess: separators, camelCase, singular/plural, and filler words like `op`/`tool`. `"create frame"` / `"auto layout"` find `create_frame` / `set_auto_layout`; `"delete_node op"` finds `delete_nodes`; `"reorder tool"` finds `reorder_nodes`. Use the exact returned op name in the final batch.
+Progressive discovery flow:
 
----
+1. `search_batch_ops(query/category/readOnly/mutates)` to find the capability. Search
+   by intent words or param key such as `fontSize` or `componentId`.
+2. `get_batch_op_spec(op, includeExamples:true)` for exact params/enums.
+3. `batch(validateOnly:true)` / `batch(validateOnly:true, ops:[...])` for generated or unfamiliar plans.
+4. `batch(ops:[...])` only after validation passes.
 
-### Recipe 1: Create frame → bind token fills → set auto layout → verify
+Do not copy op-specific schemas into skills, prompts, or hooks. `BatchOpCatalog` is
+the SSOT.
 
-> ⚠️ **`layoutSizingHorizontal/Vertical: "FILL"` must be set AFTER the node has a parent.**
-> If you create a frame and set FILL sizing in the same batch before `appendChild`, the sizing is
-> silently accepted and silently ignored — the node renders at content size. Always append first,
-> then set sizing. The `$N.id` ref chain in a single batch guarantees correct ordering.
->
-> ⚠️ **Auto-layout children: `move_nodes` is silently ignored.** If a frame has `layoutMode` set,
-> its children's positions are owned by the parent. To apply safe area or reposition content in a
-> mobile screen frame, adjust the **parent's padding** instead:
-> the batch op `set_auto_layout` on `screenFrameId` with `paddingTop: 59, paddingBottom: 34`.
+## Batch shape
+
+Every write primitive in the default `core` profile is a batch op type, not a
+top-level tool. Route files at the outer call: `batch(channel:"auto-2", ops:[...])`.
+Never put `channel` inside `ops[*].params`; those params are validated against the op
+schema.
+
+Canonical op shapes:
 
 ```json
-{
-  "ops": [
-    { "type": "create_frame",    "params": { "name": "Card", "width": 320, "height": 200, "parentId": "<wrapper-id>" } },
-    { "type": "set_fills",       "nodeIds": ["$0.id"], "params": { "variableId": "<surface-var-id>" } },
-    { "type": "set_auto_layout", "nodeIds": ["$0.id"], "params": { "layoutMode": "VERTICAL", "itemSpacingVariableId": "<gap-var-id>" } },
-    { "type": "get_node",        "nodeIds": ["$0.id"], "params": { "depth": 2 } }
-  ]
-}
+{ "type": "set_fills", "nodeIds": ["<id-or-$ref>"], "params": { "...": "..." } }
+{ "type": "map", "over": "$0.nodes[*]", "as": "node", "do": { "type": "set_visible", "nodeIds": ["$node.id"], "params": { "visible": true } } }
 ```
 
-Stop policy: `$N` refs present → stops at first error. Trailing `get_node` is the inline structural verify — no second round-trip needed.
+Node targets go in op-level `nodeIds`, not `params.nodeIds`. Singular `params.nodeId`
+is for subtree-root read/scan ops.
 
----
+## Refs and projection
 
-### Recipe 2: Library component — import → place → configure → pin mode
+Refs point backward only: `$0.id`, `$1.nodes.0.id`, `$0.matchingNodes[*].id`.
+self/forward refs are rejected. Only ONE `[*]` wildcard is allowed per ref.
 
-```json
-{
-  "ops": [
-    { "type": "import_component_by_key",  "params": { "key": "<component-set-key>", "assetType": "COMPONENT_SET" } },
-    { "type": "create_instance",          "params": { "componentId": "$0.id", "parentId": "<wrapper-id>" } },
-    { "type": "set_instance_properties",  "nodeIds": ["$1.id"], "params": { "properties": { "Variant": "Primary", "State": "Default" } } },
-    { "type": "set_variable_mode",        "nodeIds": ["$1.id"], "params": { "collectionId": "<col-id>", "modeId": "<dark-mode-id>" } }
-  ]
-}
-```
-
-Use `assetType:"COMPONENT_SET"` only for component-set keys; omit it for concrete component/variant keys. `create_instance` *requires* `componentId` — thread the imported component's `$0.id` into it. (`componentKey` is an optional fallback the handler auto-imports only when `componentId` doesn't resolve; with the import op present, use the returned id directly.) Stop policy: every op refs `$N` → stops at first error, so if import fails there's no create attempt.
-
----
-
-### Recipe 3: Chain read — search → targeted deep read
-
-```json
-{
-  "ops": [
-    { "type": "search_nodes", "params": { "nodeId": "<page-id>", "query": "Dashboard", "types": ["FRAME"], "limit": 5 } },
-    { "type": "get_node", "nodeIds": ["$0.nodes.0.id"], "params": { "depth": 3, "skipInvisibleInstanceChildren": true } }
-  ]
-}
-```
-
-Stop policy: `$0.nodes.0.id` ref stops if search returns empty. Confirm result count > 0 before batching, or handle the case where `$0.nodes` is empty.
-
----
-
-### Recipe 4: `[*]` projection — scan → bulk-apply same param to N nodes
-
-Use this when you want to apply the **same operation** to every node in a scan result — one round-trip, no intermediate list-building.
-
-```json
-{
-  "ops": [
-    { "type": "scan_nodes_by_types", "params": { "nodeId": "<frame-id>", "types": ["INSTANCE"] } },
-    { "type": "swap_component", "nodeIds": ["$0.matchingNodes[*].id"], "params": { "componentId": "<plus-component-id>" } }
-  ],
-  "continueOnError": true
-}
-```
-
-**Field-name rule** — the return-field that `[*]` scans depends on the source op:
+Projection fans a scan/search result into one bulk op:
 
 | Source op | Return field | Projection ref |
 |---|---|---|
@@ -113,281 +50,91 @@ Use this when you want to apply the **same operation** to every node in a scan r
 | `scan_nodes_by_types` | `matchingNodes` | `$0.matchingNodes[*].id` |
 | `scan_text_nodes` | `textNodes` | `$0.textNodes[*].id` |
 
-Only ONE `[*]` wildcard per ref. Sub-field after the wildcard extracts a scalar: `$0.matchingNodes[*].id` fans-in to an array of ID strings.
+Use projection for same-param bulk setters such as `set_fills`, `set_strokes`,
+`set_visible`, `swap_component`, `set_instance_properties`, `bind_variable_to_node`,
+and `set_corner_radius`. Prefer `continueOnError:true` for independent bulk work.
 
-Works for **all 8 bulk setters**: `set_fills`, `set_strokes`, `set_opacity`, `set_visible`, `swap_component`, `set_instance_properties`, `bind_variable_to_node`, `set_corner_radius`. Use `continueOnError: true` — one bad id must not abort the rest.
+## Map
 
-**Examples:**
-
-```json
-// Bind a token to all text nodes in a frame
-{
-  "ops": [
-    { "type": "scan_text_nodes", "params": { "nodeId": "<frame-id>" } },
-    { "type": "bind_variable_to_node", "nodeIds": ["$0.textNodes[*].id"],
-      "params": { "variableId": "<color-var-id>", "field": "fillColor" } }
-  ],
-  "continueOnError": true
-}
-
-// Hide all instances of a specific component
-{
-  "ops": [
-    { "type": "search_nodes", "params": { "nodeId": "<page-id>", "query": "Banner", "types": ["INSTANCE"] } },
-    { "type": "set_visible", "nodeIds": ["$0.nodes[*].id"], "params": { "visible": false } }
-  ],
-  "continueOnError": true
-}
-```
-
----
-
-### Recipe 5: `map` — per-item-VARYING params in one round-trip
-
-Use `map` when you need **different param values for each node** (e.g. set each node's text to its own name, or apply per-row data). This is the only way to vary params per node without N separate round-trips.
+Use `map` when each item needs different params.
 
 ```json
 {
   "ops": [
     { "type": "scan_text_nodes", "params": { "nodeId": "<frame-id>" } },
-    {
-      "type": "map",
-      "over": "$0.textNodes[*]",
-      "as": "item",
-      "do": {
-        "type": "set_text",
-        "nodeIds": ["$item.id"],
-        "params": { "text": "$item.name" }
-      }
-    }
+    { "type": "map", "over": "$0.textNodes[*]", "as": "item",
+      "do": { "type": "set_text", "nodeIds": ["$item.id"], "params": { "text": "$item.name" } } }
   ]
 }
 ```
 
-**`map` fields:**
+Rules:
+- `map.over` must resolve to an array.
+- `map.as` must be an identifier and cannot be `index`.
+- named binding refs are only allowed inside `map.do`.
+- `$item` / `$index` substitute only as whole JSON values; string interpolation like
+  `"Section $index"` is literal and invalid for generated names.
+- Named binding projections such as `$item.children[*].id` are rejected.
+- `map.do` cannot be another `map`.
+- cap is 500 items.
 
-| Field | Required | Description |
-|---|---|---|
-| `type` | yes | must be `"map"` |
-| `over` | yes | ref resolving to an array; use `$N.field[*]` or any ref that yields an array |
-| `as` | no | binding name for each element (default: `"item"`) |
-| `do` | yes | op template; use `$item`, `$item.path`, `$index` for per-element values |
+## Validation
 
-**Binding variables inside `do`:**
-- `$item` — the current element object
-- `$item.someField` — a field on the element
-- `$index` — zero-based iteration index (name is always `index`, not affected by `as`)
+Hard rejects before plugin execution:
 
-**Binding rules:** named binding refs are only allowed inside `map.do`. `$item`/`$index` refs substitute only when the whole JSON string value is the ref; string interpolation like `"Section $index"` is treated as literal text and will not substitute. `map.as` must be an identifier and cannot be `index`. Named binding projections such as `$item.children[*].id` are rejected; use `$N.path[*]` before `map` or map over the child list directly. `map.do` cannot be another `map`.
+- unknown op type; nested `batch`
+- unknown op fields
+- `nodeIds` not an array of strings; `params` not an object
+- unknown params; stale aliases such as `characters` for `create_text`/`set_text`
+- invalid component import `assetType`
+- script-like keys anywhere: `script`, `code`, `js`, `eval`, `function`
+- self/forward refs, malformed refs, more than one `[*]`
+- invalid `map.over`, `map.as`, or `map.do`; named binding refs outside `map.do`
 
-**Limits:** cap 500 items per `map`. Emits progress updates every 10 items. Returns `{ results:[{i,type,data}|{i,type,error}], okCount, failCount }`.
+No raw Plugin API JS in batch. A script-like UX must compile to declarative
+FigmaPlan JSON and pass catalog validation.
+
+## Failure semantics
+
+Batch is NOT transactional. Ops before a failure remain applied. On partial failure,
+the result includes `failedAt` and per-op errors.
+
+Fix the failing op and resend from `failedAt`; resending the whole batch can
+double-create prior nodes. A forward-ref error means the producer op must move before
+the consumer.
+
+Keep one batch to one logical section, not one giant batch. The single plugin serial
+slot is held for the whole batch, so huge batches block reads, writes, and verification.
+Server caps (`FIGMA_MCP_BATCH_MAX_OPS`, `FIGMA_MCP_BATCH_MAX_BYTES`) reject before
+plugin execution.
+
+## Minimal examples
+
+Create -> bind -> layout -> verify:
 
 ```json
-// Copy each text node name into its visible text
 {
   "ops": [
-    { "type": "search_nodes", "params": { "nodeId": "<frame-id>", "query": "heading", "types": ["TEXT"] } },
-    {
-      "type": "map",
-      "over": "$0.nodes[*]",
-      "as": "node",
-      "do": {
-        "type": "set_text",
-        "nodeIds": ["$node.id"],
-        "params": { "text": "$node.name" }
-      }
-    }
+    { "type": "create_frame", "params": { "name": "Card", "width": 320, "height": 200, "parentId": "<wrapper-id>" } },
+    { "type": "set_fills", "nodeIds": ["$0.id"], "params": { "variableId": "<surface-var-id>" } },
+    { "type": "set_auto_layout", "nodeIds": ["$0.id"], "params": { "layoutMode": "VERTICAL", "itemSpacingVariableId": "<gap-var-id>" } },
+    { "type": "get_node", "nodeIds": ["$0.id"], "params": { "depth": 2 } }
   ]
 }
 ```
 
----
-
-### Recipe 6: Probe one instance — test → anatomy → screenshot → delete
+Import -> place -> configure:
 
 ```json
 {
   "ops": [
     { "type": "import_component_by_key", "params": { "key": "<component-set-key>", "assetType": "COMPONENT_SET" } },
-    { "type": "create_instance",  "params": { "componentId": "$0.id", "parentId": "<page-root-id>" } },
-    { "type": "get_node",         "nodeIds": ["$1.id"], "params": { "depth": 6 } },
-    { "type": "save_screenshots", "nodeIds": ["$1.id"], "params": { "outputPath": ".figma-mcp-cache/probe-<name>.png" } },
-    { "type": "delete_nodes",     "nodeIds": ["$1.id"] }
+    { "type": "create_instance", "params": { "componentId": "$0.id", "parentId": "<wrapper-id>" } },
+    { "type": "set_instance_properties", "nodeIds": ["$1.id"], "params": { "properties": { "Variant": "Primary" } } }
   ]
 }
 ```
 
-Use before building N instances of any unfamiliar component. `get_node(depth:6)` reveals text node IDs, actual rendered heights, and property names for `set_instance_properties`.
-For concrete component/variant keys, omit `assetType`; for component-set keys, pass `assetType:"COMPONENT_SET"` or fetch the library catalog first so the server can inject the route hint.
-
----
-
-### Batch failure semantics — NOT transactional, resend from `failedAt`
-
-Figma has **no rollback.** Ops before a failure stay applied — each op is its own undo step. On a partial failure the result carries `failedAt` and per-op `{i, error}` (plus a `💡` hint).
-
-**Fix only the failing op and resend FROM `failedAt`** — resending the whole batch double-creates everything before the failure. A forward-ref error (`$N` with `N` ≥ the current op index) means your ops are out of order: move the producer op before the consumer.
-
-Stop policy is automatic: any op uses a `$N` ref → dependent chain → stops at first failure (downstream refs would break). No refs → independent bulk → runs all ops, reports each. Override with `continueOnError: true|false`.
-
-Keep one batch to one logical section (a few dozen ops). A batch holds the plugin's single serial slot for its whole run, so an enormous batch blocks every other call and leaves nothing to verify between steps. Build incrementally with batches, not one giant batch.
-
-Server caps fail fast before plugin execution: `FIGMA_MCP_BATCH_MAX_OPS` defaults to `200`, and `FIGMA_MCP_BATCH_MAX_BYTES` defaults to `2097152` encoded bytes. Split the plan when either cap trips; only raise caps for controlled local runs.
-
----
-
-### Recipe 7: Bulk rename nodes to a naming convention
-
-Scope first, then scan and rename flagged nodes. Show a preview table before applying.
-
-**Same pattern for N nodes** (e.g. prefix + counter):
-```json
-{
-  "ops": [
-    { "type": "scan_nodes_by_types", "params": { "nodeId": "<frame-id>", "types": ["FRAME","GROUP","INSTANCE","TEXT","RECTANGLE","ELLIPSE","VECTOR"] } },
-    { "type": "batch_rename_nodes", "nodeIds": ["$0.matchingNodes[*].id"], "params": { "pattern": "<Prefix>$n" } }
-  ],
-  "continueOnError": true
-}
-```
-
-**Per-node different names** — use `map` (Recipe 5) with a `rename_node` do-op instead.
-
-**Flow:** determine scope (page/frame/selection via `get_metadata`/`get_node`/`get_selection`) → `scan_nodes_by_types` → flag auto-generated names ("Frame \d+", "Group \d+", "Rectangle \d+") → derive new names from node type, text content, and hierarchy position → show preview → apply after user confirmation.
-
-**Rules:** never rename COMPONENT master nodes (only instances and frames). Preserve "/" hierarchy separators — do not flatten. When unsure, leave the node and flag it.
-
-**Naming convention:** screens = PascalCase; section frames = "Section/Name"; instances = match mainComponent name; containers = "ComponentName/Container"; text nodes = "Label" / "Title" / "Body" / "Caption"; icons = "Icon/Name".
-
----
-
-### Recipe 8: Chunked text replacement with visual verification
-
-> ⚠️ **Do NOT use `find_replace_text` — it has a known scope bug (#33) that traverses the entire
-> page and all component masters, corrupting unintended instances.** Use `scan_text_nodes` + per-node
-> `set_text` as shown below.
-
-Replace copy across a large design by processing logical chunks with screenshot verification between each chunk.
-
-1. **Scan:** `scan_text_nodes(nodeId)` — identify structure (tables, lists, card groups, forms, nav).
-2. **Safe copy:** `batch(ops:[{type:"clone_node", nodeIds:["<root-id>"], params:{x:newX,y:newY}}])`.
-3. **Replace per chunk** via validated `set_text` ops.
-4. **Verify chunk:** `save_screenshots(items:[{nodeId:"<chunk-id>",outputPath:".figma-mcp-cache/chunk-N.png"}],scale:0.5)` — fix before moving to next chunk.
-5. **Final pass:** export full design at `scale:0.2`.
-
-**Scale guide:** 1–5 elements → 1.0; 6–20 → 0.7; 21–50 → 0.5; 50+ → 0.3; full design → 0.2.
-
-For varying text per node, use the `map` op (Recipe 5) instead of a single-node loop.
-
----
-
-### Recipe 9: Annotation analysis — map manual annotations to target nodes
-
-Read-only. The server reads native annotations via `get_annotations`; no annotation-write op exists.
-
-```json
-{
-  "ops": [
-    { "type": "get_annotations",    "nodeIds": ["<frame-id>"] },
-    { "type": "scan_text_nodes",    "params": { "nodeId": "<frame-id>" } },
-    { "type": "scan_nodes_by_types","params": { "nodeId": "<frame-id>", "types": ["COMPONENT","INSTANCE","FRAME"] } }
-  ]
-}
-```
-
-**Matching priority:** (1) path-based — parent container name in the layer hierarchy; (2) name-based — key terms from the annotation description; (3) proximity — closest UI element by center-point distance (fallback).
-
-Report as a table: Marker · Description · Target Node ID · Target Name · Confidence · Evidence. Verify visually with `save_screenshots`. Do not claim annotations were written unless a future annotation-write op exists and succeeds.
-
----
-
-### Recipe 10: Prototype reaction flow map
-
-Parse `get_reactions` output to produce a structured interaction flow between screens.
-
-```json
-{
-  "ops": [
-    { "type": "get_design_context", "params": { "depth": 2, "detail": "minimal" } },
-    { "type": "get_reactions",      "nodeIds": ["<screen-a-id>", "<screen-b-id>"] }
-  ]
-}
-```
-
-**Process:** iterate each reaction's `actions[]` array and keep only destination-bearing actions where `destinationId` is present (types: NAVIGATE, OPEN_OVERLAY, SWAP_OVERLAY); ignore CHANGE_TO / CLOSE_OVERLAY and any entry without a `destinationId`. Call `get_nodes_info` on all source + destination IDs to resolve names. Emit a flow map: `[ScreenA] --ON_CLICK/NAVIGATE--> [ScreenB]`. Verify key screens with `save_screenshots`. Node IDs use colon format: `4029:12345` — never hyphens.
-
----
-
-### Recipe 11: Transfer overrides between component instances
-
-Copy content and property overrides from a source instance to one or more target instances.
-
-```json
-{
-  "ops": [
-    { "type": "scan_nodes_by_types", "params": { "nodeId": "<parent-id>", "types": ["INSTANCE"] } },
-    { "type": "get_node",            "nodeIds": ["<source-instance-id>"], "params": { "depth": 4 } },
-    { "type": "set_text",            "nodeIds": ["<target-text-id>"],     "params": { "text": "<content>" } }
-  ]
-}
-```
-
-**Flow:** `get_selection()` to identify parent and instance slots → `get_node(source, depth:4)` + `scan_text_nodes(source)` to capture all overrides → apply to targets via `set_text` / `set_fills` / `set_strokes` batch ops → verify with `get_node()` or `get_design_context()`. Use `map` (Recipe 5) when the override pattern is consistent across all targets. `save_screenshots()` for final visual confirmation.
-
----
-
-## Part 2 — Catalog + validation rules
-
-Do not copy op-specific schemas into skills, prompts, or hooks. `BatchOpCatalog` is the SSOT.
-
-Route files at the outer call: `batch(channel:"auto-2", ops:[...])`. Never put `channel` inside `ops[*].params`; those params are validated against the op schema.
-
-**Progressive discovery flow:**
-1. `search_batch_ops(query/category/readOnly/mutates)` — find the capability.
-2. `get_batch_op_spec(op, includeExamples:true)` — inspect exact params/enums.
-3. `batch(validateOnly:true, ops:[...])` — validate generated or unfamiliar plans.
-4. `batch(ops:[...])` — execute only after the plan validates.
-
-**Allowed op shapes:**
-```json
-{ "type": "set_fills", "nodeIds": ["<id-or-$ref>"], "params": { "...": "..." } }
-{ "type": "map", "over": "$0.nodes[*]", "as": "node", "do": { "type": "set_visible", "nodeIds": ["$node.id"], "params": { "visible": true } } }
-```
-
-**Hard rejects before plugin execution:**
-- unknown op type; nested `batch`
-- unknown op fields (`type`, `nodeIds`, `params`; for `map`: `type`, `over`, `as`, `do`)
-- `nodeIds` not an array of strings; `params` not an object
-- unknown params; stale aliases such as `characters` for `create_text`/`set_text` (use `text`)
-- invalid component import `assetType` (allowed: `COMPONENT`, `COMPONENT_SET`)
-- script-like keys anywhere: `script`, `code`, `js`, `eval`, `function`
-- self/forward refs (`$N` must point to an earlier op), malformed refs, more than one `[*]`
-- invalid `map.over`, `map.as`, or `map.do`; `map.do` is validated like any other catalog op
-- named binding refs outside `map.do`, unknown map bindings, named binding projections, nested `map`
-
-**No raw Plugin API JS in batch.** If a future script-like UX is added, it must compile to declarative FigmaPlan JSON and pass the same catalog validation before execution.
-
-## Effects — `set_effects` / `create_effect_style`
-
-`type` ∈ `DROP_SHADOW | INNER_SHADOW | LAYER_BLUR | BACKGROUND_BLUR | GLASS | NOISE | TEXTURE`
-(GLASS/NOISE/TEXTURE are Figma's native 2025 effects). All fields optional + defaulted — pass only
-overrides. This is the mechanics; whether/where to apply an effect is a design call.
-
-| type | fields (default) |
-|---|---|
-| `DROP_SHADOW` / `INNER_SHADOW` | `color`(#000000) · `opacity`(0.25) · `offsetX`(0) · `offsetY`(4) · `radius`(8/4) · `spread`(0) · `showShadowBehindNode`(DROP only) |
-| `LAYER_BLUR` / `BACKGROUND_BLUR` | `radius`(4) |
-| `GLASS` | `lightIntensity` 0–1 (0.5) · `lightAngle` deg (130) · `refraction` 0–1 (0.3) · `depth` ≥1 (10) · `dispersion` 0–1 (0.1) · `radius` frost (12) |
-| `TEXTURE` | `noiseSize`(1) · `noiseSizeVector`({x,y}, optional) · `radius`(4) · `clipToShape`(true) |
-| `NOISE` | `noiseType` `MONOTONE`\|`DUOTONE`\|`MULTITONE` · `color` · `secondaryColor`(duotone) · `opacity`(multitone) · `noiseSize`(1) · `noiseSizeVector`({x,y}, optional) · `density`(0.5) |
-
-```jsonc
-{ "type": "set_effects", "nodeIds": ["<id>"], "params": { "effects": [
-  { "type": "GLASS", "lightIntensity": 0.6, "refraction": 0.35, "depth": 8, "dispersion": 0.12, "radius": 14 }
-] } }
-```
-
-`set_effects` **replaces** all effects on the node (pass `[]` to clear). Mechanics note: `GLASS`
-refracts the layers *behind* it, so it only reads over a (semi-)transparent fill with content behind —
-not over an opaque fill. Older plugin builds reject the three native type literals with a
-`must be DROP_SHADOW…` validation error.
+More non-prototype task workflows live in `workflow-recipes.md`; prototype wiring
+and reaction maps live in the `figma-prototype` skill; native effect mechanics live
+in `effects.md`.

@@ -2,6 +2,8 @@
 
 Reference for Phase G1–G2. Defines what to extract from each tool, how to map raw data to DESIGN.md token groups, and how to handle gaps.
 
+**Quick navigation:** [Tool inputs](#what-each-tool-provides) · [Gap handling](#gap-handling) · [Return shape](#return-shape-what-phase-g3-consumes)
+
 ---
 
 ## What each tool provides

@@ -1,106 +1,106 @@
 # Tool Selection and Validation
 
-Use this reference after loading the `figma-mcp-express` skill. It describes which core tools to call and how to verify writes without duplicating the batch operation catalog.
+Use after loading `figma-mcp-express`. Pick narrow reads, discover writes through the
+catalog, then verify every mutation.
 
-## Read Tool Decision
+**Quick navigation:** [Reads](#reads) · [Batch discovery](#batch-discovery) · [Validation](#validation) · [Detail levels](#detail-levels) · [Style audit](#style-audit) · [Libraries](#libraries) · [Structure](#structure) · [Common errors](#common-errors)
 
-| Situation | Tool |
+## Reads
+
+| Need | Tool |
 |---|---|
-| Need file/page orientation | `get_metadata`, then `get_pages` |
-| Need a node by name/type | `search_nodes` with `nodeId`, `types`, and `limit` |
-| Need all nodes of a type under a frame | `scan_nodes_by_types` |
-| Need text nodes only | `scan_text_nodes` |
-| Known one node id | `get_node` with a small `depth` |
-| Known many node ids | `get_nodes_info` (also accepts `depth`) |
-| Need token-efficient selected tree | `get_design_context` |
-| Need codegen-grade context | `get_design_context` with `detail:"codegen"` |
-| Need published library catalog | `fetch_library_catalog` with `FIGMA_TOKEN` |
+| File/page orientation | `get_metadata`, then `get_pages` |
+| Node by name/type | `search_nodes` with `nodeId`, `types`, `limit` |
+| All nodes of a type | `scan_nodes_by_types` |
+| Text only | `scan_text_nodes` |
+| One known id | `get_node` with small `depth` |
+| Many known ids | `get_nodes_info` |
+| Token-efficient tree | `get_design_context` |
+| Codegen/fidelity audit | `get_design_context detail:"codegen"` |
+| Published library catalog | `fetch_library_catalog` with `FIGMA_TOKEN` |
 
-Avoid page-level deep reads. If a result spills to `.figma-mcp-cache/`, query the sidecar files with shell tools instead of pasting the full payload into context.
+Avoid page-level deep reads. Start shallow: `get_design_context detail:"minimal"
+depth:1`, then inspect one frame at a time. If a response spills to
+`.figma-mcp-cache/`, query the sidecar with shell tools.
 
-**Phased read on a large node** — never deep-read a giant node in one call. First `get_design_context detail:"minimal" depth:1` (or `get_node depth:1`) to list the top-level frames + `childCount`, then read ONE frame at a time: `scan_text_nodes(frameId)` for copy, `get_node(frameId, depth:2-3)` / `scan_nodes_by_types(frameId, types)` for structure. `depth` bounds serialization work, so a shallow read returns fast even on a multi-thousand-node section; only descend where you need detail.
+## Batch discovery
 
-## Batch Discovery
+All writes in `core` go through `batch`; write primitives are batch op types. Use
+`search_batch_ops` first, including by param key. This is how to discover ops from
+terms like `fontSize`, `componentId`, `cornerRadius`, `delete_node`, or `reorder`.
+Then inspect with `get_batch_op_spec` and validate with `batch(validateOnly:true)`.
 
-1. Use `search_batch_ops` with a capability name, op name, or param key to find candidate ops. It tolerates sloppy search text such as `delete_node op`, `reorder tool`, singular/plural drift, separators, and camelCase. Examples: `fontSize`, `componentId`, `cornerRadius`.
-2. Use `get_batch_op_spec` for exact params, read/write flags, examples, and output shape.
-3. Use `batch(validateOnly:true)` before generated or unfamiliar mutations.
-4. Execute the same plan with `batch` only after validation passes.
+Do not guess top-level write tools. Do not mirror schemas here. `BatchOpCatalog` is
+the source of truth.
 
-In the default `core` profile, **ALL writes go through `batch`** — there are no top-level write tools (`create_frame`, `set_fills`, `import_component_by_key`, … are batch op types). When unsure whether a capability exists, `search_batch_ops` FIRST rather than guessing a top-level tool name. (Reads in the decision tree above stay top-level.)
+Library import keys are not node IDs. Component/style keys are 40-char lowercase hex;
+for component sets pass `assetType:"COMPONENT_SET"` or fetch the catalog first.
 
-Do not mirror operation schemas in this file. `BatchOpCatalog` is the source of truth.
-
-**Library import keys are not node IDs.** Component/style keys must be full 40-char lowercase hex; for component sets pass `assetType:"COMPONENT_SET"`, or `fetch_library_catalog` first so the server injects the component-set route hint.
-
-## Validate After Write
+## Validation
 
 | Write kind | Validate with | Assert |
 |---|---|---|
-| Create/place | trailing `get_node` in the same batch or follow-up `get_node` | id exists, parent is correct, size/name are correct |
-| Auto layout / resize | `get_node depth:1` | layout mode, sizing, gap, padding |
-| Fill/stroke/token bind | `get_node depth:0` | variable binding exists; no raw color fallback |
-| Instance configuration | `get_nodes_info` | properties and visible content changed |
-| Section complete | `save_screenshots` at high dimension | alignment, overflow, theme, placeholder text |
+| Create/place | trailing or follow-up `get_node` | id, parent, name, size |
+| Layout/resize | `get_node depth:1` | layout mode, sizing, gap, padding |
+| Token bind | `get_node depth:0` | variable/style binding, no raw fallback |
+| Instance config | `get_nodes_info` | properties/content changed |
+| Section complete | `save_screenshots` | alignment, overflow, theme, copy |
 
-Screenshots are not mutation proof. They are the final visual review.
+Screenshots are final visual review, not mutation proof.
 
-## Detail Levels — Token Cost Guide
+## Detail levels
 
-| `detail` | Includes | Approx tokens vs `full` |
-|---|---|---|
-| `minimal` | id / name / type / bounds | ~5 % |
-| `compact` | + fills / strokes / opacity | ~30 % |
-| `full` | everything (characters, typography, cornerRadius, padding, visible) | 100 % |
-| `codegen` | full + autoLayout + resolved token names + INSTANCE componentRef / Code-Connect | 100 %+ |
+| `detail` | Use |
+|---|---|
+| `minimal` | orientation: id/name/type/bounds |
+| `compact` | fills/strokes/opacity scan |
+| `full` | complete node fidelity |
+| `codegen` | autoLayout, token names, component refs |
 
-Start at `minimal` for orientation; escalate to `codegen` only when generating code or conducting a fidelity audit that requires token names.
+Use `dedupe_components:true` for repeated instances such as card lists, rows, and nav
+items. Inspect stubs and read only unique overrides deeply.
 
-**Deduplicate repeated instances** — for screens with many identical component instances (card lists, table rows, nav items), pass `dedupe_components:true`. INSTANCE nodes collapse to compact stubs (mainComponentId + componentProperties overrides); unique structures land once in a top-level `componentDefs` map. Typical savings: 5–10×. Flow: `get_design_context detail:"minimal" dedupe_components:true` → inspect `componentDefs` → read `componentProperties` on each stub → `get_node` only for instances with unique overrides.
+## Style audit
 
-## Style Audit Flow
+1. `get_styles()` + `get_variable_defs()` for named styles and local variables.
+2. `get_design_context detail:"compact"` to scan fills/strokes/text styles.
+3. Flag raw colors/fonts without style refs; skip intentional instance overrides.
+4. Match raw values to existing styles. If matched, compose batch ops; if not, flag a
+   design-system gap.
+5. Validate first and process chunks of <=20 nodes.
 
-Find nodes using raw (unlinked) values instead of design-system styles:
+Rule: never change appearance just to link a style. Use batch op set_fills for backgrounds; do not use `fillColor` as a general background mutator.
 
-1. `get_styles()` + `get_variable_defs()` — collect all named paint, text, and effect styles and COLOR variables.
-2. `get_design_context detail:"compact"` — scan fills/strokes/textStyle fields across the node tree.
-3. Flag nodes with raw fill colors or raw fontFamily/fontSize **without** a named style reference; skip nodes already linked to a named style.
-4. Match each raw hex to an existing paint style. Match → compose `apply_style_to_node` batch ops. No match → flag as a design-system gap.
-5. `batch(validateOnly:true)` before any fix; group nodes by `styleId/target` to minimize round-trips.
+## Libraries
 
-**Rules:** never change visual appearance — only link to a style that already matches. Skip INSTANCE nodes with intentional overrides. Process in chunks of ≤ 20 nodes on large trees.
+Empty `get_variable_defs` means no local variables, not no design system.
 
-## Subscribed Libraries (empty `get_variable_defs` ≠ no design system)
+1. `list_library_variable_collections`
+2. `get_library_variables` per collection key
+3. `import_variable_by_key` / `import_component_by_key`
 
-`get_variable_defs` returns only a file's **local** variables — it comes back empty in a file that *subscribes* to an external library, even though that library's tokens are fully available. Before concluding a file has no design system:
+Use subscribed variables/components instead of recreating raw local approximations.
 
-1. `list_library_variable_collections` — subscribed collections + their keys.
-2. `get_library_variables` per collection key — the variable keys.
-3. `import_variable_by_key` / `import_component_by_key` — bring tokens and components into the file to bind them.
+## Structure
 
-Treat an empty `get_variable_defs` as "no *local* tokens," not "no tokens."
+Orient first, then create parent frames before children in reading order. Use
+semantic names: screens PascalCase, sections `Section/Name`, containers
+`ComponentName/Container`, icons `Icon/Name`, text `Label`/`Title`/`Body`/`Caption`.
 
-## Design Structure Notes
+Use Figma-native production features: auto layout/grid/constraints, variables/modes,
+text/paint/effect styles, component variants/properties, prototype ops, annotations,
+and dev resources where useful. A raw frame that only looks like a component is not a
+production design artifact.
 
-When creating a new screen or section, orient first: `get_metadata()` → `get_pages()` → plan the layout hierarchy before creating elements.
-
-**Naming conventions:** screens in PascalCase ("LoginScreen"); sections as "Section/Name"; component instances match the mainComponent name; containers as "ComponentName/Container"; interactive elements as "ComponentName/ActionName"; text nodes as "Label" / "Title" / "Body" / "Caption"; icons as "Icon/Name". Avoid Figma auto-generated names ("Frame 123", "Group 6").
-
-**Hierarchy:** create parent frames first, then child elements in reading order (top → bottom). Group inputs together, place action buttons after inputs, secondary elements last. Verify each create with `get_node()`; all writes are undoable via Ctrl/Cmd+Z.
-
-**Element creation:** use `batch op set_fills for backgrounds` (inspect `get_batch_op_spec` and prefer `variableId` for token-bound fills); `set_strokes` for borders; `set_text` / `create_text` for labels and button copy. Do not use `fillColor` as the fill mutator — that is a discrete-tool param used only on `create_text`, not a general background fill op.
-
-## Common Errors
+## Common errors
 
 | Symptom | Fix |
 |---|---|
-| Plugin not connected | Open the target file in Figma Desktop and run the plugin; do not retry-loop |
-| Timeout/no response | Reduce scope: frame id, smaller depth, lower result volume |
-| Wrong file mutated | Call `list_channels` and pass the intended `channel` |
-| Batch rejects `channel` | Put `channel` on the outer `batch` call, not inside `ops[*].params` |
-| Node id not found | Convert hyphen ids to colon ids when needed |
-| Text op rejects params | Use server param names from `get_batch_op_spec`; `text`, not stale Plugin API aliases |
-| FILL sizing did not apply | Place the node under its parent before setting FILL sizing in the batch sequence |
-| `find_replace_text` mutated wrong nodes | **BUG #33** — scope is ignored; use `scan_text_nodes` + `set_text` per node instead |
-| `get_design_context` returns wrong node | **BUG #34** — nodeId param ignored; use `get_node(nodeId)` directly |
-| `get_batch_op_spec` returns empty | **BUG #36** — use `search_batch_ops` + `batch(validateOnly:true)` to discover params |
+| Plugin not connected | Open target file and run plugin; no retry loop |
+| Timeout/no response | Narrow scope: frame id, depth, result volume |
+| Wrong file mutated | `list_channels`, pass intended `channel` |
+| Batch rejects `channel` | Put `channel` on outer `batch`, never `ops[*].params` |
+| Node id not found | Use colon ids; source ids from live reads |
+| Text op rejects params | Use `text`, not stale aliases such as `characters` |
+| FILL ignored | Place under parent before setting FILL |
+| Known server bugs | Read `mcp-known-bugs.md` |

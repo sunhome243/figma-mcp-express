@@ -374,6 +374,13 @@ func TestValidateRPC_SetAutoLayout_GridAndExtras(t *testing.T) {
 	}); msg == "" {
 		t.Error("expected error for invalid overflowDirection")
 	}
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"layoutPositioning": "ABSOLUTE",
+	}); msg == "" {
+		t.Error("expected set_auto_layout to reject child layoutPositioning")
+	} else if !strings.Contains(msg, "resize_nodes/create_frame") {
+		t.Fatalf("expected routing error for layoutPositioning, got %q", msg)
+	}
 }
 
 func TestValidateRPC_LayoutMinMaxRejectsNonPositiveValues(t *testing.T) {
@@ -412,6 +419,9 @@ func TestValidateRPC_LayoutMinMaxRejectsNonPositiveValues(t *testing.T) {
 	}
 	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{"minWidth": nil}); msg != "" {
 		t.Fatalf("nil minWidth should still clear the constraint, got %q", msg)
+	}
+	if msg := ValidateRPC("set_auto_layout", []string{"1:1"}, map[string]interface{}{"minWidth": nil}); msg != "" {
+		t.Fatalf("nil minWidth should still clear the constraint on auto-layout nodes, got %q", msg)
 	}
 }
 
@@ -754,6 +764,9 @@ func TestValidateRPC_ResizeNodes(t *testing.T) {
 	}
 	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{"width": float64(200)}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
+	}
+	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{"layoutPositioning": "ABSOLUTE"}); msg != "" {
+		t.Errorf("layoutPositioning-only resize_nodes should be valid, got: %s", msg)
 	}
 }
 

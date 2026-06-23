@@ -26,6 +26,12 @@ func TestSkillFrontmatterProductionRules(t *testing.T) {
 			body := readTestFile(t, path)
 			fm := parseFrontmatter(t, body)
 
+			for key := range fm {
+				if key != "name" && key != "description" {
+					t.Fatalf("skill frontmatter must contain only name and description; got extra field %q", key)
+				}
+			}
+
 			name := strings.TrimSpace(fm["name"])
 			if name == "" {
 				t.Fatal("skill frontmatter missing name")
@@ -49,6 +55,72 @@ func TestSkillFrontmatterProductionRules(t *testing.T) {
 					t.Fatalf("description should describe triggers only, not process hint %q: %q", processHint, desc)
 				}
 			}
+			for _, forbiddenHeading := range []string{"# When to Use", "# When to use", "## When to Use", "## When to use"} {
+				if strings.Contains(body, forbiddenHeading) {
+					t.Fatalf("skill trigger guidance belongs in description, not body heading %q", forbiddenHeading)
+				}
+			}
+		})
+	}
+}
+
+func TestSkillFoldersStayLeanAndDiscoverable(t *testing.T) {
+	skillDirs, err := filepath.Glob(filepath.Join("..", "skills", "*"))
+	if err != nil {
+		t.Fatalf("glob skill dirs: %v", err)
+	}
+	if len(skillDirs) == 0 {
+		t.Fatal("no skills found")
+	}
+
+	forbiddenDocNames := map[string]bool{
+		"CHANGELOG.md":          true,
+		"INSTALLATION_GUIDE.md": true,
+		"QUICK_REFERENCE.md":    true,
+		"README.md":             true,
+	}
+
+	for _, skillDir := range skillDirs {
+		skillDir := skillDir
+		t.Run(filepath.Base(skillDir), func(t *testing.T) {
+			entries, err := os.ReadDir(skillDir)
+			if err != nil {
+				t.Fatalf("read skill dir: %v", err)
+			}
+
+			for _, entry := range entries {
+				if forbiddenDocNames[entry.Name()] {
+					t.Fatalf("skill folders should not contain auxiliary docs such as %s; keep guidance in SKILL.md or references/", entry.Name())
+				}
+				if !entry.IsDir() {
+					continue
+				}
+				switch entry.Name() {
+				case "agents", "assets", "references", "scripts":
+				default:
+					t.Fatalf("unexpected skill top-level directory %q; keep resources in agents/, assets/, references/, or scripts/", entry.Name())
+				}
+			}
+
+			skillBody := readTestFile(t, filepath.Join(skillDir, "SKILL.md"))
+			refs, err := filepath.Glob(filepath.Join(skillDir, "references", "*.md"))
+			if err != nil {
+				t.Fatalf("glob references: %v", err)
+			}
+			for _, ref := range refs {
+				rel := filepath.ToSlash(filepath.Join("references", filepath.Base(ref)))
+				if !strings.Contains(skillBody, rel) {
+					t.Fatalf("reference %s must be directly linked from SKILL.md for progressive disclosure", rel)
+				}
+			}
+
+			nestedRefs, err := filepath.Glob(filepath.Join(skillDir, "references", "*", "*.md"))
+			if err != nil {
+				t.Fatalf("glob nested references: %v", err)
+			}
+			if len(nestedRefs) > 0 {
+				t.Fatalf("references should stay one level deep from SKILL.md; found nested reference %s", nestedRefs[0])
+			}
 		})
 	}
 }
@@ -67,6 +139,29 @@ func TestSkillEntryDocsStayTokenEfficient(t *testing.T) {
 		body := readTestFile(t, path)
 		if words := len(strings.Fields(body)); words > maxWords {
 			t.Fatalf("%s has %d words, want <= %d; move details into references", path, words, maxWords)
+		}
+	}
+}
+
+func TestLongSkillReferencesHaveQuickNavigation(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "skills", "*", "references", "*.md"))
+	if err != nil {
+		t.Fatalf("glob skill references: %v", err)
+	}
+
+	for _, path := range paths {
+		body := readTestFile(t, path)
+		lines := strings.Split(body, "\n")
+		if len(lines) <= 100 {
+			continue
+		}
+		n := 25
+		if len(lines) < n {
+			n = len(lines)
+		}
+		head := strings.ToLower(strings.Join(lines[:n], "\n"))
+		if !strings.Contains(head, "quick navigation") && !strings.Contains(head, "table of contents") {
+			t.Fatalf("%s has %d lines; long skill references must expose quick navigation near the top", path, len(lines))
 		}
 	}
 }
@@ -115,10 +210,30 @@ func TestFigmaMCPExpressSkillKeepsProductionRules(t *testing.T) {
 	}
 }
 
-func TestMultiAgentSkillDocumentsOriginRosterAndOrchestrator(t *testing.T) {
-	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "multi-agent.md"))
+func TestPrototypeSkillIsCompanionDomainLayer(t *testing.T) {
+	prototype := readTestFile(t, filepath.Join("..", "skills", "figma-prototype", "SKILL.md"))
 	for _, required := range []string{
-		"`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`",
+		"Companion domain skill for figma-mcp-express prototype work",
+		"does not redefine MCP execution",
+		"use `figma-mcp-express` for tool discovery, batch syntax, origin/channel",
+		"load the `figma-mcp-express` skill first",
+	} {
+		if !strings.Contains(prototype, required) {
+			t.Fatalf("figma-prototype SKILL.md must present itself as a companion domain layer; missing %q", required)
+		}
+	}
+
+	express := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "SKILL.md"))
+	if !strings.Contains(express, "Load companion skill `figma-prototype`; keep MCP execution discipline here") {
+		t.Fatal("figma-mcp-express SKILL.md must route prototype domain work to figma-prototype without moving MCP execution rules")
+	}
+}
+
+func TestMultiAgentSkillDocumentsOriginRosterAndOrchestrator(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "multi-agent.md")) +
+		"\n" + readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "presence.md"))
+	for _, required := range []string{
+		"`wolfgang`, `grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`",
 		"not a free-form string",
 		"sessionId+origin",
 		"orchestrator's own origin is `wolfgang`",
@@ -136,14 +251,14 @@ func TestMultiAgentSkillDocumentsOriginRosterAndOrchestrator(t *testing.T) {
 		"`fetch_library_catalog`",
 	} {
 		if !strings.Contains(body, required) {
-			t.Fatalf("multi-agent.md missing origin roster/orchestrator rule %q", required)
+			t.Fatalf("multi-agent/presence refs missing origin roster/orchestrator rule %q", required)
 		}
 	}
 	if strings.Contains(body, "Agent 3 → owns frame C → origin: \"sunho\"") {
-		t.Fatal("multi-agent.md must not model the orchestrator/third worker as sunho; use wolfgang for orchestrator and distinct worker origins")
+		t.Fatal("multi-agent/presence refs must not model the orchestrator/third worker as sunho; use wolfgang for orchestrator and distinct worker origins")
 	}
 	if strings.Contains(body, "batch(channel:\"auto-2\", ops:[create_frame") {
-		t.Fatal("multi-agent.md must not show batch examples without outer origin")
+		t.Fatal("multi-agent/presence refs must not show batch examples without outer origin")
 	}
 }
 
@@ -317,6 +432,90 @@ func TestDesignPatternReferencesDoNotTeachRawPluginAPIScripts(t *testing.T) {
 		body := readTestFile(t, path)
 		if match := forbiddenRE.FindString(body); match != "" {
 			t.Fatalf("%s teaches raw Plugin API script syntax %q; use batch/FigmaPlan wording instead", path, match)
+		}
+	}
+}
+
+func TestDocsDistinguishGenericFloatingFromScrollPinning(t *testing.T) {
+	autoLayout := readTestFile(t, filepath.Join("..", "skills", "figma-design-patterns", "references", "auto-layout.md"))
+	for _, required := range []string{
+		"Floating children inside auto-layout",
+		"`resize_nodes`",
+		"`layoutPositioning:\"ABSOLUTE\"`",
+		"Do **not** use `pin_child`",
+		"x/y cannot bind to variables",
+		"do not promise token-bound x/y",
+	} {
+		if !strings.Contains(autoLayout, required) {
+			t.Fatalf("auto-layout.md must distinguish generic floating from scroll pinning; missing %q", required)
+		}
+	}
+
+	constraints := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "platform-constraints.md"))
+	for _, required := range []string{
+		"Existing floating child needs ABSOLUTE",
+		"`set_auto_layout` with `layoutPositioning`",
+		"batch/FigmaPlan `resize_nodes` op on the child with `layoutPositioning:\"ABSOLUTE\"`",
+		"Float glass tab bar or decorative blob",
+	} {
+		if !strings.Contains(constraints, required) {
+			t.Fatalf("platform-constraints.md must route existing absolute children to resize_nodes; missing %q", required)
+		}
+	}
+
+	scroll := readTestFile(t, filepath.Join("..", "skills", "figma-prototype", "references", "prototype-scroll.md"))
+	for _, required := range []string{
+		"`pin_child` is only for prototype scroll-fixed children",
+		"not the generic way to",
+		"`layoutPositioning:\"ABSOLUTE\"`",
+	} {
+		if !strings.Contains(scroll, required) {
+			t.Fatalf("prototype-scroll.md must narrow pin_child to scroll-fixed use; missing %q", required)
+		}
+	}
+}
+
+func TestDesignSkillRequiresProductionFigmaFeatures(t *testing.T) {
+	skill := readTestFile(t, filepath.Join("..", "skills", "figma-design-patterns", "SKILL.md"))
+	for _, required := range []string{
+		"Figma-native production features",
+		"variables/modes",
+		"components",
+		"variants/properties",
+		"auto layout/grid",
+		"prototypes",
+		"annotations/dev resources",
+		"Visual lookalikes",
+	} {
+		if !strings.Contains(skill, required) {
+			t.Fatalf("figma-design-patterns SKILL.md must require production Figma feature use; missing %q", required)
+		}
+	}
+
+	handoff := readTestFile(t, filepath.Join("..", "skills", "figma-design-patterns", "references", "handoff-checklist.md"))
+	for _, required := range []string{
+		"Figma-native production features",
+		"native features, not visual lookalikes",
+		"variables, modes, text/paint/effect styles",
+		"component variant/property",
+		"annotations/dev resources",
+	} {
+		if !strings.Contains(handoff, required) {
+			t.Fatalf("handoff-checklist.md must gate production Figma feature use; missing %q", required)
+		}
+	}
+
+	toolSelection := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "tool-selection.md"))
+	for _, required := range []string{
+		"Figma-native production features",
+		"auto layout/grid/constraints",
+		"variables/modes",
+		"component variants/properties",
+		"annotations",
+		"dev resources",
+	} {
+		if !strings.Contains(toolSelection, required) {
+			t.Fatalf("tool-selection.md must nudge production Figma feature use; missing %q", required)
 		}
 	}
 }
@@ -631,10 +830,10 @@ func TestPromptsMatchCurrentSemanticContracts(t *testing.T) {
 
 	// ── Folded guidance — contracts now verified in skill reference files ─────
 	// (annotation_conversion_strategy, reaction_to_connector_strategy, and
-	// design_strategy were deprecated; their content lives in batch-recipes.md
-	// and tool-selection.md.)
+	// design_strategy were deprecated; their content lives in skill references.)
 
-	batchRecipes := readTestFile(t, filepath.Join(skillRefsDir, "batch-recipes.md"))
+	workflowRecipes := readTestFile(t, filepath.Join(skillRefsDir, "workflow-recipes.md"))
+	prototypeAudit := readTestFile(t, filepath.Join("..", "skills", "figma-prototype", "references", "prototype-audit.md"))
 
 	// Annotation recipe must stay read-only: no annotation-write language.
 	for _, forbidden := range []string{
@@ -642,18 +841,25 @@ func TestPromptsMatchCurrentSemanticContracts(t *testing.T) {
 		"Apply native Figma annotations",
 		"After converting annotations",
 	} {
-		if strings.Contains(batchRecipes, forbidden) {
+		if strings.Contains(workflowRecipes, forbidden) {
 			t.Fatalf("annotation recipe must stay read-only until an annotation write op exists; found %q", forbidden)
 		}
 	}
 
+	if strings.Contains(workflowRecipes, "Reaction flow map") {
+		t.Fatal("prototype reaction maps belong in figma-prototype/references/prototype-audit.md, not figma-mcp-express workflow-recipes.md")
+	}
+	if !strings.Contains(prototypeAudit, "Reaction flow map") {
+		t.Fatal("prototype-audit.md must own the reaction flow map recipe")
+	}
+
 	// Reaction recipe must describe the current plural actions[] response shape.
 	for _, required := range []string{"actions[]", "destinationId", "destination-bearing actions"} {
-		if !strings.Contains(batchRecipes, required) {
+		if !strings.Contains(prototypeAudit, required) {
 			t.Fatalf("reaction recipe must describe the current plural actions[] response shape; missing %q", required)
 		}
 	}
-	if strings.Contains(batchRecipes, `"action": {`) || strings.Contains(batchRecipes, "action.type") || strings.Contains(batchRecipes, "action.destinationId") {
+	if strings.Contains(prototypeAudit, `"action": {`) || strings.Contains(prototypeAudit, "action.type") || strings.Contains(prototypeAudit, "action.destinationId") {
 		t.Fatalf("reaction recipe must not describe the stale singular action response shape")
 	}
 
