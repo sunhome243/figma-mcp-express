@@ -82,6 +82,10 @@ alone.
 - Shared chrome is the same component instance across default/loading/empty/error and
   across matching screens. Body state changes do not redraw the header/tab bar.
 - Empty/loading states are centered, padded, and shaped like the real content.
+- Element necessity — no redundant restatement: every element adds info its neighbours
+  don't already carry. A badge/pill/label that restates the headline, an adjacent value,
+  the icon, or the screen's own context is a FAIL. Decide whether it *belongs* before
+  judging how it looks (rule 10 / PC13).
 
 ## Pass summary
 

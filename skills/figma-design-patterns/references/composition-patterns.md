@@ -127,3 +127,15 @@ Do not build a modal from raw frames, raw shadows, and raw buttons.
 - Containers must fit content plus outside strokes/effects. HUG where possible; fixed
   size only when it includes all visible extents.
 - If `clipsContent` is on, verify every edge by screenshot.
+
+## Scroll-ready, prototype-convertible mobile screens
+
+Build tall mobile screens so they convert to a scrolling prototype with **no restructure** later. The rule: the scrolling content lives in ONE vertical content frame; the chrome (top header, bottom tab/CTA dock) is **pinned / scroll-fixed** via `pin_child`.
+
+A screen built this way converts to a 390×844 prototype directly:
+
+- the outer viewport frame **clips content** (`clipsContent`),
+- the content frame is set to **vertical overflow scrolling**,
+- the pinned chrome is **"fixed when scrolling."**
+
+If instead the regions are scattered at the screen root, or the chrome isn't pinned, "make it scrollable later" becomes a rebuild. Keep content-in-one-frame + chrome-pinned from the start, and reserve `paddingBottom ≥ pinned-CTA height` on the content column so the last region never renders behind the dock (see the pinned-bar note above). Prototype reaction wiring itself → the `figma-prototype` skill.

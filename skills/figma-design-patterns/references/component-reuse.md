@@ -79,3 +79,9 @@ A fresh instance is not finished. Immediately configure real content, variants, 
 | Detached visual clone | Library updates no longer propagate | Import and place a real instance |
 | COMPONENT_SET key used without type handling | Import may probe the wrong route first | Pass `assetType:"COMPONENT_SET"` or use a concrete default variant component key |
 | Default content left visible | Looks unfinished | Configure properties and verify |
+
+## Keep the component page tidy
+
+Every component you register lives on the dedicated component section/page, organized and kept tidy — grouped by kind, laid out in a clean non-overlapping grid, semantically named. Registering a component means **moving the master INTO that section and positioning it cleanly** — never leaving a master loose on a screen, orphaned, or scattered on the canvas.
+
+The component page is the library's source of truth: other builders read it to discover and reuse. A messy or scattered component page rots the system and makes reuse-vs-rebuild decisions unreliable — a master buried on a random screen won't be found, so it gets rebuilt as a look-alike (the exact failure "whole organism over atom" is meant to prevent).
