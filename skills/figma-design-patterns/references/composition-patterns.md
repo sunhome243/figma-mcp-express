@@ -231,3 +231,15 @@ A loading state stands in for content that's about to arrive, so it should **mir
 - Prefer carrying the loading message INSIDE the skeleton body (or omitting it) over a lone line of text under the header. If you keep it, it must be a deliberately placed, padded element — not an orphaned string filling the gap between header and skeletons.
 - Skeletons are real structure, not throwaway: when the skeleton repeats (a stack of card skeletons), make ONE skeleton component and **instance** it — never copy-paste N identical skeleton frames (see Reuse & componentization).
 - Use the library's skeleton/shimmer component when one exists; otherwise neutral token-filled placeholder blocks.
+
+## Scroll-ready, prototype-convertible mobile screens
+
+Build tall mobile screens so they convert to a scrolling prototype with **no restructure** later. The rule: the scrolling content lives in ONE vertical content frame; the chrome (top header, bottom tab/CTA dock) is **pinned / scroll-fixed** via `pin_child`.
+
+A screen built this way converts to a 390×844 prototype directly:
+
+- the outer viewport frame **clips content** (`clipsContent`),
+- the content frame is set to **vertical overflow scrolling**,
+- the pinned chrome is **"fixed when scrolling."**
+
+If instead the regions are scattered at the screen root, or the chrome isn't pinned, "make it scrollable later" becomes a rebuild. Keep content-in-one-frame + chrome-pinned from the start, and reserve `paddingBottom ≥ pinned-CTA height` on the content column so the last region never renders behind the dock (see the pinned-bar note above). Prototype reaction wiring itself → the `figma-prototype` skill.
