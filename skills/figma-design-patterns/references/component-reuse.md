@@ -60,7 +60,11 @@ A component you `create_component` in the current file has **no published librar
 2. Any later screen that reuses that organism reads the ledger and calls `create_instance {componentId: "<recorded-master-id>"}` — never rebuilds a look-alike, never copy-pastes the master's frames.
 3. The orchestrator passes the shared master ids into each builder's brief so partitioned builders don't double-create.
 
-Why this matters: there is **no live recovery path** for a local master id — `get_node`/`get_nodes_info` on an existing instance return `mainComponent:{key,name,remote:false}` but **not** `mainComponent.id`, and `get_local_components` can miss an orphaned/nested master. So if you don't ledger the id at creation time, a later agent literally cannot find the master to instance it, and ends up rebuilding (the look-alike-duplicate failure). Capture-at-creation is the whole fix. (⏳ TRACKED figma-mcp-express#29 — when instance reads expose `mainComponentId`, a recovery path becomes possible and this becomes a convenience rather than a hard requirement.)
+Why this matters: the best path is still capture-at-creation, because it avoids a broad recovery scan and gives every builder the same stable master id up front. If the ledger is missing, recover in this order:
+
+1. Read the existing instance with `get_node` or `get_nodes_info`; if its master resolves, use the top-level `mainComponentId`.
+2. If the instance is gone or detached, call unscoped `get_local_components` and search the whole-file component catalog for the local master id. Do not pass `pageId` for this recovery pass; `pageId` is the bounded one-page scan for large libraries.
+3. Once recovered, add the id back to the build contract/ledger before creating more instances.
 
 ## After Placing an Instance
 

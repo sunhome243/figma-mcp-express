@@ -41,6 +41,9 @@ jobs:
       - name: Lint plugin (Figma API hygiene)
         run: make lint-ts
 
+      - name: Typecheck plugin API surface
+        run: make typecheck-ts
+
       - name: Test plugin
         run: make test-ts
 

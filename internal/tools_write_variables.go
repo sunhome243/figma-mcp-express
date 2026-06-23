@@ -7,6 +7,18 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+func variableValuePropertySchema() map[string]any {
+	return map[string]any{
+		"description": "Value to set. COLOR: hex or RGBA object. FLOAT: number. STRING: text. BOOLEAN: true/false. VARIABLE_ALIAS: object returned by create_variable_alias.",
+		"anyOf": []map[string]any{
+			{"type": "string"},
+			{"type": "number"},
+			{"type": "boolean"},
+			{"type": "object"},
+		},
+	}
+}
+
 func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 	s.AddTool(mcp.NewTool("create_variable_collection",
 		mcp.WithDescription("Create a new local variable collection with an optional initial mode name. "+
@@ -71,7 +83,17 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 		return renderResponse(resp, err)
 	})
 
-	s.AddTool(mcp.NewTool("set_variable_value",
+	s.AddTool(mcp.NewTool("create_variable_alias",
+		mcp.WithDescription("Create a variable alias value from an existing variable ID using createVariableAliasByIdAsync. Use the returned alias as a variable value."),
+		mcp.WithString("variableId", mcp.Required(), mcp.Description("Variable ID to alias.")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "create_variable_alias", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	setVariableValueTool := mcp.NewTool("set_variable_value",
 		mcp.WithDescription("Set a variable's value for a specific mode."),
 		mcp.WithString("variableId",
 			mcp.Required(),
@@ -83,10 +105,12 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 		),
 		mcp.WithString("value",
 			mcp.Required(),
-			mcp.Description("Value to set. COLOR: hex e.g. #FF5733. FLOAT: number e.g. 16. STRING: text. BOOLEAN: true or false."),
+			mcp.Description("Value to set. COLOR: hex e.g. #FF5733. FLOAT: number e.g. 16. STRING: text. BOOLEAN: true or false. VARIABLE_ALIAS: object returned by create_variable_alias."),
 		),
 		channelParam(),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	)
+	setVariableValueTool.InputSchema.Properties["value"] = variableValuePropertySchema()
+	s.AddTool(setVariableValueTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := req.GetArguments()
 		resp, err := node.Send(ctx, "set_variable_value", nil, withChannel(req, params))
 		return renderResponse(resp, err)
@@ -103,4 +127,45 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 	// 	resp, err := node.Send(ctx, "delete_variable", nil, withChannel(req, params))
 	// 	return renderResponse(resp, err)
 	// })
+
+	s.AddTool(mcp.NewTool("update_variable",
+		mcp.WithDescription("Update an existing variable's metadata: rename, set publishing scopes, hide from publishing, set per-platform code syntax, or remove code syntax platforms. Does not change the variable's value (use set_variable_value)."),
+		mcp.WithString("variableId",
+			mcp.Required(),
+			mcp.Description("Variable ID to update (from get_variable_defs)"),
+		),
+		mcp.WithString("name", mcp.Description("New variable name (use slash notation to group, e.g. 'color/primary')")),
+		mcp.WithArray("scopes",
+			mcp.Description("Publishing scopes restricting where the variable is offered. Values: ALL_SCOPES, TEXT_CONTENT, CORNER_RADIUS, WIDTH_HEIGHT, GAP, ALL_FILLS, FRAME_FILL, SHAPE_FILL, TEXT_FILL, STROKE_COLOR, STROKE_FLOAT, EFFECT_FLOAT, EFFECT_COLOR, OPACITY, FONT_FAMILY, FONT_STYLE, FONT_WEIGHT, FONT_SIZE, LINE_HEIGHT, LETTER_SPACING, PARAGRAPH_SPACING, PARAGRAPH_INDENT."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithBoolean("hiddenFromPublishing", mcp.Description("Hide this variable when the file is published as a library")),
+		mcp.WithObject("codeSyntax", mcp.Description("Per-platform code names: {WEB?, ANDROID?, iOS?}. Each provided platform is set; others are left unchanged.")),
+		mcp.WithArray("removeCodeSyntax",
+			mcp.Description("Code syntax platforms to remove: WEB, ANDROID, or iOS."),
+			mcp.WithStringItems(),
+		),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "update_variable", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
+
+	s.AddTool(mcp.NewTool("update_variable_collection",
+		mcp.WithDescription("Update a variable collection: rename it, hide it from publishing, rename a mode, or remove a mode. A collection must always keep at least one mode."),
+		mcp.WithString("collectionId",
+			mcp.Required(),
+			mcp.Description("Variable collection ID to update"),
+		),
+		mcp.WithString("name", mcp.Description("New collection name")),
+		mcp.WithBoolean("hiddenFromPublishing", mcp.Description("Hide this collection when the file is published as a library")),
+		mcp.WithObject("renameMode", mcp.Description("Rename a mode: {modeId, newName}")),
+		mcp.WithString("removeMode", mcp.Description("modeId of a mode to remove (cannot remove the last remaining mode)")),
+		channelParam(),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		params := req.GetArguments()
+		resp, err := node.Send(ctx, "update_variable_collection", nil, withChannel(req, params))
+		return renderResponse(resp, err)
+	})
 }

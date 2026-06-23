@@ -18,7 +18,7 @@ var compactToolDescriptions = map[string]string{
 	"search_nodes":          "Find nodes by name substring, optional type filter. Scope with nodeId and limit to avoid broad page scans.",
 	"scan_text_nodes":       "Return TEXT nodes and copy inside a scoped subtree. Large output may be spilled.",
 	"scan_nodes_by_types":   "Return all nodes of requested Figma types in a scoped subtree. Large output may be spilled.",
-	"get_local_components":  "List local components/component sets. Pass pageId for large libraries to scan one page. Large output may be spilled.",
+	"get_local_components":  "List local components/component sets, including file-local masters for create_instance. Omit pageId for whole-file recovery; pass pageId for large one-page scans. Large output may be spilled.",
 	"get_screenshot":        "Export selected/provided nodes as base64 image data. Prefer save_screenshots to write files without inlining base64.",
 	"save_screenshots":      "Export node screenshots directly to local files. Returns metadata only, not base64.",
 	"export_frames_to_pdf":  "Export multiple frames as one PDF payload.",
@@ -43,7 +43,7 @@ func compactToolSchemas(s *server.MCPServer) {
 	for _, st := range listed {
 		tool := st.Tool
 		tool.Description = compactToolDescription(tool.Name, tool.Description)
-		compactDescriptions(tool.InputSchema.Properties, 72)
+		compactDescriptions(tool.InputSchema.Properties, 64)
 		tools = append(tools, server.ServerTool{
 			Tool:    tool,
 			Handler: st.Handler,

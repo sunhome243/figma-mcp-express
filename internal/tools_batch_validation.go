@@ -551,6 +551,12 @@ func semanticParamValueForBatch(tool, key string, value interface{}, prop map[st
 	if s, ok := value.(string); ok && (isBatchRefLike(s) || isAllowedNamedBindingRef(s, allowedNamedRefs)) {
 		return semanticPlaceholderForBatch(tool, key, prop)
 	}
+	if s, ok := value.(string); ok {
+		switch key {
+		case "nodeId", "parentId", "pageId", "componentId":
+			return NormalizeNodeID(s)
+		}
+	}
 	if key == "effects" {
 		return semanticEffectsForBatch(value, allowedNamedRefs)
 	}
@@ -655,10 +661,25 @@ func schemaRequired(schema map[string]any) []string {
 }
 
 func validateBatchSchemaValue(op, name string, value interface{}, prop map[string]any, allowedNamedRefs map[string]bool) error {
+	// JSON null is a deliberate "clear / restore default" signal for optional params
+	// (e.g. maxLines, minWidth/maxWidth, hyperlink) — the plugin handlers treat it as
+	// such. Allow it through so the batch path matches top-level forwarding, which
+	// forwards nil via presence checks rather than rejecting it.
+	if value == nil {
+		return nil
+	}
 	if s, ok := value.(string); ok {
 		if isBatchRefLike(s) || isAllowedNamedBindingRef(s, allowedNamedRefs) {
 			return nil
 		}
+	}
+	if alternatives := schemaAnyOf(prop); len(alternatives) > 0 {
+		for _, alt := range alternatives {
+			if err := validateBatchSchemaValue(op, name, value, alt, allowedNamedRefs); err == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s.%s must match one of the allowed schema shapes", op, name)
 	}
 	if enum, ok := prop["enum"].([]any); ok && len(enum) > 0 {
 		s, ok := value.(string)
@@ -707,6 +728,23 @@ func validateBatchSchemaValue(op, name string, value interface{}, prop map[strin
 		}
 	}
 	return nil
+}
+
+func schemaAnyOf(prop map[string]any) []map[string]any {
+	switch xs := prop["anyOf"].(type) {
+	case []map[string]any:
+		return append([]map[string]any(nil), xs...)
+	case []any:
+		out := make([]map[string]any, 0, len(xs))
+		for _, x := range xs {
+			if schema, ok := x.(map[string]any); ok {
+				out = append(out, schema)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func formatEnum(values []any) string {

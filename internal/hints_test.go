@@ -14,8 +14,8 @@ func TestHintFor_TimeoutHeavyRead(t *testing.T) {
 
 func TestHintFor_LocalComponentsTimeout(t *testing.T) {
 	h := hintFor("get_local_components", "request timed out")
-	if !strings.Contains(h, "pageId") {
-		t.Errorf("get_local_components timeout hint should mention pageId scoping: %q", h)
+	if !strings.Contains(h, "pageId") || !strings.Contains(h, "local-master recovery") {
+		t.Errorf("get_local_components timeout hint should distinguish pageId scoping from recovery: %q", h)
 	}
 }
 

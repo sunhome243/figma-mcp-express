@@ -1492,9 +1492,9 @@ func TestLever4_BatchDispatchPreserved(t *testing.T) {
 	}
 }
 
-// lever4DemotedOps is the 16-tool demote set from the legacy top-level trim.
-// Each must be ABSENT from tools/list yet ACCEPTED by the batch relay as an op
-// `type`.
+// lever4DemotedOps is the demote set from the legacy top-level trim. Each must be
+// ABSENT from tools/list yet ACCEPTED by the batch relay as an op `type`.
+// (set_constraints was promoted back to a top-level tool and is no longer demoted.)
 var lever4DemotedOps = []string{
 	"set_corner_radius",
 	"lock_nodes",
@@ -1502,7 +1502,6 @@ var lever4DemotedOps = []string{
 	"rotate_nodes",
 	"reorder_nodes",
 	"set_blend_mode",
-	"set_constraints",
 	"rename_node",
 	"boolean_operation",
 	"detach_instance",
@@ -1518,8 +1517,8 @@ var lever4DemotedOps = []string{
 // top-level surface — proving the trim removed only the demote set, not siblings.
 var lever4KeptControls = []string{"set_visible", "set_opacity"}
 
-// TestLever4_AllDemotedAbsentFromToolList asserts every one of the 16 demoted
-// tools is gone from tools/list, while the kept controls remain present.
+// TestLever4_AllDemotedAbsentFromToolList asserts every demoted tool is gone from
+// tools/list, while the kept controls remain present.
 func TestLever4_AllDemotedAbsentFromToolList(t *testing.T) {
 	s, _ := newTestServer(t)
 	names := listToolNames(t, s)

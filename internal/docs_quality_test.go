@@ -115,6 +115,38 @@ func TestFigmaMCPExpressSkillKeepsProductionRules(t *testing.T) {
 	}
 }
 
+func TestMultiAgentSkillDocumentsOriginRosterAndOrchestrator(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "multi-agent.md"))
+	for _, required := range []string{
+		"`grace`, `theo`, `sunho`, `zoe`, `taewon`, `emma`, `alex`, `rick`, `wolfgang`",
+		"not a free-form string",
+		"sessionId+origin",
+		"orchestrator's own origin is `wolfgang`",
+		"Do not use `sunho` for the orchestrator",
+		"Do not reuse one `origin` across concurrent agents",
+		"Agent 3 -> owns frame C -> origin: \"zoe\"",
+		"status is optional in the schema, not optional in the workflow",
+		"Do not skip `set_presence` because `status` is optional",
+		"Actively call `set_presence` at dispatch and workflow transitions",
+		"Pass `origin` on every `batch` call",
+		"batch(channel:\"auto-2\", origin:\"theo\", ops:[create_frame...])",
+		"Use exactly the origin assigned to you",
+		"Do not pick a random roster enum",
+		"`origin` works on plugin reads, writes, and batch",
+		"`fetch_library_catalog`",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("multi-agent.md missing origin roster/orchestrator rule %q", required)
+		}
+	}
+	if strings.Contains(body, "Agent 3 → owns frame C → origin: \"sunho\"") {
+		t.Fatal("multi-agent.md must not model the orchestrator/third worker as sunho; use wolfgang for orchestrator and distinct worker origins")
+	}
+	if strings.Contains(body, "batch(channel:\"auto-2\", ops:[create_frame") {
+		t.Fatal("multi-agent.md must not show batch examples without outer origin")
+	}
+}
+
 func TestBatchRecipesDocumentValidationAndErgonomics(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "batch-recipes.md"))
 	for _, required := range []string{
@@ -163,6 +195,95 @@ func TestToolsDocDoesNotExposeChannelInsideCatalogBackedBatchOps(t *testing.T) {
 	}
 	if !strings.Contains(body, "Pass `channel` on the outer `batch` call") {
 		t.Fatal("TOOLS.md must document outer batch channel routing")
+	}
+}
+
+func TestDocsTrackAPIGapCoverageSurface(t *testing.T) {
+	tools := readTestFile(t, filepath.Join("..", "TOOLS.md"))
+	for _, heading := range []string{
+		"### create_line",
+		"### create_polygon",
+		"### create_star",
+		"### import_svg",
+		"### create_table",
+		"### set_text_range",
+		"### update_variable",
+		"### update_variable_collection",
+		"### set_constraints",
+		"### get_image_by_hash",
+		"### get_file_thumbnail",
+		"### get_dev_resources",
+		"### resolve_variable_for_consumer",
+		"### get_selection_colors",
+		"### create_video",
+		"### create_gif",
+		"### create_link_preview",
+		"### create_vector",
+		"### create_slice",
+		"### create_page_divider",
+		"### create_text_path",
+		"### set_file_thumbnail",
+		"### add_dev_resource",
+		"### edit_dev_resource",
+		"### delete_dev_resource",
+		"### reorder_local_style",
+		"### reorder_local_style_folder",
+		"### create_variable_alias",
+		"### bind_variable_to_effect",
+		"### bind_variable_to_layout_grid",
+	} {
+		if !strings.Contains(tools, heading) {
+			t.Fatalf("TOOLS.md must document new API-gap surface %q", heading)
+		}
+	}
+	if strings.Contains(tools, "### set_constraints [BATCH OP]") {
+		t.Fatal("TOOLS.md must document promoted set_constraints as a top-level tool, not batch-only")
+	}
+
+	gotchas := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "gotchas.md"))
+	for _, forbidden := range []string{
+		"NO `import_svg`",
+		"create_vector_from_svg",
+		"Plugin runtime required",
+		"use_figma",
+	} {
+		if strings.Contains(gotchas, forbidden) {
+			t.Fatalf("gotchas.md must not describe SVG import as missing now that import_svg exists; found %q", forbidden)
+		}
+	}
+	for _, required := range []string{"SVG", "`import_svg`", "batch"} {
+		if !strings.Contains(gotchas, required) {
+			t.Fatalf("gotchas.md must document SVG ingestion through import_svg; missing %q", required)
+		}
+	}
+}
+
+func TestToolsDocTracksNativeEffectsSurface(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "TOOLS.md"))
+	for _, required := range []string{
+		"### set_effects",
+		"### create_effect_style",
+		"GLASS",
+		"NOISE",
+		"TEXTURE",
+		"PROGRESSIVE",
+		"noiseSizeVector",
+		"startOffset",
+		"endOffset",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("TOOLS.md must document native/progressive effect surface; missing %q", required)
+		}
+	}
+}
+
+func TestSkillDocsDoNotReferenceRemovedWorkflowSections(t *testing.T) {
+	body := readTestFile(t, filepath.Join("..", "skills", "figma-mcp-express", "references", "multi-agent.md"))
+	if strings.Contains(body, "SKILL.md § Workflow") {
+		t.Fatal("multi-agent.md must not point readers at removed SKILL.md Workflow sections")
+	}
+	if !strings.Contains(body, "Reference Router") {
+		t.Fatal("multi-agent.md should point readers at the current SKILL.md Reference Router")
 	}
 }
 
@@ -345,18 +466,25 @@ func TestToolsDocDocumentsCoreSurfaceContract(t *testing.T) {
 	body := readTestFile(t, filepath.Join("..", "TOOLS.md"))
 	for _, required := range []string{
 		"FIGMA_MCP_TOOL_PROFILE=core",
-		"compact 21-tool MCP surface",
+		"compact 22-tool MCP surface",
+		"`set_presence`",
 		"batch",
 		"FigmaPlan",
 		"search_batch_ops",
 		"get_batch_op_spec",
 		"batch(validateOnly:true)",
 		"FIGMA_MCP_TOOL_PROFILE=full",
-		"legacy top-level compatibility surface",
+		"full top-level compatibility surface",
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("TOOLS.md must document production tool-surface contract; missing %q", required)
 		}
+	}
+	if strings.Contains(body, "| status ") {
+		t.Fatal("TOOLS.md must not document status as a batch param; use set_presence")
+	}
+	if !strings.Contains(body, "Manual `status` and `task` go through `set_presence`, not `batch`") {
+		t.Fatal("TOOLS.md must route manual status/task through set_presence")
 	}
 }
 

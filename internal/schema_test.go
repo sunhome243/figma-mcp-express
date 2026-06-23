@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -54,6 +55,47 @@ func TestNormalizeNodeID(t *testing.T) {
 		if got != c.want {
 			t.Errorf("NormalizeNodeID(%q) = %q, want %q", c.input, got, c.want)
 		}
+	}
+}
+
+func TestNormalizeRPCNodeReferences(t *testing.T) {
+	nodeIDs := []string{"4029-12345", "I2167-9091;186-1579", "$0.id"}
+	params := map[string]interface{}{
+		"nodeId":      "1-2",
+		"parentId":    "3-4",
+		"pageId":      "0-1",
+		"componentId": "5-6",
+		"hyperlink": map[string]interface{}{
+			"nodeId": "7-8",
+		},
+		"key": "abc-def",
+	}
+
+	normalizeRPCNodeReferences(nodeIDs, params)
+
+	if got, want := nodeIDs[0], "4029:12345"; got != want {
+		t.Fatalf("nodeIDs[0] = %q, want %q", got, want)
+	}
+	if got, want := nodeIDs[1], "I2167:9091;186:1579"; got != want {
+		t.Fatalf("nodeIDs[1] = %q, want %q", got, want)
+	}
+	if got, want := nodeIDs[2], "$0.id"; got != want {
+		t.Fatalf("nodeIDs[2] = %q, want %q", got, want)
+	}
+	for key, want := range map[string]string{
+		"nodeId":      "1:2",
+		"parentId":    "3:4",
+		"pageId":      "0:1",
+		"componentId": "5:6",
+		"key":         "abc-def",
+	} {
+		if got, _ := params[key].(string); got != want {
+			t.Fatalf("params[%q] = %q, want %q", key, got, want)
+		}
+	}
+	hyperlink, _ := params["hyperlink"].(map[string]interface{})
+	if got, _ := hyperlink["nodeId"].(string); got != "7:8" {
+		t.Fatalf("hyperlink.nodeId = %q, want %q", got, "7:8")
 	}
 }
 
@@ -302,6 +344,171 @@ func TestValidateRPC_CreateFrame(t *testing.T) {
 	}
 }
 
+func TestValidateRPC_SetAutoLayout_GridAndExtras(t *testing.T) {
+	const nid = "1:1"
+	// GRID layoutMode is now accepted.
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"layoutMode": "GRID", "gridRowCount": float64(2), "gridColumnCount": float64(3),
+	}); msg != "" {
+		t.Errorf("GRID layoutMode should be valid, got: %s", msg)
+	}
+	// counterAxisAlignContent enum
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"counterAxisAlignContent": "SPACE_BETWEEN",
+	}); msg != "" {
+		t.Errorf("counterAxisAlignContent SPACE_BETWEEN should be valid, got: %s", msg)
+	}
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"counterAxisAlignContent": "WHATEVER",
+	}); msg == "" {
+		t.Error("expected error for invalid counterAxisAlignContent")
+	}
+	// overflowDirection enum
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"overflowDirection": "BOTH",
+	}); msg != "" {
+		t.Errorf("overflowDirection BOTH should be valid, got: %s", msg)
+	}
+	if msg := ValidateRPC("set_auto_layout", []string{nid}, map[string]interface{}{
+		"overflowDirection": "DIAGONAL",
+	}); msg == "" {
+		t.Error("expected error for invalid overflowDirection")
+	}
+}
+
+func TestValidateRPC_LayoutMinMaxRejectsNonPositiveValues(t *testing.T) {
+	cases := []struct {
+		name    string
+		tool    string
+		nodeIDs []string
+		params  map[string]interface{}
+	}{
+		{
+			name:   "create_frame_minWidth_zero",
+			tool:   "create_frame",
+			params: map[string]interface{}{"minWidth": float64(0)},
+		},
+		{
+			name:    "set_auto_layout_maxHeight_negative",
+			tool:    "set_auto_layout",
+			nodeIDs: []string{"1:1"},
+			params:  map[string]interface{}{"maxHeight": float64(-1)},
+		},
+		{
+			name:    "resize_nodes_minHeight_zero",
+			tool:    "resize_nodes",
+			nodeIDs: []string{"1:1"},
+			params:  map[string]interface{}{"minHeight": float64(0)},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if msg := ValidateRPC(tc.tool, tc.nodeIDs, tc.params); msg == "" {
+				t.Fatalf("expected %s to reject non-positive min/max value", tc.tool)
+			} else if !strings.Contains(msg, "must be positive") {
+				t.Fatalf("expected positivity error, got %q", msg)
+			}
+		})
+	}
+	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{"minWidth": nil}); msg != "" {
+		t.Fatalf("nil minWidth should still clear the constraint, got %q", msg)
+	}
+}
+
+func TestValidateRPC_ImportImage_Filters(t *testing.T) {
+	// valid filter values within -1..1
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "exposure": float64(0.5), "contrast": float64(-1),
+	}); msg != "" {
+		t.Errorf("valid filters should pass, got: %s", msg)
+	}
+	// out-of-range filter
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "saturation": float64(2),
+	}); msg == "" {
+		t.Error("expected error for saturation out of range")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "exposure": "0.5",
+	}); msg == "" {
+		t.Error("expected error for non-numeric exposure")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "contrast": math.Inf(1),
+	}); msg == "" {
+		t.Error("expected error for infinite contrast")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "rotation": math.NaN(),
+	}); msg == "" {
+		t.Error("expected error for NaN rotation")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu", "scaleMode": "TILE", "scalingFactor": float64(0),
+	}); msg == "" {
+		t.Error("expected error for non-positive scalingFactor")
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{
+		"imageData": "TWFu",
+		"imageTransform": []interface{}{
+			[]interface{}{float64(1), float64(0)},
+			[]interface{}{float64(0), float64(1), float64(0)},
+		},
+	}); msg == "" {
+		t.Error("expected error for malformed imageTransform")
+	}
+	if msg := ValidateRPC("create_video", nil, map[string]interface{}{
+		"videoData": "TWFu", "shadows": math.Inf(-1),
+	}); msg == "" {
+		t.Error("expected error for infinite create_video filter")
+	}
+	if msg := ValidateRPC("create_video", nil, map[string]interface{}{
+		"videoData": "TWFu",
+		"videoTransform": []interface{}{
+			[]interface{}{float64(1), float64(0), float64(0)},
+			[]interface{}{float64(0), "bad", float64(0)},
+		},
+	}); msg == "" {
+		t.Error("expected error for non-numeric videoTransform entry")
+	}
+}
+
+func TestValidateRPC_SetBlendMode_LinearModes(t *testing.T) {
+	for _, bm := range []string{"LINEAR_BURN", "LINEAR_DODGE"} {
+		if msg := ValidateRPC("set_blend_mode", []string{"1:1"}, map[string]interface{}{"blendMode": bm}); msg != "" {
+			t.Errorf("%s should be a valid blend mode, got: %s", bm, msg)
+		}
+	}
+}
+
+func TestValidateRPC_ResizeNodes_MinMaxOnly(t *testing.T) {
+	// resize_nodes with ONLY min/max params (no width/height/sizing) should be valid.
+	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{
+		"minWidth": float64(50), "maxWidth": float64(300),
+	}); msg != "" {
+		t.Errorf("resize_nodes with min/max only should be valid, got: %s", msg)
+	}
+}
+
+func TestValidateRPC_SetTextRangeHyperlinkNodeID(t *testing.T) {
+	valid := map[string]interface{}{
+		"startOffset": float64(0),
+		"endOffset":   float64(3),
+		"hyperlink":   map[string]interface{}{"nodeId": "2:3"},
+	}
+	if msg := ValidateRPC("set_text_range", []string{"1:1"}, valid); msg != "" {
+		t.Fatalf("valid in-file hyperlink nodeId should pass, got %q", msg)
+	}
+	invalid := map[string]interface{}{
+		"startOffset": float64(0),
+		"endOffset":   float64(3),
+		"hyperlink":   map[string]interface{}{"nodeId": "not-a-node-id"},
+	}
+	if msg := ValidateRPC("set_text_range", []string{"1:1"}, invalid); msg == "" {
+		t.Fatal("expected invalid in-file hyperlink nodeId to be rejected")
+	}
+}
+
 func TestValidateRPC_SetText(t *testing.T) {
 	// missing nodeId
 	if msg := ValidateRPC("set_text", nil, map[string]interface{}{"text": "hello"}); msg == "" {
@@ -485,6 +692,27 @@ func TestValidateRPC_CreateRectangleEllipse(t *testing.T) {
 	}
 }
 
+func TestValidateRPC_CreatePolygonStarContracts(t *testing.T) {
+	if msg := ValidateRPC("create_polygon", nil, map[string]interface{}{"pointCount": float64(2)}); msg == "" {
+		t.Error("expected error for polygon pointCount below the Figma minimum")
+	}
+	if msg := ValidateRPC("create_polygon", nil, map[string]interface{}{"pointCount": float64(3)}); msg != "" {
+		t.Errorf("unexpected error for polygon pointCount=3: %s", msg)
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"pointCount": float64(2)}); msg == "" {
+		t.Error("expected error for star pointCount below the Figma minimum")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"innerRadius": float64(-0.1)}); msg == "" {
+		t.Error("expected error for star innerRadius below 0")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"innerRadius": float64(1.1)}); msg == "" {
+		t.Error("expected error for star innerRadius above 1")
+	}
+	if msg := ValidateRPC("create_star", nil, map[string]interface{}{"pointCount": float64(3), "innerRadius": float64(1)}); msg != "" {
+		t.Errorf("unexpected error for valid star bounds: %s", msg)
+	}
+}
+
 func TestValidateRPC_CreateText(t *testing.T) {
 	if msg := ValidateRPC("create_text", nil, nil); msg == "" {
 		t.Error("expected error for missing text")
@@ -567,11 +795,14 @@ func TestValidateRPC_CloneNode(t *testing.T) {
 
 func TestValidateRPC_ImportImage(t *testing.T) {
 	if msg := ValidateRPC("import_image", nil, nil); msg == "" {
-		t.Error("expected error for missing imageData")
+		t.Error("expected error for missing image input")
 	}
 	// imagePath alone is now valid (server reads + encodes the file)
 	if msg := ValidateRPC("import_image", nil, map[string]interface{}{"imagePath": "/tmp/logo.png"}); msg != "" {
 		t.Errorf("unexpected error for imagePath: %s", msg)
+	}
+	if msg := ValidateRPC("import_image", nil, map[string]interface{}{"imageUrl": "https://example.com/logo.png"}); msg != "" {
+		t.Errorf("unexpected error for imageUrl: %s", msg)
 	}
 	if msg := ValidateRPC("import_image", nil, map[string]interface{}{"imageData": "b64", "scaleMode": "STRETCH"}); msg == "" {
 		t.Error("expected error for invalid scaleMode")
@@ -583,6 +814,62 @@ func TestValidateRPC_ImportImage(t *testing.T) {
 		if msg := ValidateRPC("import_image", nil, map[string]interface{}{"imageData": "b64", "scaleMode": sm}); msg != "" {
 			t.Errorf("unexpected error for scaleMode %s: %s", sm, msg)
 		}
+	}
+}
+
+func TestValidateRPC_APIGapCreateAndDevResourceTools(t *testing.T) {
+	if msg := ValidateRPC("create_video", nil, nil); msg == "" {
+		t.Error("expected error for missing video input")
+	}
+	if msg := ValidateRPC("create_video", nil, map[string]interface{}{
+		"videoData": "b64",
+		"scaleMode": "FIT",
+		"exposure":  float64(0.25),
+		"videoTransform": []interface{}{
+			[]interface{}{float64(1), float64(0), float64(0)},
+			[]interface{}{float64(0), float64(1), float64(0)},
+		},
+	}); msg != "" {
+		t.Errorf("unexpected error for create_video: %s", msg)
+	}
+	if msg := ValidateRPC("create_video", nil, map[string]interface{}{"videoData": "b64", "contrast": float64(1.5)}); msg == "" {
+		t.Error("expected error for out-of-range create_video filter")
+	}
+	if msg := ValidateRPC("create_gif", nil, map[string]interface{}{"imageHash": "abc"}); msg != "" {
+		t.Errorf("unexpected error for create_gif: %s", msg)
+	}
+	if msg := ValidateRPC("create_link_preview", nil, map[string]interface{}{"url": "https://example.com"}); msg != "" {
+		t.Errorf("unexpected error for create_link_preview: %s", msg)
+	}
+	if msg := ValidateRPC("create_vector", nil, map[string]interface{}{"width": float64(10), "height": float64(10)}); msg != "" {
+		t.Errorf("unexpected error for create_vector: %s", msg)
+	}
+	if msg := ValidateRPC("create_slice", nil, map[string]interface{}{"parentId": "bad"}); msg == "" {
+		t.Error("expected error for invalid slice parentId")
+	}
+	if msg := ValidateRPC("create_page_divider", nil, map[string]interface{}{"name": "---"}); msg != "" {
+		t.Errorf("unexpected error for create_page_divider: %s", msg)
+	}
+	if msg := ValidateRPC("create_page_divider", nil, map[string]interface{}{"name": "Milestone"}); msg == "" {
+		t.Error("expected error for invalid create_page_divider name")
+	}
+	if msg := ValidateRPC("create_text_path", nil, map[string]interface{}{"nodeId": "1:1"}); msg != "" {
+		t.Errorf("unexpected error for create_text_path: %s", msg)
+	}
+	if msg := ValidateRPC("create_text_path", nil, map[string]interface{}{"nodeId": "1:1", "startPosition": float64(1.5)}); msg == "" {
+		t.Error("expected error for out-of-range text path startPosition")
+	}
+	if msg := ValidateRPC("create_text_path", nil, map[string]interface{}{"nodeId": "1:1", "startSegment": float64(1.25)}); msg == "" {
+		t.Error("expected error for non-integer text path startSegment")
+	}
+	if msg := ValidateRPC("add_dev_resource", nil, map[string]interface{}{"nodeId": "1:1", "url": "https://example.com/spec"}); msg != "" {
+		t.Errorf("unexpected error for add_dev_resource: %s", msg)
+	}
+	if msg := ValidateRPC("edit_dev_resource", nil, map[string]interface{}{"nodeId": "1:1", "currentUrl": "https://example.com/spec"}); msg == "" {
+		t.Error("expected error when edit_dev_resource has no replacement url or name")
+	}
+	if msg := ValidateRPC("delete_dev_resource", nil, map[string]interface{}{"nodeId": "1:1", "url": "https://example.com/spec"}); msg != "" {
+		t.Errorf("unexpected error for delete_dev_resource: %s", msg)
 	}
 }
 
@@ -630,6 +917,59 @@ func TestValidateRPC_CreateEffectStyle(t *testing.T) {
 			t.Errorf("unexpected error for type %s: %s", et, msg)
 		}
 	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":     "Blur/Bad",
+		"type":     "LAYER_BLUR",
+		"blurType": "GRADUAL",
+	}); msg == "" {
+		t.Error("expected error for invalid blurType")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":      "Noise/Bad",
+		"type":      "NOISE",
+		"noiseType": "CHROMA",
+	}); msg == "" {
+		t.Error("expected error for invalid noiseType")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":  "Glass/Bad",
+		"type":  "GLASS",
+		"depth": float64(0),
+	}); msg == "" {
+		t.Error("expected error for invalid GLASS depth")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":       "Glass/BadAngle",
+		"type":       "GLASS",
+		"lightAngle": "east",
+	}); msg == "" {
+		t.Error("expected error for invalid GLASS lightAngle")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name":            "Texture/BadVector",
+		"type":            "TEXTURE",
+		"noiseSizeVector": map[string]interface{}{"x": float64(2)},
+	}); msg == "" {
+		t.Error("expected error for incomplete noiseSizeVector")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name": "Mixed/Bad",
+		"effects": []interface{}{
+			map[string]interface{}{"type": "BACKGROUND_BLUR", "blurType": "PROGRESSIVE", "startOffset": map[string]interface{}{"x": float64(1.2), "y": float64(0)}},
+		},
+	}); msg == "" {
+		t.Error("expected effects[] validation to reject out-of-range progressive blur vectors")
+	}
+	if msg := ValidateRPC("create_effect_style", nil, map[string]interface{}{
+		"name": "Mixed/Good",
+		"effects": []interface{}{
+			map[string]interface{}{"type": "GLASS", "lightIntensity": float64(0.7), "depth": float64(4)},
+			map[string]interface{}{"type": "NOISE", "noiseType": "DUOTONE", "noiseSizeVector": map[string]interface{}{"x": float64(2), "y": float64(5)}},
+			map[string]interface{}{"type": "BACKGROUND_BLUR", "blurType": "PROGRESSIVE", "startOffset": map[string]interface{}{"x": float64(0.5), "y": float64(0)}, "endOffset": map[string]interface{}{"x": float64(0.5), "y": float64(1)}},
+		},
+	}); msg != "" {
+		t.Errorf("unexpected error for valid advanced effects[]: %s", msg)
+	}
 }
 
 func TestValidateRPC_CreateGridStyle(t *testing.T) {
@@ -671,6 +1011,21 @@ func TestValidateRPC_DeleteStyle(t *testing.T) {
 	}
 	if msg := ValidateRPC("delete_style", nil, map[string]interface{}{"styleId": "S:abc"}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
+	}
+}
+
+func TestValidateRPC_ReorderLocalStyles(t *testing.T) {
+	if msg := ValidateRPC("reorder_local_style", nil, map[string]interface{}{"styleType": "PAINT"}); msg == "" {
+		t.Error("expected error for missing styleId")
+	}
+	if msg := ValidateRPC("reorder_local_style", nil, map[string]interface{}{"styleType": "PAINT", "styleId": "S:abc", "afterStyleId": "S:def"}); msg != "" {
+		t.Errorf("unexpected error for reorder_local_style: %s", msg)
+	}
+	if msg := ValidateRPC("reorder_local_style_folder", nil, map[string]interface{}{"styleType": "TEXT", "folder": "Brand/Heading", "afterFolder": "Brand/Body"}); msg != "" {
+		t.Errorf("unexpected error for reorder_local_style_folder: %s", msg)
+	}
+	if msg := ValidateRPC("reorder_local_style_folder", nil, map[string]interface{}{"styleType": "SHADOW", "folder": "Brand"}); msg == "" {
+		t.Error("expected error for invalid styleType")
 	}
 }
 
@@ -745,6 +1100,52 @@ func TestValidateRPC_BindVariableToNode(t *testing.T) {
 	}
 	if msg := ValidateRPC("bind_variable_to_node", []string{"1:1"}, map[string]interface{}{"variableId": "v1", "field": "fill"}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
+	}
+}
+
+func TestValidateRPC_EffectAndLayoutGridVariableHelpers(t *testing.T) {
+	if msg := ValidateRPC("create_variable_alias", nil, map[string]interface{}{"variableId": "v1"}); msg != "" {
+		t.Errorf("unexpected error for create_variable_alias: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{
+		"variableId": "v1",
+		"codeSyntax": map[string]interface{}{"WEB": "colorPrimary"},
+	}); msg != "" {
+		t.Errorf("unexpected error for valid codeSyntax: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{
+		"variableId": "v1",
+		"codeSyntax": map[string]interface{}{"WEB": map[string]interface{}{}},
+	}); msg == "" {
+		t.Error("expected error for non-string codeSyntax value")
+	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{"variableId": "v1", "removeCodeSyntax": []interface{}{"WEB", "iOS"}}); msg != "" {
+		t.Errorf("unexpected error for removeCodeSyntax: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{"variableId": "v1", "removeCodeSyntax": []interface{}{"MAC"}}); msg == "" {
+		t.Error("expected error for invalid removeCodeSyntax platform")
+	}
+	if msg := ValidateRPC("update_variable_collection", nil, map[string]interface{}{
+		"collectionId": "c1",
+		"renameMode":   map[string]interface{}{"modeId": "m1", "newName": "Dark"},
+	}); msg != "" {
+		t.Errorf("unexpected error for valid renameMode: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable_collection", nil, map[string]interface{}{
+		"collectionId": "c1",
+		"renameMode":   map[string]interface{}{"modeId": "m1", "newName": map[string]interface{}{}},
+	}); msg == "" {
+		t.Error("expected error for non-string renameMode.newName")
+	}
+	if msg := ValidateRPC("bind_variable_to_effect", nil, map[string]interface{}{
+		"effect": map[string]interface{}{"type": "DROP_SHADOW", "radius": float64(8)}, "field": "radius", "variableId": "v1",
+	}); msg != "" {
+		t.Errorf("unexpected error for bind_variable_to_effect: %s", msg)
+	}
+	if msg := ValidateRPC("bind_variable_to_layout_grid", nil, map[string]interface{}{
+		"layoutGrid": map[string]interface{}{"pattern": "GRID", "sectionSize": float64(8)}, "field": "sectionSize", "variableId": "v1",
+	}); msg != "" {
+		t.Errorf("unexpected error for bind_variable_to_layout_grid: %s", msg)
 	}
 }
 
@@ -1504,6 +1905,21 @@ func TestValidateRPC_SetEffects(t *testing.T) {
 		"effects": []interface{}{map[string]interface{}{"type": "LAYER_BLUR", "radius": float64(4)}},
 	}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
+	}
+	if msg := ValidateRPC("set_effects", []string{"1:1"}, map[string]interface{}{
+		"effects": []interface{}{map[string]interface{}{"type": "LAYER_BLUR", "blurType": "GRADUAL"}},
+	}); msg == "" {
+		t.Error("expected error for invalid blurType")
+	}
+	if msg := ValidateRPC("set_effects", []string{"1:1"}, map[string]interface{}{
+		"effects": []interface{}{map[string]interface{}{"type": "NOISE", "noiseType": "CHROMA"}},
+	}); msg == "" {
+		t.Error("expected error for invalid noiseType")
+	}
+	if msg := ValidateRPC("set_effects", []string{"1:1"}, map[string]interface{}{
+		"effects": []interface{}{map[string]interface{}{"type": "TEXTURE", "noiseSizeVector": map[string]interface{}{"x": float64(2)}}},
+	}); msg == "" {
+		t.Error("expected error for incomplete noiseSizeVector")
 	}
 }
 

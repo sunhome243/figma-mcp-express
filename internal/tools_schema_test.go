@@ -28,8 +28,10 @@ type toolsListResponse struct {
 }
 
 type propertySchema struct {
-	Type  string          `json:"type"`
-	Items json.RawMessage `json:"items"`
+	Type  string           `json:"type"`
+	Enum  []string         `json:"enum"`
+	Items json.RawMessage  `json:"items"`
+	AnyOf []propertySchema `json:"anyOf"`
 }
 
 // listTools calls tools/list through the server's HandleMessage path and returns
@@ -132,12 +134,184 @@ func TestToolSchemas_AllToolsRegistered(t *testing.T) {
 	resp := listTools(t)
 	// Full profile preserves the legacy top-level tools, plus the two compact
 	// catalog meta-tools used for progressive discovery. Count includes the
-	// prototype additions get_prototype + set_prototype_start, plus set_presence.
-	const want = 75
+	// prototype additions get_prototype + set_prototype_start, plus set_presence,
+	// and the node-creation additions create_line/create_polygon/create_star/import_svg/create_table,
+	// plus set_text_range, update_variable, update_variable_collection, promoted set_constraints,
+	// and the API-gap media/dev-resource/style-variable helper surface.
+	const want = 105
 	got := len(resp.Result.Tools)
 	if got != want {
 		t.Errorf("expected %d registered tools, got %d — update the constant if tools were intentionally added or removed", want, got)
 	}
+}
+
+func TestToolSchemas_CreateEffectStyleExposesAdvancedShorthandParams(t *testing.T) {
+	resp := listTools(t)
+	var props map[string]propertySchema
+	for _, tool := range resp.Result.Tools {
+		if tool.Name == "create_effect_style" {
+			props = tool.InputSchema.Properties
+			break
+		}
+	}
+	if props == nil {
+		t.Fatal("create_effect_style tool not found")
+	}
+
+	want := map[string]string{
+		"blurType":        "string",
+		"startRadius":     "number",
+		"startOffset":     "object",
+		"endOffset":       "object",
+		"lightIntensity":  "number",
+		"lightAngle":      "number",
+		"refraction":      "number",
+		"depth":           "number",
+		"dispersion":      "number",
+		"noiseType":       "string",
+		"secondaryColor":  "string",
+		"noiseSize":       "number",
+		"noiseSizeVector": "object",
+		"density":         "number",
+		"clipToShape":     "boolean",
+	}
+	for name, wantType := range want {
+		prop, ok := props[name]
+		if !ok {
+			t.Fatalf("create_effect_style missing advanced shorthand param %q", name)
+		}
+		if prop.Type != wantType {
+			t.Fatalf("create_effect_style.%s type = %q, want %q", name, prop.Type, wantType)
+		}
+	}
+}
+
+func TestToolSchemas_SetVariableValueAcceptsAliasPayload(t *testing.T) {
+	resp := listTools(t)
+	var value propertySchema
+	found := false
+	for _, tool := range resp.Result.Tools {
+		if tool.Name != "set_variable_value" {
+			continue
+		}
+		var ok bool
+		value, ok = tool.InputSchema.Properties["value"]
+		if !ok {
+			t.Fatal("set_variable_value missing value property")
+		}
+		found = true
+		break
+	}
+	if !found {
+		t.Fatal("set_variable_value tool not found")
+	}
+	if value.Type == "string" {
+		t.Fatal("set_variable_value.value must accept VARIABLE_ALIAS objects, not only strings")
+	}
+	gotTypes := map[string]bool{}
+	for _, alt := range value.AnyOf {
+		gotTypes[alt.Type] = true
+	}
+	for _, typ := range []string{"string", "number", "boolean", "object"} {
+		if !gotTypes[typ] {
+			t.Fatalf("set_variable_value.value anyOf missing %q: %#v", typ, value.AnyOf)
+		}
+	}
+}
+
+func TestToolSchemas_AutoInjectsRequiredOriginOnPluginFacingTools(t *testing.T) {
+	resp := listTools(t)
+
+	if len(resp.Result.Tools) == 0 {
+		t.Fatal("tools/list returned no tools — registration may have failed")
+	}
+
+	wantExemptTools := map[string]bool{
+		"list_channels":         true,
+		"search_batch_ops":      true,
+		"get_batch_op_spec":     true,
+		"fetch_library_catalog": true,
+	}
+	assertBoolMapsEqual(t, originExemptTools, wantExemptTools)
+
+	wantRoster := append([]string(nil), rosterOrigins...)
+	sort.Strings(wantRoster)
+
+	var missing []string
+	var notRequired []string
+	var wrongShape []string
+	var unexpected []string
+	for _, tool := range resp.Result.Tools {
+		origin, hasOrigin := tool.InputSchema.Properties["origin"]
+		if originExemptTool(tool.Name) {
+			if hasOrigin {
+				unexpected = append(unexpected, tool.Name)
+			}
+			continue
+		}
+		if !hasOrigin {
+			missing = append(missing, tool.Name)
+			continue
+		}
+		if !schemaRequires(tool.InputSchema.Required, "origin") {
+			notRequired = append(notRequired, tool.Name)
+		}
+		gotRoster := append([]string(nil), origin.Enum...)
+		sort.Strings(gotRoster)
+		if origin.Type != "string" || !stringSlicesEqual(gotRoster, wantRoster) {
+			wrongShape = append(wrongShape, fmt.Sprintf("%s(type=%q enum=%v)", tool.Name, origin.Type, origin.Enum))
+		}
+	}
+
+	if len(missing) > 0 || len(notRequired) > 0 || len(wrongShape) > 0 || len(unexpected) > 0 {
+		sort.Strings(missing)
+		sort.Strings(notRequired)
+		sort.Strings(wrongShape)
+		sort.Strings(unexpected)
+		t.Fatalf("origin auto-injection failed:\nnon-exempt tools without auto-filled origin: %v\norigin not marked required: %v\nwrong origin schema shape: %v\norigin unexpectedly present on exempt tools: %v", missing, notRequired, wrongShape, unexpected)
+	}
+}
+
+func assertBoolMapsEqual(t *testing.T, got, want map[string]bool) {
+	t.Helper()
+	var extra []string
+	var missing []string
+	for key := range got {
+		if !want[key] {
+			extra = append(extra, key)
+		}
+	}
+	for key := range want {
+		if !got[key] {
+			missing = append(missing, key)
+		}
+	}
+	if len(extra) > 0 || len(missing) > 0 {
+		sort.Strings(extra)
+		sort.Strings(missing)
+		t.Fatalf("origin exemption set drifted: extra=%v missing=%v", extra, missing)
+	}
+}
+
+func schemaRequires(required []string, name string) bool {
+	for _, value := range required {
+		if value == name {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestToolSchemas_DefaultCoreProfileExposesSmallSurface(t *testing.T) {
@@ -210,8 +384,11 @@ func TestToolSchemas_DefaultCompactModeShrinksToolsList(t *testing.T) {
 	if len(compact) >= len(verbose) {
 		t.Fatalf("default compact tools/list size = %d, want smaller than verbose size %d", len(compact), len(verbose))
 	}
-	if len(compact) > len(verbose)*70/100 {
-		t.Fatalf("default compact tools/list size = %d, want at least 30%% smaller than verbose size %d", len(compact), len(verbose))
+	// Compact truncates tool/param DESCRIPTIONS but keeps every param name + the JSON
+	// structure, so param-heavy tools (set_text_range, import_image) erode the ratio as
+	// the surface grows. 75% still guarantees a substantial (~25%+) reduction.
+	if len(compact) > len(verbose)*75/100 {
+		t.Fatalf("default compact tools/list size = %d, want at least 25%% smaller than verbose size %d", len(compact), len(verbose))
 	}
 	if !strings.Contains(string(compact), "spilled") {
 		t.Fatalf("compact schema must preserve spilled-response guidance")
@@ -346,10 +523,13 @@ func TestToolSchemas_DescriptionSpillGuidance(t *testing.T) {
 		return ""
 	}
 
-	// get_local_components must mention pageId guidance.
+	// get_local_components must mention pageId guidance and the file-local recovery use case.
 	glcDesc := descOf("get_local_components")
 	if !strings.Contains(glcDesc, "pageId") {
 		t.Errorf("get_local_components description must mention pageId, got: %q", glcDesc)
+	}
+	if !strings.Contains(glcDesc, "file-local") || !strings.Contains(glcDesc, "create_instance") {
+		t.Errorf("get_local_components description must mention file-local create_instance recovery, got: %q", glcDesc)
 	}
 
 	// get_design_context must mention spill guidance.

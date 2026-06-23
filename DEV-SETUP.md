@@ -171,7 +171,7 @@ op types rather than top-level MCP tools. Use `search_batch_ops` and
 | Operation | Purpose |
 |------|---------|
 | `fetch_library_catalog` | Fetch published components + thumbnails via REST (requires `FIGMA_TOKEN`) |
-| `get_local_components` | Enumerate unpublished library components page by page (plugin path) |
+| `get_local_components` | Enumerate unpublished components through the plugin; omit `pageId` for whole-file local-master recovery or pass `pageId` for one-page bounded scans |
 | `get_library_variables` | Enumerate variables from a subscribed library collection through the plugin/teamLibrary path |
 
 ### Batch — multi-op sequencing

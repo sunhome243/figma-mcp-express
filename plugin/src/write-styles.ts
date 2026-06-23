@@ -78,6 +78,21 @@ const buildBlurEffect = (e: any, eType: "LAYER_BLUR" | "BACKGROUND_BLUR"): Effec
   return { type: eType, blurType: "NORMAL", radius: Number(e.radius ?? 4), visible: e.visible ?? true } as BlurEffect;
 };
 
+const styleTypeDispatch = <T>(
+  styleType: string,
+  handlers: Record<string, () => T>,
+): T => {
+  const handler = handlers[styleType];
+  if (!handler) throw new Error("styleType must be PAINT, TEXT, EFFECT, or GRID");
+  return handler();
+};
+
+const assertStyleMatchesType = (style: BaseStyle, styleType: string) => {
+  if (style.type !== styleType) {
+    throw new Error(`styleType ${styleType} does not match style ${style.id} type ${style.type}`);
+  }
+};
+
 export const handleWriteStyleRequest = async (request: any) => {
   switch (request.type) {
     case "create_paint_style": {
@@ -268,6 +283,49 @@ export const handleWriteStyleRequest = async (request: any) => {
       };
     }
 
+    case "reorder_local_style": {
+      const p = request.params || {};
+      if (!p.styleType) throw new Error("styleType is required");
+      if (!p.styleId) throw new Error("styleId is required");
+      const target = await figma.getStyleByIdAsync(p.styleId);
+      if (!target) throw new Error(`Style not found: ${p.styleId}`);
+      const reference = p.afterStyleId ? await figma.getStyleByIdAsync(p.afterStyleId) : null;
+      if (p.afterStyleId && !reference) throw new Error(`Style not found: ${p.afterStyleId}`);
+      assertStyleMatchesType(target, p.styleType);
+      if (reference) assertStyleMatchesType(reference, p.styleType);
+      styleTypeDispatch(p.styleType, {
+        PAINT: () => figma.moveLocalPaintStyleAfter(target as PaintStyle, reference as PaintStyle | null),
+        TEXT: () => figma.moveLocalTextStyleAfter(target as TextStyle, reference as TextStyle | null),
+        EFFECT: () => figma.moveLocalEffectStyleAfter(target as EffectStyle, reference as EffectStyle | null),
+        GRID: () => figma.moveLocalGridStyleAfter(target as GridStyle, reference as GridStyle | null),
+      });
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { styleId: target.id, afterStyleId: reference ? reference.id : null, styleType: p.styleType },
+      };
+    }
+
+    case "reorder_local_style_folder": {
+      const p = request.params || {};
+      if (!p.styleType) throw new Error("styleType is required");
+      if (!p.folder) throw new Error("folder is required");
+      const reference = p.afterFolder == null || p.afterFolder === "" ? null : String(p.afterFolder);
+      styleTypeDispatch(p.styleType, {
+        PAINT: () => figma.moveLocalPaintFolderAfter(String(p.folder), reference),
+        TEXT: () => figma.moveLocalTextFolderAfter(String(p.folder), reference),
+        EFFECT: () => figma.moveLocalEffectFolderAfter(String(p.folder), reference),
+        GRID: () => figma.moveLocalGridFolderAfter(String(p.folder), reference),
+      });
+      figma.commitUndo();
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { folder: String(p.folder), afterFolder: reference, styleType: p.styleType },
+      };
+    }
+
     case "apply_style_to_node": {
       const p = request.params || {};
       const nodeId = request.nodeIds && request.nodeIds[0];
@@ -455,6 +513,28 @@ export const handleWriteStyleRequest = async (request: any) => {
         }
         return { name: node.name, variableId: p.variableId, field: p.field };
       });
+    }
+
+    case "bind_variable_to_effect": {
+      const p = request.params || {};
+      if (!p.effect || typeof p.effect !== "object") throw new Error("effect is required");
+      if (!p.field) throw new Error("field is required");
+      if (!p.variableId) throw new Error("variableId is required");
+      const variable = await figma.variables.getVariableByIdAsync(p.variableId);
+      if (!variable) throw new Error(`Variable not found: ${p.variableId}`);
+      const effect = figma.variables.setBoundVariableForEffect(p.effect as Effect, p.field, variable);
+      return { type: request.type, requestId: request.requestId, data: { effect, field: p.field, variableId: variable.id } };
+    }
+
+    case "bind_variable_to_layout_grid": {
+      const p = request.params || {};
+      if (!p.layoutGrid || typeof p.layoutGrid !== "object") throw new Error("layoutGrid is required");
+      if (!p.field) throw new Error("field is required");
+      if (!p.variableId) throw new Error("variableId is required");
+      const variable = await figma.variables.getVariableByIdAsync(p.variableId);
+      if (!variable) throw new Error(`Variable not found: ${p.variableId}`);
+      const layoutGrid = figma.variables.setBoundVariableForLayoutGrid(p.layoutGrid as LayoutGrid, p.field, variable);
+      return { type: request.type, requestId: request.requestId, data: { layoutGrid, field: p.field, variableId: variable.id } };
     }
 
     default:

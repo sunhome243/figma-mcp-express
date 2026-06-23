@@ -86,45 +86,94 @@ export const handleReadStyleRequest = async (request: any) => {
       };
     }
 
+    case "get_selection_colors": {
+      if (typeof figma.getSelectionColors !== "function") {
+        throw new Error("getSelectionColors is unavailable in this Figma host");
+      }
+      return {
+        type: request.type,
+        requestId: request.requestId,
+        data: { colors: figma.getSelectionColors() },
+      };
+    }
+
     case "get_local_components": {
       const pageId = request.params && request.params.pageId;
+
+      const componentEntry = (n: any) => {
+        const parentIsSet = n.parent && n.parent.type === "COMPONENT_SET";
+        return {
+          id: n.id,
+          name: n.name,
+          key: "key" in n ? n.key : null,
+          componentSetId: parentIsSet ? n.parent!.id : null,
+          variantProperties:
+            "variantProperties" in n ? n.variantProperties : null,
+        };
+      };
+
+      const componentSetEntry = (n: any) => {
+        const setEntry: any = {
+          id: n.id,
+          name: n.name,
+          key: "key" in n ? n.key : null,
+        };
+        // Include defaultVariantKey so callers can import the default variant directly
+        // via importComponentByKeyAsync — using the COMPONENT_SET key on that call fails
+        // silently, and avoiding a second probe round-trip is the single-thread win.
+        if (n.defaultVariant && n.defaultVariant.key !== undefined) {
+          setEntry.defaultVariantKey = n.defaultVariant.key;
+        }
+        return setEntry;
+      };
+
+      const addComponent = (
+        n: any,
+        allComponents: any[],
+        seenComponents: Set<string>,
+      ) => {
+        if (seenComponents.has(n.id)) return;
+        seenComponents.add(n.id);
+        allComponents.push(componentEntry(n));
+      };
+
+      const addComponentSet = (n: any, componentSetsMap: Map<string, any>) => {
+        if (!componentSetsMap.has(n.id)) {
+          componentSetsMap.set(n.id, componentSetEntry(n));
+        }
+      };
+
+      const extractFromNodes = (
+        nodes: any[],
+        allComponents: any[],
+        seenComponents: Set<string>,
+        componentSetsMap: Map<string, any>,
+      ) => {
+        for (const n of nodes) {
+          if (n.type === "COMPONENT_SET") {
+            addComponentSet(n, componentSetsMap);
+          } else if (n.type === "COMPONENT") {
+            addComponent(n, allComponents, seenComponents);
+          }
+        }
+      };
 
       /** Extract components and component sets from a single loaded page node. */
       const extractFromPage = (
         pageNode: any,
         allComponents: any[],
+        seenComponents: Set<string>,
         componentSetsMap: Map<string, any>,
       ) => {
         const pageNodes = pageNode.findAllWithCriteria({
           types: ["COMPONENT", "COMPONENT_SET"],
         });
-        for (const n of pageNodes) {
-          if (n.type === "COMPONENT_SET") {
-            const setEntry: any = {
-              id: n.id,
-              name: n.name,
-              key: "key" in n ? n.key : null,
-            };
-            // Include defaultVariantKey so callers can import the default variant directly
-            // via importComponentByKeyAsync — using the COMPONENT_SET key on that call fails
-            // silently, and avoiding a second probe round-trip is the single-thread win.
-            if (n.defaultVariant && n.defaultVariant.key !== undefined) {
-              setEntry.defaultVariantKey = n.defaultVariant.key;
-            }
-            componentSetsMap.set(n.id, setEntry);
-          } else {
-            const parentIsSet =
-              n.parent && n.parent.type === "COMPONENT_SET";
-            allComponents.push({
-              id: n.id,
-              name: n.name,
-              key: "key" in n ? n.key : null,
-              componentSetId: parentIsSet ? n.parent!.id : null,
-              variantProperties:
-                "variantProperties" in n ? n.variantProperties : null,
-            });
-          }
-        }
+        extractFromNodes(
+          pageNodes,
+          allComponents,
+          seenComponents,
+          componentSetsMap,
+        );
       };
 
       if (pageId) {
@@ -135,8 +184,14 @@ export const handleReadStyleRequest = async (request: any) => {
         }
         await pageNode.loadAsync();
         const allComponents: any[] = [];
+        const seenComponents = new Set<string>();
         const componentSetsMap = new Map<string, any>();
-        extractFromPage(pageNode, allComponents, componentSetsMap);
+        extractFromPage(
+          pageNode,
+          allComponents,
+          seenComponents,
+          componentSetsMap,
+        );
         return {
           type: request.type,
           requestId: request.requestId,
@@ -150,14 +205,47 @@ export const handleReadStyleRequest = async (request: any) => {
         };
       }
 
-      // Whole-file scan (original behavior)
+      // Whole-file recovery scan. Loading all pages enables the typed DocumentNode
+      // search path to find local component masters that bounded page traversal can miss.
       const pages = figma.root.children;
       const allComponents: any[] = [];
+      const seenComponents = new Set<string>();
       const componentSetsMap = new Map<string, any>();
+      if (
+        typeof figma.loadAllPagesAsync === "function" &&
+        typeof figma.root.findAllWithCriteria === "function"
+      ) {
+        await figma.loadAllPagesAsync();
+        extractFromNodes(
+          // eslint-disable-next-line @figma/figma-plugins/dynamic-page-find-method-advice -- loadAllPagesAsync is awaited immediately above.
+          figma.root.findAllWithCriteria({
+            types: ["COMPONENT", "COMPONENT_SET"],
+          }),
+          allComponents,
+          seenComponents,
+          componentSetsMap,
+        );
+        figma.ui.postMessage({
+          type: "progress_update",
+          requestId: request.requestId,
+          progress: 100,
+          message: `Scanned document: ${allComponents.length} components`,
+        });
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: {
+            count: allComponents.length,
+            components: allComponents,
+            componentSets: Array.from(componentSetsMap.values()),
+          },
+        };
+      }
+
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
         await page.loadAsync();
-        extractFromPage(page, allComponents, componentSetsMap);
+        extractFromPage(page, allComponents, seenComponents, componentSetsMap);
         figma.ui.postMessage({
           type: "progress_update",
           requestId: request.requestId,
