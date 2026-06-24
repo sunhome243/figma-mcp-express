@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.0] — 2026-06-24
+
 ### Added
 
 - **`create_instance` accepts `componentKey` without a local `componentId`.** When only a published
@@ -33,6 +35,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
   visual-aesthetic layer — elevation/depth, effects (WHEN glass/noise/texture/blur read well), the
   type ladder, imagery, custom shapes (vector/boolean), and radius/blend — as production "when/how,"
   with a handoff Gate 9 ("not flat") forcing function.
+- **Skill-gate PreToolUse hook.** New `hooks/pre-tool.py` denies every figma-mcp-express MCP tool
+  call until the bundled `figma-mcp-express` skill is loaded in the session (it writes a per-session
+  marker, then allows the calls), and flags nested per-op `presence` params in batch ops. Shipped for
+  both Claude Code and Codex plugin installs (manifest `hooks` field + a matcher covering dev/variant
+  server names), with a `hooks/test_pre_tool.py` suite.
 
 ### Changed
 
@@ -47,7 +54,17 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **Effects design-judgment now has a single home.** Closed the circular deferral between
   `figma-design-patterns` and `figma-mcp-express/references/effects.md`: `visual-craft.md` owns
   WHEN/WHY, `effects.md` owns HOW (types/fields/call shape).
-
+- **Orchestrator-first `origin` default.** The presence roster now lists `wolfgang` (the
+  orchestrator) first, so a schema-following agent that picks the first enum value when no worker
+  origin is assigned defaults to the orchestrator identity instead of the first worker (`grace`).
+- **`set_auto_layout` rejects child-layout params.** `layoutSizingHorizontal` / `layoutSizingVertical`,
+  `layoutGrow`, `layoutAlign`, and `layoutPositioning` are child properties — passing them to
+  `set_auto_layout` now returns a pointed error directing to `resize_nodes` / `create_frame`.
+- **Bundled skills reworked for token efficiency + SSOT routing.** The `figma-mcp-express`,
+  `figma-design-patterns`, `figma-prototype`, and `figma-design-md` references were substantially
+  restructured — batch-recipes and multi-agent consolidated, op-specific schemas routed to the live
+  catalog (`search_batch_ops` / `get_batch_op_spec`) instead of mirrored — plus new craft rules
+  (scroll-ready mobile build, tidy component page, redundant-element) and sharpened layer naming.
 ## [2.6.0] — 2026-06-20
 
 ### Added
