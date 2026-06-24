@@ -14,9 +14,9 @@ Use it when screenshots and comments are not enough. The agent can inspect actua
 
 ## Demo
 
-<video src="assets/multi-agent-figma-build-demo.mp4" controls muted playsinline></video>
+[![Multiple AI agents building screens live in Figma](assets/figma-mcp-express-demo.png)](assets/multi-agent-figma-build-demo.mp4)
 
-![Multiple AI agents building screens live in Figma](assets/figma-mcp-express-demo.png)
+[Watch the demo video](assets/multi-agent-figma-build-demo.mp4)
 
 Follow AI agents live as they fix issues, edit layouts, and design screens directly in Figma.
 
