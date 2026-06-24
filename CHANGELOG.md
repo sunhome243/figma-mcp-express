@@ -6,6 +6,29 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`create_instance` accepts `componentKey` without a local `componentId`.** When only a published
+  library `componentKey` is given, the plugin auto-imports the source component (or component set)
+  before instancing. `componentId` is now optional; supplying either is sufficient and the Go schema
+  validates that at least one is present.
+- **`set_auto_layout` works on components and component sets, not just frames.** The node-type guard
+  now accepts `FRAME`, `COMPONENT`, and `COMPONENT_SET`.
+- **`update_variable(removeOverrideForMode)` and `update_variable_collection(removeOverridesForVariableId)`.**
+  Clear an extended-mode variable override, or clear a variable's overrides from an extended
+  collection. Both reject empty ids at the Go schema boundary before mutating.
+- **`create_frame` absolute positioning inside auto-layout parents.** When
+  `layoutPositioning:"ABSOLUTE"` is provided, the plugin re-applies the requested `x`/`y` after
+  appending to the parent, so Figma's auto-layout flow insertion cannot silently reset the child to
+  `(0,0)`.
+
+### Changed
+
+- **`batch` contract compatibility for generated plans.** `batch` now accepts `op` as a
+  compatibility alias for `type`, hoists a singular `params.nodeId` into the op-level `nodeIds`
+  target list for target-style ops (scope-style `nodeId` params are left untouched), and returns a
+  pointed error when a caller tries to run the top-level-only `save_screenshots` as a batch op.
+
 ## [2.6.0] — 2026-06-20
 
 ### Added

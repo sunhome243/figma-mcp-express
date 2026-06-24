@@ -403,6 +403,20 @@ describe("update_variable", () => {
     expect(commitUndoCalled).toBe(true);
   });
 
+  it("removes an extended-mode override", async () => {
+    const removedModes: string[] = [];
+    mockVariables["var:1"] = {
+      id: "var:1", name: "color/primary", resolvedType: "COLOR",
+      scopes: ["ALL_SCOPES"], hiddenFromPublishing: false, codeSyntax: {},
+      removeOverrideForMode(modeId: string) { removedModes.push(modeId); },
+    };
+    await handleWriteRequest(makeRequest("update_variable", [], {
+      variableId: "var:1", removeOverrideForMode: "mode:dark",
+    }));
+    expect(removedModes).toEqual(["mode:dark"]);
+    expect(commitUndoCalled).toBe(true);
+  });
+
   it("throws when the variable is not found", async () => {
     await expect(handleWriteRequest(makeRequest("update_variable", [], { variableId: "nope" })))
       .rejects.toThrow("Variable not found");
@@ -480,6 +494,27 @@ describe("update_variable_collection", () => {
       collectionId: "col:1", removeMode: "mode:1",
     }));
     expect(col.modes.find((m: any) => m.modeId === "mode:1")).toBeUndefined();
+  });
+
+  it("clears overrides for a variable in an extended collection", async () => {
+    const col: any = makeCollection("col:extended", "Theme Extension");
+    let clearedVariable: any = null;
+    col.removeOverridesForVariable = (variable: any) => { clearedVariable = variable; };
+    mockCollections["col:extended"] = col;
+    mockVariables["var:1"] = { id: "var:1", name: "color/primary", resolvedType: "COLOR" };
+    await handleWriteRequest(makeRequest("update_variable_collection", [], {
+      collectionId: "col:extended", removeOverridesForVariableId: "var:1",
+    }));
+    expect(clearedVariable).toBe(mockVariables["var:1"]);
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("throws when clearing overrides on a non-extended collection", async () => {
+    mockCollections["col:1"] = makeCollection("col:1", "Theme");
+    mockVariables["var:1"] = { id: "var:1", name: "color/primary", resolvedType: "COLOR" };
+    await expect(handleWriteRequest(makeRequest("update_variable_collection", [], {
+      collectionId: "col:1", removeOverridesForVariableId: "var:1",
+    }))).rejects.toThrow("does not support variable override removal");
   });
 
   it("throws a clear error when removing the last mode fails", async () => {

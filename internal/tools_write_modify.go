@@ -381,10 +381,10 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 	// })
 
 	s.AddTool(mcp.NewTool("set_auto_layout",
-		mcp.WithDescription("Set or update auto-layout (flex) properties on an existing frame."),
+		mcp.WithDescription("Set or update auto-layout (flex/grid) properties on an existing frame, component, or component set."),
 		mcp.WithString("nodeId",
 			mcp.Required(),
-			mcp.Description("Frame node ID in colon format e.g. '4029:12345'"),
+			mcp.Description("Frame, component, or component-set node ID in colon format e.g. '4029:12345'"),
 		),
 		mcp.WithString("layoutMode", mcp.Description("Auto-layout direction: HORIZONTAL, VERTICAL, GRID, or NONE. GRID = CSS-grid layout (use gridRowCount/gridColumnCount/gridRowGap/gridColumnGap).")),
 		mcp.WithNumber("paddingTop", mcp.Description("Top padding")),

@@ -212,3 +212,69 @@ func TestBatchValidateOnly_CreateFrameGridGapVariableIds(t *testing.T) {
 		t.Fatalf("create_frame GRID gap variable ids must validate through the batch gate, got %s", raw)
 	}
 }
+
+func TestBatchOpsAcceptOpAliasAndSingularNodeIDTarget(t *testing.T) {
+	// Seed batchOpCatalog ParamKeys via tool registration so set_fills param
+	// validation (`color`) is deterministic when this test runs in isolation,
+	// not dependent on an earlier test having synced the catalog.
+	newTestServer(t)
+
+	op := map[string]any{
+		"op":     "set_fills",
+		"params": map[string]any{"nodeId": "1-2", "color": "#ffffff"},
+	}
+	ops := []any{op}
+
+	if err := validateBatchOps(ops); err != nil {
+		t.Fatalf("validateBatchOps returned error: %v", err)
+	}
+	if _, ok := op["op"]; ok {
+		t.Fatalf("op alias should be normalized away, got %v", op)
+	}
+	if got, _ := op["type"].(string); got != "set_fills" {
+		t.Fatalf("type = %q, want set_fills", got)
+	}
+	nodeIDs, ok := op["nodeIds"].([]any)
+	if !ok || len(nodeIDs) != 1 || nodeIDs[0] != "1:2" {
+		t.Fatalf("nodeIds = %#v, want [1:2]", op["nodeIds"])
+	}
+	params := op["params"].(map[string]any)
+	if _, ok := params["nodeId"]; ok {
+		t.Fatalf("params.nodeId should be hoisted for target ops, got %#v", params)
+	}
+}
+
+func TestBatchOpsRejectConflictingOpAlias(t *testing.T) {
+	err := validateBatchOps([]any{
+		map[string]any{
+			"type": "set_fills",
+			"op":   "set_strokes",
+			"params": map[string]any{
+				"nodeId": "1:2",
+				"color":  "#ffffff",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected conflicting type/op aliases to fail")
+	}
+	if got := err.Error(); !containsCI(got, "both type") || !containsCI(got, "op") {
+		t.Fatalf("unexpected error: %s", got)
+	}
+}
+
+func TestBatchOpsSaveScreenshotsGivesTopLevelHint(t *testing.T) {
+	err := validateBatchOps([]any{
+		map[string]any{
+			"type":    "save_screenshots",
+			"nodeIds": []any{"1:2"},
+			"params":  map[string]any{"outputPath": "/tmp/shot.png"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected save_screenshots batch op to fail")
+	}
+	if got := err.Error(); !containsCI(got, "top-level tool") || !containsCI(got, "save_screenshots directly") {
+		t.Fatalf("unexpected error: %s", got)
+	}
+}

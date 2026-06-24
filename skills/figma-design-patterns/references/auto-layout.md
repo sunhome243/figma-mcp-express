@@ -25,8 +25,8 @@ future parent: create/place it first, then use `resize_nodes` with
 `layoutSizingHorizontal:"FILL"` or `layoutSizingVertical:"FILL"`.
 
 Responsive bounds: `minWidth` / `maxWidth` / `minHeight` / `maxHeight` are
-settable on frames (`set_auto_layout`) and on auto-layout children
-(`resize_nodes`). Use `maxWidth` to cap a FILL content column; pass `null` to
+settable on auto-layout containers — frames, components, and component sets —
+(`set_auto_layout`) and on auto-layout children (`resize_nodes`). Use `maxWidth` to cap a FILL content column; pass `null` to
 clear a bound.
 
 ## Resize test

@@ -284,6 +284,33 @@ describe("create_frame additional params", () => {
     await handleWriteCreateRequest(makeRequest("create_frame", [], {}));
     expect(createdFrame.opacity).toBe(1);
   });
+
+  it("re-applies x/y after appending an absolute-positioned child to auto-layout", async () => {
+    mockNodes["parent:1"] = {
+      id: "parent:1",
+      type: "FRAME",
+      layoutMode: "VERTICAL",
+      appendChild(child: any) {
+        child.parent = this;
+        child.x = 0;
+        child.y = 0;
+      },
+    };
+
+    const res = await handleWriteCreateRequest(
+      makeRequest("create_frame", [], {
+        parentId: "parent:1",
+        layoutPositioning: "ABSOLUTE",
+        x: 48,
+        y: 96,
+      }),
+    );
+
+    expect(createdFrame.layoutPositioning).toBe("ABSOLUTE");
+    expect(createdFrame.x).toBe(48);
+    expect(createdFrame.y).toBe(96);
+    expect(res?.data.bounds).toMatchObject({ x: 48, y: 96 });
+  });
 });
 
 // ── import_image (scaleMode validation) ──────────────────────────────────────

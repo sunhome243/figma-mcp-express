@@ -43,6 +43,58 @@ export function _assertCreation(): void {
   cell.text.characters = "A";
 }
 
+// ── Media, link, thumbnails, and advanced host APIs ─────────────────────────
+export async function _assertMediaAndThumbnailAPIs(data: Uint8Array): Promise<void> {
+  const image: Image = await figma.createImageAsync("https://example.com/image.png");
+  const foundImage: Image | null = figma.getImageByHash(image.hash);
+  const video: Video = await figma.createVideoAsync(data);
+  const link: EmbedNode | LinkUnfurlNode = await figma.createLinkPreviewAsync("https://example.com");
+  const gif: MediaNode = figma.createGif(image.hash);
+  const thumbnail = await figma.getFileThumbnailNodeAsync();
+  await figma.setFileThumbnailNodeAsync(thumbnail);
+
+  const transformGroup: PluginAPI["transformGroup"] = figma.transformGroup;
+  const jsxCreator: PluginAPI["createNodeFromJSXAsync"] = figma.createNodeFromJSXAsync;
+  void foundImage;
+  void video;
+  void link;
+  void gif;
+  void transformGroup;
+  void jsxCreator;
+}
+
+export function _assertComponentAutoLayout(c: ComponentNode, cs: ComponentSetNode): void {
+  c.layoutMode = "VERTICAL";
+  c.paddingTop = 8;
+  c.itemSpacing = 12;
+  cs.layoutMode = "GRID";
+  cs.gridRowCount = 2;
+  cs.gridColumnCount = 2;
+}
+
+export function _assertRuntimeHostAPIs(): void {
+  const currentUser: User | null = figma.currentUser;
+  const activeUsers: ActiveUser[] = figma.activeUsers;
+  const mode: PluginAPI["mode"] = figma.mode;
+  const storage: ClientStorageAPI = figma.clientStorage;
+  const parameters: ParametersAPI = figma.parameters;
+  const codegen: CodegenAPI = figma.codegen;
+  const payments: PaymentsAPI | undefined = figma.payments;
+  const timer: TimerAPI | undefined = figma.timer;
+  const textreview: TextReviewAPI | undefined = figma.textreview;
+  const devResources: DevResourcesAPI | undefined = figma.devResources;
+  void currentUser;
+  void activeUsers;
+  void mode;
+  void storage;
+  void parameters;
+  void codegen;
+  void payments;
+  void timer;
+  void textreview;
+  void devResources;
+}
+
 // ── ImagePaint (Phase 4): rotation/scalingFactor/imageTransform + filters ──
 export function _assertImagePaint(): ImagePaint {
   const filters: ImageFilters = {
@@ -91,7 +143,7 @@ export function _assertText(t: TextNode): void {
 }
 
 // ── Variables (Phase 6): scopes, codeSyntax, hiddenFromPublishing, mode ops ──
-export function _assertVariables(v: Variable, c: VariableCollection): void {
+export function _assertVariables(v: Variable, c: VariableCollection, ec: ExtendedVariableCollection): void {
   v.name = "color/primary";
   const scopes: VariableScope[] = ["TEXT_FILL", "FRAME_FILL", "ALL_SCOPES"];
   v.scopes = scopes;
@@ -99,11 +151,15 @@ export function _assertVariables(v: Variable, c: VariableCollection): void {
   const platform: CodeSyntaxPlatform = "WEB";
   v.setVariableCodeSyntax(platform, "colorPrimary");
   v.setVariableCodeSyntax("iOS", "ColorPrimary");
+  v.removeVariableCodeSyntax("WEB");
+  v.removeOverrideForMode("mode:2");
+  void v.resolveForConsumer(figma.createFrame());
 
   c.name = "Design Tokens";
   c.hiddenFromPublishing = true;
   c.renameMode("mode:1", "Light");
   c.removeMode("mode:1");
+  ec.removeOverridesForVariable(v);
 }
 
 // ── Constraints (Phase 7): promoted set_constraints ──

@@ -129,7 +129,7 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 	// })
 
 	s.AddTool(mcp.NewTool("update_variable",
-		mcp.WithDescription("Update an existing variable's metadata: rename, set publishing scopes, hide from publishing, set per-platform code syntax, or remove code syntax platforms. Does not change the variable's value (use set_variable_value)."),
+		mcp.WithDescription("Update an existing variable's metadata: rename, set publishing scopes, hide from publishing, set/remove per-platform code syntax, or remove an extended-mode override. Does not change normal mode values (use set_variable_value)."),
 		mcp.WithString("variableId",
 			mcp.Required(),
 			mcp.Description("Variable ID to update (from get_variable_defs)"),
@@ -145,6 +145,7 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 			mcp.Description("Code syntax platforms to remove: WEB, ANDROID, or iOS."),
 			mcp.WithStringItems(),
 		),
+		mcp.WithString("removeOverrideForMode", mcp.Description("Extended mode ID whose override should be cleared.")),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := req.GetArguments()
@@ -153,7 +154,7 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 	})
 
 	s.AddTool(mcp.NewTool("update_variable_collection",
-		mcp.WithDescription("Update a variable collection: rename it, hide it from publishing, rename a mode, or remove a mode. A collection must always keep at least one mode."),
+		mcp.WithDescription("Update a variable collection: rename it, hide it from publishing, rename/remove a mode, or clear an extended-collection variable override. A collection must always keep at least one mode."),
 		mcp.WithString("collectionId",
 			mcp.Required(),
 			mcp.Description("Variable collection ID to update"),
@@ -162,6 +163,7 @@ func registerWriteVariableTools(s *server.MCPServer, node *Node) {
 		mcp.WithBoolean("hiddenFromPublishing", mcp.Description("Hide this collection when the file is published as a library")),
 		mcp.WithObject("renameMode", mcp.Description("Rename a mode: {modeId, newName}")),
 		mcp.WithString("removeMode", mcp.Description("modeId of a mode to remove (cannot remove the last remaining mode)")),
+		mcp.WithString("removeOverridesForVariableId", mcp.Description("Variable ID whose overrides should be cleared from this extended collection.")),
 		channelParam(),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := req.GetArguments()

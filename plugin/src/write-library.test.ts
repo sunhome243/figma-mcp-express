@@ -357,6 +357,31 @@ describe("create_instance", () => {
     expect(res?.data.id).toBe("100:1:inst");
   });
 
+  it("imports and creates an instance from componentKey without a componentId", async () => {
+    const res = await handleWriteLibraryRequest(
+      makeRequest("create_instance", [], { componentKey: "key-button" }),
+    );
+    expect(res?.data.id).toBe("100:1:inst");
+    expect(currentPageNode.children).toHaveLength(1);
+  });
+
+  it("imports a COMPONENT_SET from componentKey and instances the default variant", async () => {
+    const res = await handleWriteLibraryRequest(
+      makeRequest("create_instance", [], { componentKey: "key-badge-set" }),
+    );
+    expect(res?.data.id).toBe("200:1:inst");
+  });
+
+  it("imports a COMPONENT_SET from componentKey and honors variantProperties", async () => {
+    const res = await handleWriteLibraryRequest(
+      makeRequest("create_instance", [], {
+        componentKey: "key-badge-set",
+        variantProperties: { State: "Error" },
+      }),
+    );
+    expect(res?.data.id).toBe("200:2:inst");
+  });
+
   it("applies properties and layout sizing after append", async () => {
     mockNodes["100:1"] = makeComponent("100:1", "Button");
     await handleWriteLibraryRequest(
@@ -371,10 +396,10 @@ describe("create_instance", () => {
     expect(inst._layoutSizingHorizontal).toBe("FILL");
   });
 
-  it("throws when componentId missing", async () => {
+  it("throws when component source is missing", async () => {
     await expect(
       handleWriteLibraryRequest(makeRequest("create_instance", [], {})),
-    ).rejects.toThrow("componentId is required");
+    ).rejects.toThrow("componentId or componentKey is required");
   });
 
   it("throws when component cannot be resolved", async () => {

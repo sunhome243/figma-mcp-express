@@ -62,6 +62,16 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 Go: standard `gofmt`. Plugin (TypeScript): existing style, `bun run build` must pass clean.
 
+### Plugin API compatibility gates
+
+The plugin is held to the official Figma Plugin API surface:
+
+- `make typecheck-ts` compiles `plugin/src/api-surface.typecheck.ts` against the official `@figma/plugin-typings`.
+- `make lint-ts` runs the Figma plugin ESLint rules with `--max-warnings 0`.
+- Do not introduce deprecated Plugin API usage. `createBooleanOperation` is deprecated — use the boolean-operation wrappers that map to `union`, `subtract`, `intersect`, and `exclude`.
+
+Which official APIs are mapped vs intentionally left unmapped is documented in [ARCHITECTURE.md](ARCHITECTURE.md#which-official-plugin-api-surface-is-mapped).
+
 ## License
 
 By contributing you agree your changes are released under the [MIT License](LICENSE).

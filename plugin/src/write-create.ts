@@ -102,6 +102,10 @@ export const handleWriteCreateRequest = async (request: any) => {
       // frame, hence after appendChild. Surfaced as a clear error if the parent isn't auto-layout.
       try {
         applyLayoutSizing(frame, p);
+        if (p.layoutPositioning === "ABSOLUTE") {
+          frame.x = p.x != null ? p.x : 0;
+          frame.y = p.y != null ? p.y : 0;
+        }
       } catch (e) {
         throw new Error(`create_frame: layoutSizing requires an auto-layout parent: ${String(e)}`);
       }
