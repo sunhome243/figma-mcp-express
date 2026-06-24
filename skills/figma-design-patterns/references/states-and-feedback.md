@@ -11,7 +11,7 @@ Use this for color, icon, status, empty, and loading rules. Pair it with
 
 - Bind fills through library variables with `set_fills` using `variableId`, or `bind_variable_to_node`. Matching a token's hex by hand is not binding.
 - Set variable mode on the top-level wrapper for dark/light mode. Token bindings cascade; do not manually rebind children.
-- Use library effect styles for shadows/blurs unless the task specifically needs native effect mechanics from the MCP reference.
+- Use library effect styles for shadows/blurs. For WHEN each effect reads well (glass, noise, texture, blur, elevation), see `visual-craft.md`; for effect fields/mechanics, figma-mcp-express `references/effects.md`.
 - Bind stroke color and stroke width through catalog-backed batch ops.
 - Active states usually read better as tint, underline, dot, slim side bar, or colored icon+label. Avoid large saturated accent blocks unless the design system specifies them.
 

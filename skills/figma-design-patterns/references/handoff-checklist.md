@@ -87,6 +87,17 @@ alone.
   the icon, or the screen's own context is a FAIL. Decide whether it *belongs* before
   judging how it looks (rule 10 / PC13).
 
+### 9. Visual craft — not flat
+
+FAIL if the screen is structurally valid but visually flat. Fix with `visual-craft.md`:
+
+- No elevation/z-layering where a surface floats (menu, sticky bar, modal, FAB) — flat-on-flat
+  with neither a shadow tier nor a border.
+- One type size at one weight where hierarchy is needed; hero metrics not oversized.
+- Flat color fill where real photography/imagery belongs; no scrim under text over an image.
+- More than one scarce accent competing, or no accent emphasis at all.
+- Manual shadow/effect instead of a bound effect style; arbitrary corner radii across siblings.
+
 ## Pass summary
 
 ```
@@ -98,6 +109,7 @@ alone.
 [ ] States complete and variant/property-backed
 [ ] Dark/light mode and status/icon accessibility pass
 [ ] Semantic names, containment, and shared chrome pass
+[ ] Visual craft — elevation, type ladder, imagery/accent, bound effects/radius
 ```
 
 Anything unchecked means the section is not done.

@@ -21,6 +21,18 @@ Versions follow [Semantic Versioning](https://semver.org/).
   `layoutPositioning:"ABSOLUTE"` is provided, the plugin re-applies the requested `x`/`y` after
   appending to the parent, so Figma's auto-layout flow insertion cannot silently reset the child to
   `(0,0)`.
+- **Tier-0 capability seed (server instructions).** The server now advertises a compact
+  (~320-token) capability map via the MCP `instructions` field, auto-injected once per session by
+  any client. It teaches the discovery flow (`search_batch_ops(category)` → `get_batch_op_spec` →
+  `batch`) and lists, by intent, the advanced capabilities an AI would otherwise never think to use
+  (glass/noise/texture effects, GRID/min-max layout, per-subtree variable modes, boolean ops,
+  prototype reactions/fixed-chrome, real media, etc.). Schemas stay on-demand — this is awareness
+  only. Backed by per-op intent metadata in `internal/capability_seed.go` (SSOT) with a test that
+  every op is categorized and every novel op sits in a featured (teaser-bearing) category.
+- **figma-design-patterns: `references/visual-craft.md`.** A new design-craft reference covering the
+  visual-aesthetic layer — elevation/depth, effects (WHEN glass/noise/texture/blur read well), the
+  type ladder, imagery, custom shapes (vector/boolean), and radius/blend — as production "when/how,"
+  with a handoff Gate 9 ("not flat") forcing function.
 
 ### Changed
 
@@ -28,6 +40,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
   compatibility alias for `type`, hoists a singular `params.nodeId` into the op-level `nodeIds`
   target list for target-style ops (scope-style `nodeId` params are left untouched), and returns a
   pointed error when a caller tries to run the top-level-only `save_screenshots` as a batch op.
+- **`search_batch_ops` categories are now intent-based** (effects, layout, tokens, vector,
+  components, prototype, media, styles, handoff + content, arrange, read) instead of name-prefix
+  buckets, so browsing a category returns a coherent capability set. `batchOpCategory` reads the new
+  `batchOpIntent` SSOT.
+- **Effects design-judgment now has a single home.** Closed the circular deferral between
+  `figma-design-patterns` and `figma-mcp-express/references/effects.md`: `visual-craft.md` owns
+  WHEN/WHY, `effects.md` owns HOW (types/fields/call shape).
 
 ## [2.6.0] — 2026-06-20
 
