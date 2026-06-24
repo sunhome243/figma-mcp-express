@@ -3,7 +3,7 @@ name: figma-mcp-express
 description: Use when any figma-mcp-express MCP tool is needed for Figma reads, writes, batch ops, screenshots, libraries, tokens, prototypes, or multi-file/channel work.
 ---
 
-! sid="${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-${CODEX_SESSION_ID:-$PPID}}}"; sid="$(printf "%s" "$sid" | tr -cd 'A-Za-z0-9_-')"; touch "/tmp/fme-skill-loaded-${sid:-default}" 2>/dev/null || true
+! tmpdir="${TMPDIR:-${TEMP:-${TMP:-/tmp}}}"; tmpdir="${tmpdir%/}"; sid="${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-${CODEX_SESSION_ID:-}}}"; sid="$(printf "%s" "$sid" | tr -cd 'A-Za-z0-9_-')"; touch "${tmpdir}/fme-skill-loaded-${sid:-default}" 2>/dev/null || true; touch "${tmpdir}/fme-skill-loaded-default" 2>/dev/null || true
 
 # Figma MCP Express
 

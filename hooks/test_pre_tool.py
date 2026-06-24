@@ -9,14 +9,24 @@ from pathlib import Path
 
 
 HOOK = Path(__file__).with_name("pre-tool.py")
+SKILL = HOOK.parent.parent / "skills" / "figma-mcp-express" / "SKILL.md"
 
 
 class PreToolHookTest(unittest.TestCase):
-    def run_hook(self, payload, skill_loaded=True):
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.env = {
+            **os.environ,
+            "TMPDIR": self.tempdir.name,
+        }
+
+    def run_hook(self, payload, skill_loaded=True, env=None):
+        env = env or self.env
         sid = payload.setdefault("session_id", f"test-{uuid.uuid4().hex}")
-        self.addCleanup(lambda: self.cleanup_flags(sid))
+        self.addCleanup(lambda: self.cleanup_flags(sid, env["TMPDIR"]))
         if skill_loaded:
-            Path(self.flag_path("skill-loaded", sid)).touch()
+            Path(self.flag_path("skill-loaded", sid, env["TMPDIR"])).touch()
         proc = subprocess.run(
             [sys.executable, str(HOOK)],
             input=json.dumps(payload),
@@ -24,6 +34,7 @@ class PreToolHookTest(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
+            env=env,
         )
         try:
             data = json.loads(proc.stdout or "{}")
@@ -36,14 +47,14 @@ class PreToolHookTest(unittest.TestCase):
         return "".join(ch for ch in session_id if ch.isalnum() or ch in "_-") or "default"
 
     @classmethod
-    def flag_path(cls, kind, session_id):
-        return os.path.join(tempfile.gettempdir(), f"fme-{kind}-{cls.safe_session_id(session_id)}")
+    def flag_path(cls, kind, session_id, tempdir):
+        return os.path.join(tempdir, f"fme-{kind}-{cls.safe_session_id(session_id)}")
 
     @classmethod
-    def cleanup_flags(cls, session_id):
+    def cleanup_flags(cls, session_id, tempdir):
         for kind in ("skill-loaded", "grace-origin-warning"):
             try:
-                os.remove(cls.flag_path(kind, session_id))
+                os.remove(cls.flag_path(kind, session_id, tempdir))
             except FileNotFoundError:
                 pass
 
@@ -69,6 +80,41 @@ class PreToolHookTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertIn("skill has not been loaded", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_skill_marker_command_writes_default_marker_to_hook_tempdir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                **os.environ,
+                "TMPDIR": tmpdir,
+            }
+            for key in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID", "CODEX_SESSION_ID"):
+                env.pop(key, None)
+
+            marker_command = next(
+                line[2:]
+                for line in SKILL.read_text(encoding="utf-8").splitlines()
+                if line.startswith("! ") and "fme-skill-loaded" in line
+            )
+            subprocess.run(
+                marker_command,
+                shell=True,
+                executable="/bin/sh",
+                check=True,
+                env=env,
+            )
+
+            code, out = self.run_hook(
+                {
+                    "session_id": "test-session-without-env",
+                    "tool_name": "mcp__figma-mcp-express__list_channels",
+                    "tool_input": {},
+                },
+                skill_loaded=False,
+                env=env,
+            )
+
+        self.assertEqual(code, 0)
+        self.assertTrue(out["continue"])
 
     def test_blocks_missing_origin_on_plugin_facing_tool(self):
         code, out = self.run_hook({
