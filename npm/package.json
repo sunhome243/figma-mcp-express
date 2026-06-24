@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-express",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Compact Figma MCP with validated batch ops through a local plugin bridge.",
   "mcpName": "io.github.sunhome243/figma-mcp-express",
   "bin": {
