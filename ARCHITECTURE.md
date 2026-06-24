@@ -52,6 +52,27 @@ The plugin runs in a **sandboxed JavaScript environment** inside Figma Desktop. 
 
 This is why the `use_figma` pattern (arbitrary script injection) from official Figma MCP cannot be ported here. Operations are exposed as **typed MCP tools** and catalog-validated `batch`/FigmaPlan ops instead.
 
+#### Which official Plugin API surface is mapped
+
+figma-mcp-express maps the official Figma Plugin API into stable MCP contracts. User-facing tool schemas live in [TOOLS.md](TOOLS.md); exact batch op params live in `BatchOpCatalog` (via `search_batch_ops` / `get_batch_op_spec`).
+
+**Mapped — the document-automation surface.** APIs that create, inspect, or mutate file content have MCP coverage: media import/hash tools, SVG import, file thumbnails, vector/slice/page-divider/text-path creation, style and folder reordering, selection colors, node-level dev resources, variable aliases and binding helpers, variable override/code-syntax helpers, extended-collection override removal, and layout readback on node serializers.
+
+**Intentionally unmapped — host/runtime surface** (not design-file state, so deliberately out of scope):
+
+- `clientStorage` — plugin-local key/value storage on the user's machine, not file state.
+- `parameters` — launch-time query input lifecycle, not an RPC operation.
+- `payments` — plugin monetization / permission-gated purchase state.
+- `timer` — FigJam timer API; this profile targets Figma Design/Dev.
+- `ui` — iframe UI lifecycle and browser bridge; the MCP server already owns the remote-control surface.
+- `codegen` — Dev Mode callback surface; use `get_design_context detail:"codegen"` for read context.
+- `textreview` — capability-gated text review mode, not general design automation.
+- `currentUser` / `activeUsers` — require manifest permissions this profile does not request (`activeUsers` is FigJam-only).
+- `createNodeFromJSXAsync` — TSX/widget compiler runtime, not a stable JSON-RPC contract.
+- `transformGroup` — needs TransformModifier-specific vector semantics; prefer existing group/flatten/boolean primitives until a focused tool contract is designed.
+
+`figma.devResources` is a private/partner host API; node-level dev-resource CRUD is exposed through `get_dev_resources` / `add_dev_resource` / `edit_dev_resource` / `delete_dev_resource` instead.
+
 ### Leader/follower election
 
 Multiple instances of the Go server can run simultaneously (e.g. if you restart your AI tool mid-session). The first instance to bind port 1994 becomes the **leader** and owns the plugin WebSocket connections. Subsequent instances become **followers** and proxy their tool calls to the leader via HTTP `/rpc`. If the leader dies, a follower detects the health check failure, kills any zombie processes, and takes over.

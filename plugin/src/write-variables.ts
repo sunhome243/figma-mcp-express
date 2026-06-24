@@ -260,6 +260,16 @@ export const handleWriteVariableRequest = async (request: any) => {
       for (const platform of codeSyntaxRemovals) {
         variable.removeVariableCodeSyntax(platform);
       }
+      if (p.removeOverrideForMode != null) {
+        // Figma throws if the mode id is not a valid extended-mode override —
+        // surface a clear message instead of a raw API error.
+        try {
+          variable.removeOverrideForMode(String(p.removeOverrideForMode));
+        } catch (err: unknown) {
+          const origMessage = err instanceof Error ? err.message : String(err);
+          throw new Error(`Cannot remove override for mode ${String(p.removeOverrideForMode)}: ${origMessage}`);
+        }
+      }
       figma.commitUndo();
       return {
         type: request.type,
@@ -321,6 +331,15 @@ export const handleWriteVariableRequest = async (request: any) => {
           const origMessage = err instanceof Error ? err.message : String(err);
           throw new Error(`Cannot remove mode (a collection must keep at least one mode): ${origMessage}`);
         }
+      }
+      if (p.removeOverridesForVariableId != null) {
+        const variable = await figma.variables.getVariableByIdAsync(String(p.removeOverridesForVariableId));
+        if (!variable) throw new Error(`Variable not found: ${p.removeOverridesForVariableId}`);
+        const extendedCollection = collection as ExtendedVariableCollection;
+        if (typeof extendedCollection.removeOverridesForVariable !== "function") {
+          throw new Error("Collection does not support variable override removal");
+        }
+        extendedCollection.removeOverridesForVariable(variable);
       }
       figma.commitUndo();
       return {

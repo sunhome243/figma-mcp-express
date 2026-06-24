@@ -31,6 +31,9 @@ const (
 )
 
 func validateBatchOps(rawOps []interface{}) error {
+	if err := normalizeBatchOpAliases(rawOps); err != nil {
+		return err
+	}
 	normalizeBatchNodeIDs(rawOps)
 	for i, raw := range rawOps {
 		op, ok := raw.(map[string]interface{})
@@ -62,10 +65,53 @@ func batchOpsFromParams(params map[string]interface{}) ([]interface{}, error) {
 	if !ok || len(rawOps) == 0 {
 		return nil, fmt.Errorf("batch requires a non-empty `ops` array")
 	}
+	if err := normalizeBatchOpAliases(rawOps); err != nil {
+		return nil, err
+	}
 	if err := validateBatchEnvelopeLimits(rawOps); err != nil {
 		return nil, err
 	}
 	return rawOps, nil
+}
+
+func normalizeBatchOpAliases(rawOps []interface{}) error {
+	for i, raw := range rawOps {
+		op, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if err := normalizeBatchOpAliasAt(fmt.Sprintf("ops[%d]", i), op); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeBatchOpAliasAt(path string, op map[string]interface{}) error {
+	if rawAlias, hasAlias := op["op"]; hasAlias {
+		alias, ok := rawAlias.(string)
+		if !ok || alias == "" {
+			return fmt.Errorf("%s.op must be a non-empty string when provided", path)
+		}
+		if rawType, hasType := op["type"]; hasType {
+			t, ok := rawType.(string)
+			if !ok || t == "" {
+				return fmt.Errorf("%s.type must be a non-empty string when provided", path)
+			}
+			if t != alias {
+				return fmt.Errorf("%s has both type %q and op %q; use one op name", path, t, alias)
+			}
+		} else {
+			op["type"] = alias
+		}
+		delete(op, "op")
+	}
+	if op["type"] == "map" {
+		if do, ok := op["do"].(map[string]interface{}); ok {
+			return normalizeBatchOpAliasAt(path+".do", do)
+		}
+	}
+	return nil
 }
 
 func validateBatchEnvelopeLimits(rawOps []interface{}) error {
@@ -167,16 +213,39 @@ func isBatchNodeIDParam(name string) bool {
 	}
 }
 
+var batchSingularNodeIDTargetOps = map[string]bool{
+	"apply_style_to_node":      true,
+	"bind_variable_to_node":    true,
+	"clone_node":               true,
+	"create_component":         true,
+	"get_node":                 true,
+	"get_reactions":            true,
+	"get_screenshot":           true,
+	"remove_reactions":         true,
+	"rename_node":              true,
+	"set_auto_layout":          true,
+	"set_effects":              true,
+	"set_fills":                true,
+	"set_instance_properties":  true,
+	"set_prototype_background": true,
+	"set_reactions":            true,
+	"set_strokes":              true,
+	"set_text":                 true,
+	"set_text_range":           true,
+	"set_variable_mode":        true,
+	"swap_component":           true,
+}
+
 // hoistNodeIDsFromParams makes node-target ops forgiving of a common composition
 // mistake: get_batch_op_spec lists `nodeIds` under paramKeys (it is the op's input
 // schema), so callers composing straight from the spec nest the target in `params` —
 // but a batch op takes its mutate-target as the OP-LEVEL `nodeIds` field. When the
 // op-level field is absent/empty and a plural `nodeIds` was nested in params, hoist it.
 //
-// ONLY the plural `nodeIds` is hoisted: no op uses a plural `nodeIds` param as anything
-// other than its targets. The SINGULAR `nodeId` is deliberately left in params — read
-// /scan ops (scan_nodes_by_types, scan_text_nodes, get_design_context, …) legitimately
-// take `nodeId` as a subtree ROOT param, so hoisting it would break them.
+// For a small allowlist of target-style ops, a singular `params.nodeId` is also
+// accepted as a one-element target list. Scope-style nodeId params (search/scan/
+// get_design_context/get_dev_resources/resolve_variable_for_consumer/etc.) stay
+// inside params because they are true plugin params, not batch targets.
 func hoistNodeIDsFromParams(op map[string]interface{}) {
 	if existing, ok := op["nodeIds"].([]interface{}); ok && len(existing) > 0 {
 		return // op-level target already provided — never override it
@@ -188,6 +257,15 @@ func hoistNodeIDsFromParams(op map[string]interface{}) {
 	if pn, ok := params["nodeIds"]; ok {
 		op["nodeIds"] = pn
 		delete(params, "nodeIds")
+		return
+	}
+	t, _ := op["type"].(string)
+	if !batchSingularNodeIDTargetOps[t] {
+		return
+	}
+	if pn, ok := params["nodeId"]; ok {
+		op["nodeIds"] = []interface{}{pn}
+		delete(params, "nodeId")
 	}
 }
 
@@ -198,6 +276,9 @@ func validateBatchOp(i int, op map[string]interface{}, allowedNamedRefs map[stri
 	}
 	if t == "batch" {
 		return fmt.Errorf("ops[%d]: batch cannot be nested", i)
+	}
+	if t == "save_screenshots" {
+		return fmt.Errorf("ops[%d]: save_screenshots is a top-level tool, not a batch op — call save_screenshots directly with items:[{nodeId, outputPath, format?, scale?}]", i)
 	}
 	if _, ok := batchOpCatalog[t]; !ok {
 		return fmt.Errorf("ops[%d]: unknown op type %q; call search_batch_ops/get_batch_op_spec first", i, t)

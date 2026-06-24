@@ -53,7 +53,7 @@ Cloning an existing in-file instance to repeat it elsewhere can preserve the ins
 
 ## Reusing a File-Local Component (no published key)
 
-A component you `create_component` in the current file has **no published library key** — so you cannot re-instance it with `create_instance {componentKey}` (that errors: `componentKey` alone does not satisfy the required `componentId`). But `create_instance`'s required `componentId` accepts **any COMPONENT node id**, including a file-local master's. So a local organism IS reusable — you just have to carry its master node id.
+A component you `create_component` in the current file has **no published library key** — so `create_instance {componentKey}` cannot reach it. A `componentKey` only resolves a **published** library component (or component set), which `create_instance` then auto-imports; a file-local master isn't published, so there is no key to pass. Instead, give it the node id: `create_instance`'s `componentId` accepts **any COMPONENT node id**, including a file-local master's. (Either `componentId` or `componentKey` is sufficient now — `componentId` is no longer required — but only the node-id path reaches an unpublished local master.) So a local organism IS reusable — you just have to carry its master node id.
 
 **Ledger discipline (do this every time you create a shared local component):**
 1. When `create_component` returns, it gives you the new master's **node id**. Record it immediately in the build contract/ledger under a stable name, e.g. `localComponents: { "AppHeaderBack": "19:17384", "SkeletonCard": "19:15652" }`.

@@ -206,11 +206,24 @@ describe("set_auto_layout", () => {
     expect(mockNodes["1:1"].counterAxisSpacing).toBe(12);
   });
 
-  it("throws when node is not a FRAME", async () => {
+  it("applies auto-layout properties to a COMPONENT", async () => {
+    mockNodes["1:1"] = {
+      id: "1:1", name: "Master", type: "COMPONENT", layoutMode: "NONE",
+      paddingTop: 0,
+    };
+    const res = await handleWriteRequest(
+      makeRequest("set_auto_layout", ["1:1"], { layoutMode: "VERTICAL", paddingTop: 20 })
+    );
+    expect(res?.data.id).toBe("1:1");
+    expect(mockNodes["1:1"].layoutMode).toBe("VERTICAL");
+    expect(mockNodes["1:1"].paddingTop).toBe(20);
+  });
+
+  it("throws when node does not support frame auto-layout", async () => {
     mockNodes["1:1"] = { id: "1:1", name: "Inst", type: "INSTANCE" };
     await expect(
       handleWriteRequest(makeRequest("set_auto_layout", ["1:1"], { layoutMode: "VERTICAL" }))
-    ).rejects.toThrow("is not a FRAME");
+    ).rejects.toThrow("is not a FRAME, COMPONENT, or COMPONENT_SET");
   });
 });
 

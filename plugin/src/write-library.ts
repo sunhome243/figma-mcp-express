@@ -131,12 +131,15 @@ export const handleWriteLibraryRequest = async (request: any) => {
 
     case "create_instance": {
       const p = request.params || {};
-      if (!p.componentId) throw new Error("componentId is required");
-      let component: any = await figma.getNodeByIdAsync(p.componentId);
+      if (!p.componentId && !p.componentKey) throw new Error("componentId or componentKey is required");
+      let component: any = p.componentId ? await figma.getNodeByIdAsync(p.componentId) : null;
       if (!component && p.componentKey) {
         component = await importComponentOrSet(p.componentKey);
       }
-      if (!component) throw new Error(`Component not found: ${p.componentId}`);
+      if (!component) {
+        const label = p.componentId ? `componentId ${p.componentId}` : `componentKey ${p.componentKey}`;
+        throw new Error(`Component not found: ${label}`);
+      }
       const chosen = selectVariant(component, p.variantProperties);
       const inst = chosen.createInstance();
 

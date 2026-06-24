@@ -70,12 +70,11 @@ func registerLibraryTools(s *server.MCPServer, node *Node) {
 	})
 
 	s.AddTool(mcp.NewTool("create_instance",
-		mcp.WithDescription("Create an instance of a component, optionally placing it in a parent, positioning/sizing it, and setting variant and exposed-instance properties."),
+		mcp.WithDescription("Create an instance of a component. Provide componentId for a local source or componentKey to auto-import from a subscribed library, then optionally place, position/size, and set variant or exposed-instance properties."),
 		mcp.WithString("componentId",
-			mcp.Required(),
-			mcp.Description("Source COMPONENT node ID in colon format e.g. '4029:12345'"),
+			mcp.Description("Source COMPONENT or COMPONENT_SET node ID in colon format e.g. '4029:12345'. Optional when componentKey is provided."),
 		),
-		mcp.WithString("componentKey", mcp.Description("Optional library component key, used to resolve the component if it must be imported first")),
+		mcp.WithString("componentKey", mcp.Description("Published library component/component-set key to auto-import when componentId is omitted or cannot be resolved.")),
 		mcp.WithString("parentId", mcp.Description("Parent node ID for the instance in colon format. Defaults to the current page.")),
 		mcp.WithNumber("index", mcp.Description("Insertion index within the parent's children")),
 		mcp.WithNumber("x", mcp.Description("X position of the instance")),

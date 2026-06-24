@@ -1150,6 +1150,18 @@ func TestValidateRPC_EffectAndLayoutGridVariableHelpers(t *testing.T) {
 	}); msg == "" {
 		t.Error("expected error for non-string renameMode.newName")
 	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{"variableId": "v1", "removeOverrideForMode": "mode:dark"}); msg != "" {
+		t.Errorf("unexpected error for removeOverrideForMode: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable", nil, map[string]interface{}{"variableId": "v1", "removeOverrideForMode": ""}); msg == "" {
+		t.Error("expected error for empty removeOverrideForMode")
+	}
+	if msg := ValidateRPC("update_variable_collection", nil, map[string]interface{}{"collectionId": "c1", "removeOverridesForVariableId": "v1"}); msg != "" {
+		t.Errorf("unexpected error for removeOverridesForVariableId: %s", msg)
+	}
+	if msg := ValidateRPC("update_variable_collection", nil, map[string]interface{}{"collectionId": "c1", "removeOverridesForVariableId": ""}); msg == "" {
+		t.Error("expected error for empty removeOverridesForVariableId")
+	}
 	if msg := ValidateRPC("bind_variable_to_effect", nil, map[string]interface{}{
 		"effect": map[string]interface{}{"type": "DROP_SHADOW", "radius": float64(8)}, "field": "radius", "variableId": "v1",
 	}); msg != "" {
@@ -2005,13 +2017,19 @@ func TestValidateRPC_ImportByKey(t *testing.T) {
 }
 
 func TestValidateRPC_CreateInstance(t *testing.T) {
-	// missing componentId
+	validKey := strings.Repeat("a", 40)
+
+	// missing componentId/componentKey
 	if msg := ValidateRPC("create_instance", nil, nil); msg == "" {
-		t.Error("expected error for missing componentId")
+		t.Error("expected error for missing componentId/componentKey")
 	}
 	// invalid componentId format
 	if msg := ValidateRPC("create_instance", nil, map[string]interface{}{"componentId": "bad-format"}); msg == "" {
 		t.Error("expected error for invalid componentId format")
+	}
+	// invalid componentKey format
+	if msg := ValidateRPC("create_instance", nil, map[string]interface{}{"componentKey": "410:49695"}); !containsCI(msg, "node id") {
+		t.Errorf("componentKey node-id format should get a key hint, got: %s", msg)
 	}
 	// invalid parentId format
 	if msg := ValidateRPC("create_instance", nil, map[string]interface{}{"componentId": "2:2", "parentId": "nope"}); msg == "" {
@@ -2024,6 +2042,15 @@ func TestValidateRPC_CreateInstance(t *testing.T) {
 	// valid (with parent)
 	if msg := ValidateRPC("create_instance", nil, map[string]interface{}{"componentId": "2:2", "parentId": "1:1"}); msg != "" {
 		t.Errorf("unexpected error: %s", msg)
+	}
+	// valid local ID with optional best-effort fallback key; key format is enforced
+	// only for key-only auto-import calls.
+	if msg := ValidateRPC("create_instance", nil, map[string]interface{}{"componentId": "2:2", "componentKey": "ck-1"}); msg != "" {
+		t.Errorf("unexpected error for local componentId with fallback componentKey: %s", msg)
+	}
+	// valid (componentKey only; plugin imports the source first)
+	if msg := ValidateRPC("create_instance", nil, map[string]interface{}{"componentKey": validKey}); msg != "" {
+		t.Errorf("unexpected error for componentKey-only create_instance: %s", msg)
 	}
 }
 

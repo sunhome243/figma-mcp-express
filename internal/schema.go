@@ -1356,6 +1356,9 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 				}
 			}
 		}
+		if v, ok := params["removeOverrideForMode"].(string); ok && v == "" {
+			return "removeOverrideForMode must be a non-empty mode id"
+		}
 
 	case "update_variable_collection":
 		if cid, _ := params["collectionId"].(string); cid == "" {
@@ -1370,6 +1373,9 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 			}
 		} else if raw, ok := params["renameMode"]; ok && raw != nil {
 			return "renameMode must be an object"
+		}
+		if v, ok := params["removeOverridesForVariableId"].(string); ok && v == "" {
+			return "removeOverridesForVariableId must be a non-empty variable id"
 		}
 
 	// ── Linked tools ─────────────────────────────────────────────────────────
@@ -1477,11 +1483,17 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 
 	case "create_instance":
 		componentID, _ := params["componentId"].(string)
-		if componentID == "" {
-			return "componentId is required"
+		componentKey, _ := params["componentKey"].(string)
+		if componentID == "" && componentKey == "" {
+			return "componentId or componentKey is required"
 		}
-		if !ValidNodeID(componentID) {
+		if componentID != "" && !ValidNodeID(componentID) {
 			return fmt.Sprintf("componentId must use colon format e.g. 4029:12345, got: %s", componentID)
+		}
+		if componentID == "" && componentKey != "" {
+			if msg := validatePublishedImportKey("component", componentKey); msg != "" {
+				return msg
+			}
 		}
 		if pid, ok := params["parentId"].(string); ok && pid != "" && !ValidNodeID(pid) {
 			return fmt.Sprintf("parentId must use colon format e.g. 4029:12345, got: %s", pid)
