@@ -5,9 +5,7 @@ description: Use when designing, editing, or reviewing Figma UI layout craft for
 
 # Figma Design Patterns
 
-Design-judgment skill — execution goes through figma-mcp-express `batch` ops, not raw Plugin API.
-
-> **SCOPE.** Owns **design craft** (detail in `references/`). Tool-mechanics → `figma-mcp-express`; workflow → `figma-product-build`.
+> **SCOPE.** Owns **design craft** (detail in `references/`); execution via figma-mcp-express `batch`, not raw Plugin API. Tool-mechanics → `figma-mcp-express`; workflow → `figma-product-build`.
 
 ## Core Rules
 
@@ -16,7 +14,7 @@ Design-judgment skill — execution goes through figma-mcp-express `batch` ops, 
 3. Use Figma-native production features: variables/modes, styles, components, variants/properties, auto layout/grid, constraints, prototypes, and annotations/dev resources when relevant.
 4. Component priority: library `INSTANCE` → local component → raw structural frame only when none exists.
 5. Configure every placed instance with real content, variants, and dimensions before done.
-6. Layer names must be semantic; generated names (`Frame 47`) and cryptic shorthand (`t`, `lbl`) are unfinished — name as you create.
+6. Layer names must be semantic; generated or cryptic names are unfinished — name as you create.
 7. Repeating raw structures become components and reused instances; shared chrome is ONE component instanced identically across states.
 8. Children fit the parent's padded box (`FILL`, or width ≤ inner width); overflow/clip is a layout bug.
 9. Empty/loading/error states are designed (icon + heading + body; skeleton mirrors real content); icons/status use semantic color plus a text/icon cue.
@@ -35,6 +33,7 @@ Design-judgment skill — execution goes through figma-mcp-express `batch` ops, 
 | Instance properties, slots, variants, reset behavior | `references/component-usage.md` |
 | Navigation, forms, data display, modals, scroll-ready frames | `references/composition-patterns.md` |
 | Color/status encoding, icons, empty/loading states | `references/states-and-feedback.md` |
+| Depth, effects, type ladder, imagery, vector | `references/visual-craft.md` |
 | Final PASS/FAIL gates, redundant-element check | `references/handoff-checklist.md` |
 
 ## Stop Flags
@@ -47,4 +46,4 @@ Design-judgment skill — execution goes through figma-mcp-express `batch` ops, 
 - A child spilling past the padded box; chrome rebuilt per state instead of a shared instance.
 - Status by color alone (pair text/icon); a saturated accent as a large active background.
 - An element whose info its neighbours already carry — decide if it *belongs* (rule 10 + PC13).
-- An elevation effect (shadow/glow) clipped for lack of room — inset content, don't flush-fit.
+- Flat surfaces, one-size-one-weight hierarchy, or clipped elevation — apply depth/type/imagery craft (`references/visual-craft.md`).

@@ -1,8 +1,9 @@
 # Effects
 
 Use this only when applying native Figma effects through `set_effects` or creating
-effect styles with `create_effect_style`. For general design judgment, prefer the
-design-system effect style guidance in `figma-design-patterns`.
+effect styles with `create_effect_style`. This file owns HOW — the effect types,
+fields, and call shape. For WHEN/WHY to apply each effect (design judgment), see
+figma-design-patterns `references/visual-craft.md`.
 
 **Quick navigation:** [Effect types](#effect-types) · [Example](#example) · [Notes](#notes)
 

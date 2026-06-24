@@ -63,7 +63,8 @@ func main() {
 
 	logger.Printf("Starting figma-mcp-express %s (role: %s)", version, node.RoleName())
 
-	s := server.NewMCPServer("figma-mcp-express", version)
+	s := server.NewMCPServer("figma-mcp-express", version,
+		server.WithInstructions(internal.BuildCapabilitySeed()))
 	internal.RegisterTools(s, node)
 	internal.RegisterPrompts(s)
 

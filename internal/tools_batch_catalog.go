@@ -303,31 +303,15 @@ func isReadOnlyBatchOp(name string) bool {
 		strings.HasPrefix(name, "export_")
 }
 
+// batchOpCategory returns an op's INTENT category from batchOpIntent (the SSOT in
+// capability_seed.go). Intent is not derivable from the op-name prefix
+// (set_effects is "effects", not "modify"), so this is an explicit lookup. The
+// "control" op (map) and any op missing from the table fall back to "write".
 func batchOpCategory(name string) string {
-	switch {
-	// Prototype ops are matched before the get_/set_ prefix rules so get_prototype,
-	// set_prototype_start, and the scroll/fixed-children ops group under "prototype"
-	// rather than "read"/"modify"/"write".
-	case strings.Contains(name, "reaction"), strings.Contains(name, "prototype"),
-		name == "set_overflow", name == "set_fixed_children", name == "pin_child":
-		return "prototype"
-	case strings.HasPrefix(name, "get_"), strings.HasPrefix(name, "scan_"), strings.HasPrefix(name, "search_"):
-		return "read"
-	case strings.HasPrefix(name, "create_"):
-		return "create"
-	case strings.HasPrefix(name, "set_"), strings.HasPrefix(name, "move_"), strings.HasPrefix(name, "resize_"), strings.HasPrefix(name, "rotate_"), strings.HasPrefix(name, "reorder_"), strings.HasPrefix(name, "rename_"), strings.HasPrefix(name, "clone_"), strings.HasPrefix(name, "delete_"):
-		return "modify"
-	case strings.Contains(name, "style"):
-		return "styles"
-	case strings.Contains(name, "variable"):
-		return "variables"
-	case strings.Contains(name, "component"), strings.Contains(name, "instance"):
-		return "library"
-	case strings.Contains(name, "page"):
-		return "page"
-	default:
-		return "write"
+	if c, ok := batchOpIntent[name]; ok {
+		return c
 	}
+	return "write"
 }
 
 func syncBatchCatalogFromRegisteredTools(s *server.MCPServer) {
@@ -364,7 +348,7 @@ func registerBatchCatalogTools(s *server.MCPServer) {
 	s.AddTool(mcp.NewTool("search_batch_ops",
 		mcp.WithDescription("Search the validated batch/FigmaPlan operation catalog. Use this before get_batch_op_spec when you know the capability but not the exact op name."),
 		mcp.WithString("query", mcp.Description("Optional capability/op/param words to search. Tolerates separators, camelCase, singular/plural, and filler words like op/tool.")),
-		mcp.WithString("category", mcp.Description("Optional category filter: read, create, modify, styles, variables, library, page, prototype, control, write.")),
+		mcp.WithString("category", mcp.Description("Optional intent category filter. Featured (advanced): effects, layout, tokens, vector, components, prototype, media, styles, handoff. Baseline: content, arrange, read. Also control (map).")),
 		mcp.WithBoolean("readOnly", mcp.Description("Optional. true returns read-only ops; false returns non-read-only ops.")),
 		mcp.WithBoolean("mutates", mcp.Description("Optional. true returns mutating ops; false returns non-mutating ops.")),
 		mcp.WithNumber("limit", mcp.Description("Maximum matches to return. Default 20, max 100.")),
