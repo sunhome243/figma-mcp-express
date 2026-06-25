@@ -86,3 +86,4 @@ constraints to prevent drift; do not promise token-bound x/y.
 | Wrapper has no auto layout | Add direction, padding, gap, child sizing |
 | `SPACE_BETWEEN` with many siblings | Use FILL children + small gap |
 | `pin_child` for decoration/chrome | Use `layoutPositioning:"ABSOLUTE"` via `resize_nodes` |
+| Leading chip/icon CENTER-aligned against multi-line text | Top-align (`counterAxisAlignItems:"MIN"`) so the chip meets the FIRST line on every card |
