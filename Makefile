@@ -1,4 +1,4 @@
-.PHONY: test test-go test-ts typecheck-ts lint-ts coverage coverage-go coverage-go-html coverage-ts build build-go build-ts run
+.PHONY: test test-go test-ts test-plugin typecheck-ts lint-ts coverage coverage-go coverage-go-html coverage-ts build build-go build-ts run
 
 # Version stamped into the binary via -ldflags, so `figma-mcp-express --version` reports a
 # real value (git describe) instead of "dev" — the only way to confirm a reload picked
@@ -21,13 +21,17 @@ run: build-go
 build-ts:
 	cd plugin && bun run build
 
-test: test-go test-ts
+test: test-go test-ts test-plugin
 
 test-go:
 	go test ./...
 
 test-ts:
 	cd plugin && bun test
+
+test-plugin:
+	python3 hooks/test_pre_tool.py
+	python3 tests/test_codex_plugin_bundle.py
 
 # Type-checks the new Figma Plugin API surface against @figma/plugin-typings.
 # vite/esbuild builds strip types without checking, so this is the only gate that

@@ -1,0 +1,11 @@
+{
+  "name": "figma-mcp-express",
+  "displayName": "Figma MCP Express",
+  "version": "2.7.0",
+  "description": "Compact Figma MCP with validated batch ops, multi-channel routing, library automation, and design skills.",
+  "author": { "name": "sunhome243" },
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
+}
