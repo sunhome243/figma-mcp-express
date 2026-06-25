@@ -1,12 +1,13 @@
 {
   "name": "figma-mcp-express",
+  "description": "Figma MCP Express plugin marketplace for Claude Code.",
   "owner": {
     "name": "sunhome243"
   },
   "plugins": [
     {
       "name": "figma-mcp-express",
-      "source": ".",
+      "source": "./plugins/figma-mcp-express",
       "description": "Figma MCP with batch ops, multi-channel routing, library automation, and design best-practice skills."
     }
   ]
