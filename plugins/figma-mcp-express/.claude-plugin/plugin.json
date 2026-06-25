@@ -6,6 +6,5 @@
   "author": { "name": "sunhome243" },
   "license": "MIT",
   "skills": "./skills/",
-  "hooks": "./hooks/hooks.json",
   "mcpServers": "./.mcp.json"
 }

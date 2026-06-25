@@ -6,6 +6,25 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Codex and Claude marketplace bundles are now self-contained.** The marketplace source now points
+  at `plugins/figma-mcp-express`, which contains real `.codex-plugin`, `.claude-plugin`, `.mcp.json`,
+  `hooks`, and `skills` files instead of symlinks. This fixes installs that reported
+  `installed, enabled` while leaving the Codex plugin cache empty and no bundled MCP server loaded.
+- **Codex plugin manifest aligned with current validation.** UI metadata now lives under
+  `interface`, default hook discovery relies on `hooks/hooks.json`, and the bundle is validated with
+  a regression test that rejects symlink-only or stale marketplace copies.
+
+### Fixed
+
+- **Claude plugin hook duplication.** Removed the explicit `hooks:"./hooks/hooks.json"` manifest
+  entry so Claude's standard hook auto-discovery does not load the same file twice after marketplace
+  install.
+- **Skill-gate marker path on macOS.** The `figma-mcp-express` skill now writes its load marker to
+  the same temp directory the PreToolUse hook reads (`$TMPDIR` on macOS) and always writes a
+  `default` fallback marker for hosts that do not propagate a session id into skill shell commands.
+
 ## [2.7.0] — 2026-06-24
 
 ### Added
