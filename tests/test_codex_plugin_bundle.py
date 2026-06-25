@@ -97,6 +97,20 @@ class MarketplacePluginBundleTest(unittest.TestCase):
                     f"bundled file is stale: {BUNDLE / source_rel}",
                 )
 
+    def test_manifests_do_not_duplicate_default_hooks_file(self):
+        for manifest_rel in (
+            Path(".codex-plugin/plugin.json"),
+            Path(".claude-plugin/plugin.json"),
+            BUNDLE / ".codex-plugin/plugin.json",
+            BUNDLE / ".claude-plugin/plugin.json",
+        ):
+            manifest = json.loads((REPO / manifest_rel).read_text(encoding="utf-8"))
+            self.assertNotIn(
+                "hooks",
+                manifest,
+                f"{manifest_rel} should rely on the default hooks/hooks.json discovery",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
