@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.1] — 2026-06-25
+
 ### Changed
 
 - **Codex and Claude marketplace bundles are now self-contained.** The marketplace source now points
