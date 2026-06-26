@@ -129,6 +129,35 @@ func TestToolSchemas_ArrayItemsHaveType(t *testing.T) {
 	}
 }
 
+func TestToolSchemas_AutoLayoutEnumsAreStructured(t *testing.T) {
+	resp := listTools(t)
+
+	createFrame := toolProperties(t, resp, "create_frame")
+	setAutoLayout := toolProperties(t, resp, "set_auto_layout")
+	resizeNodes := toolProperties(t, resp, "resize_nodes")
+
+	assertEnum(t, createFrame, "primaryAxisAlignItems", []string{"MIN", "CENTER", "MAX", "SPACE_BETWEEN"})
+	assertEnum(t, createFrame, "counterAxisAlignItems", []string{"MIN", "CENTER", "MAX", "BASELINE"})
+	assertEnum(t, createFrame, "primaryAxisSizingMode", []string{"FIXED", "AUTO"})
+	assertEnum(t, createFrame, "counterAxisSizingMode", []string{"FIXED", "AUTO"})
+	assertEnum(t, createFrame, "layoutWrap", []string{"NO_WRAP", "WRAP"})
+	assertEnum(t, createFrame, "layoutSizingHorizontal", []string{"FIXED", "HUG", "FILL"})
+	assertEnum(t, createFrame, "layoutSizingVertical", []string{"FIXED", "HUG", "FILL"})
+	assertEnum(t, createFrame, "layoutAlign", []string{"MIN", "CENTER", "MAX", "STRETCH", "INHERIT"})
+	assertEnum(t, createFrame, "layoutPositioning", []string{"AUTO", "ABSOLUTE"})
+
+	assertEnum(t, setAutoLayout, "counterAxisAlignItems", []string{"MIN", "CENTER", "MAX", "BASELINE"})
+	if containsString(setAutoLayout["counterAxisAlignItems"].Enum, "STRETCH") {
+		t.Fatal("set_auto_layout.counterAxisAlignItems must not expose STRETCH; use layoutAlign for child stretch")
+	}
+	assertEnum(t, setAutoLayout, "counterAxisAlignContent", []string{"AUTO", "SPACE_BETWEEN"})
+	assertEnum(t, setAutoLayout, "overflowDirection", []string{"NONE", "HORIZONTAL", "VERTICAL", "BOTH"})
+
+	assertEnum(t, resizeNodes, "layoutSizingHorizontal", []string{"FIXED", "HUG", "FILL"})
+	assertEnum(t, resizeNodes, "layoutSizingVertical", []string{"FIXED", "HUG", "FILL"})
+	assertEnum(t, resizeNodes, "layoutAlign", []string{"MIN", "CENTER", "MAX", "STRETCH", "INHERIT"})
+}
+
 // TestToolSchemas_AllToolsRegistered asserts the expected tool count so that
 // accidentally dropped registrations are caught.
 func TestToolSchemas_AllToolsRegistered(t *testing.T) {
@@ -323,6 +352,41 @@ func stringSlicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func toolProperties(t *testing.T, resp toolsListResponse, name string) map[string]propertySchema {
+	t.Helper()
+	for _, tool := range resp.Result.Tools {
+		if tool.Name == name {
+			return tool.InputSchema.Properties
+		}
+	}
+	t.Fatalf("tool %q not found", name)
+	return nil
+}
+
+func assertEnum(t *testing.T, props map[string]propertySchema, param string, want []string) {
+	t.Helper()
+	prop, ok := props[param]
+	if !ok {
+		t.Fatalf("missing param %q", param)
+	}
+	got := append([]string(nil), prop.Enum...)
+	sort.Strings(got)
+	sortedWant := append([]string(nil), want...)
+	sort.Strings(sortedWant)
+	if prop.Type != "string" || !stringSlicesEqual(got, sortedWant) {
+		t.Fatalf("%s enum = type %q values %v, want %v", param, prop.Type, prop.Enum, sortedWant)
+	}
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func TestToolSchemas_DefaultCoreProfileExposesSmallSurface(t *testing.T) {

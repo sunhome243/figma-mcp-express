@@ -362,6 +362,11 @@ catalog progressively:
    plugin.
 4. `batch` executes the validated plan.
 
+The first three steps are server-local. They do not acquire the bridge's
+per-channel plugin slot, so catalog discovery and validate-only checks stay
+responsive even while a file has plugin-bound work queued. Only actual `batch`
+execution enters the Figma plugin queue.
+
 Raw script execution is intentionally not part of this architecture. Fields such
 as `script`, `code`, `js`, `eval`, and `function` are rejected before plugin
 execution.

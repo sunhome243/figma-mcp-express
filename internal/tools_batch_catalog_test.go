@@ -150,6 +150,27 @@ func TestBatchCatalogMetaTools(t *testing.T) {
 	}
 }
 
+func TestBatchCatalogMetaToolsDoNotCallBridge(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"unexpected": true},
+	})
+
+	search := callToolResult(t, s, "search_batch_ops", map[string]any{
+		"query": "layout",
+		"limit": float64(3),
+	})
+	if search.IsError {
+		t.Fatalf("search_batch_ops returned error: %s", resultText(t, search))
+	}
+	spec := callToolResult(t, s, "get_batch_op_spec", map[string]any{"op": "set_auto_layout"})
+	if spec.IsError {
+		t.Fatalf("get_batch_op_spec returned error: %s", resultText(t, spec))
+	}
+	if captured.Tool != "" {
+		t.Fatalf("catalog meta tools must be server-local, captured bridge tool %q", captured.Tool)
+	}
+}
+
 // search_batch_ops must match natural multi-word queries (AND over whitespace
 // tokens), not just one contiguous substring — so "create frame" finds create_frame
 // even though the op name uses an underscore. Regression for the usability finding.

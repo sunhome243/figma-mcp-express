@@ -152,6 +152,8 @@ Shell environment variables take precedence over `.env`.
 | `FIGMA_MCP_TOOL_SCHEMA_MODE` | `compact` | `compact` trims `tools/list` descriptions to reduce MCP context tokens. Use `verbose` for full in-schema guidance. |
 | `FIGMA_MCP_BATCH_MAX_OPS` | `200` | Maximum top-level `batch.ops` entries accepted before plugin execution. |
 | `FIGMA_MCP_BATCH_MAX_BYTES` | `2097152` | Maximum encoded `batch.ops` payload size in bytes before plugin execution. |
+| `FIGMA_MCP_STDIO_WORKERS` | `16` | Number of stdio tool-call workers. Server-local tools can run concurrently; plugin-facing calls still serialize per Figma file. |
+| `FIGMA_MCP_STDIO_QUEUE` | `1000` | Buffered stdio tool-call queue size before mcp-go falls back to synchronous handling. |
 | `FIGMA_MCP_SPILL_BYTES` | `25000` | Response size threshold. Larger responses spill to `.figma-mcp-cache/`. |
 | `FIGMA_MCP_TIMEOUT` | `120` | Inactivity ceiling in seconds for lightweight ops. Resets on each progress heartbeat. |
 | `FIGMA_MCP_READ_TIMEOUT` | `600` | Inactivity ceiling in seconds for heavy reads and `batch`. Resets on each progress heartbeat. |

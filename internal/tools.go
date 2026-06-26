@@ -15,6 +15,23 @@ import (
 	"github.com/sunhome243/figma-mcp-express/internal/prompts"
 )
 
+var (
+	layoutModeEnum              = []string{"HORIZONTAL", "VERTICAL", "GRID", "NONE"}
+	primaryAxisAlignItemsEnum   = []string{"MIN", "CENTER", "MAX", "SPACE_BETWEEN"}
+	counterAxisAlignItemsEnum   = []string{"MIN", "CENTER", "MAX", "BASELINE"}
+	axisSizingModeEnum          = []string{"FIXED", "AUTO"}
+	layoutWrapEnum              = []string{"NO_WRAP", "WRAP"}
+	counterAxisAlignContentEnum = []string{"AUTO", "SPACE_BETWEEN"}
+	overflowDirectionEnum       = []string{"NONE", "HORIZONTAL", "VERTICAL", "BOTH"}
+	layoutSizingEnum            = []string{"FIXED", "HUG", "FILL"}
+	layoutAlignEnum             = []string{"MIN", "CENTER", "MAX", "STRETCH", "INHERIT"}
+	layoutPositioningEnum       = []string{"AUTO", "ABSOLUTE"}
+)
+
+func enumStringParam(name string, description string, values []string) mcp.ToolOption {
+	return mcp.WithString(name, mcp.Description(description), mcp.Enum(values...))
+}
+
 // spillCacheDir returns the path for the spill cache relative to workDir.
 func spillCacheDir(workDir string) string {
 	return filepath.Join(workDir, ".figma-mcp-cache")
@@ -474,11 +491,11 @@ func textStyleParams() []mcp.ToolOption {
 // (resize_nodes, create_frame). These require the node to live in an auto-layout frame.
 func layoutSizingParams() []mcp.ToolOption {
 	return []mcp.ToolOption{
-		mcp.WithString("layoutSizingHorizontal", mcp.Description("Horizontal sizing inside an auto-layout parent: FIXED, HUG, or FILL")),
-		mcp.WithString("layoutSizingVertical", mcp.Description("Vertical sizing inside an auto-layout parent: FIXED, HUG, or FILL")),
+		enumStringParam("layoutSizingHorizontal", "Horizontal sizing inside an auto-layout parent: FIXED, HUG, or FILL", layoutSizingEnum),
+		enumStringParam("layoutSizingVertical", "Vertical sizing inside an auto-layout parent: FIXED, HUG, or FILL", layoutSizingEnum),
 		mcp.WithNumber("layoutGrow", mcp.Description("Grow factor along the parent's main axis (0 = don't grow, 1 = fill remaining)")),
-		mcp.WithString("layoutAlign", mcp.Description("Cross-axis self-alignment in an auto-layout parent: MIN, CENTER, MAX, STRETCH, or INHERIT")),
-		mcp.WithString("layoutPositioning", mcp.Description("AUTO (in-flow) or ABSOLUTE (free position inside an auto-layout parent)")),
+		enumStringParam("layoutAlign", "Cross-axis self-alignment in an auto-layout parent: MIN, CENTER, MAX, STRETCH, or INHERIT", layoutAlignEnum),
+		enumStringParam("layoutPositioning", "AUTO (in-flow) or ABSOLUTE (free position inside an auto-layout parent)", layoutPositioningEnum),
 		mcp.WithNumber("minWidth", mcp.Description("Minimum width in px (null clears). Responsive constraint for an auto-layout child or frame.")),
 		mcp.WithNumber("maxWidth", mcp.Description("Maximum width in px (null clears).")),
 		mcp.WithNumber("minHeight", mcp.Description("Minimum height in px (null clears).")),

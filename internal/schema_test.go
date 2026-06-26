@@ -1360,6 +1360,7 @@ func TestValidateAutoLayoutParams_InvalidValues(t *testing.T) {
 	}{
 		{"primaryAxisAlignItems", "LEFT"},
 		{"counterAxisAlignItems", "TOP"},
+		{"counterAxisAlignItems", "STRETCH"},
 		{"primaryAxisSizingMode", "SHRINK"},
 		{"counterAxisSizingMode", "SHRINK"},
 		{"layoutWrap", "FLEX_WRAP"},
@@ -1381,6 +1382,18 @@ func TestValidateAutoLayoutParams_InvalidValues(t *testing.T) {
 	})
 	if msg != "" {
 		t.Errorf("unexpected error for valid auto-layout params: %s", msg)
+	}
+}
+
+func TestValidateRPC_StretchUsesChildLayoutSizingParams(t *testing.T) {
+	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{"layoutAlign": "STRETCH"}); msg != "" {
+		t.Fatalf("layoutAlign STRETCH should be valid on resize_nodes, got: %s", msg)
+	}
+	if msg := ValidateRPC("resize_nodes", []string{"1:1"}, map[string]interface{}{"layoutSizingHorizontal": "FILL"}); msg != "" {
+		t.Fatalf("layoutSizingHorizontal FILL should be valid on resize_nodes, got: %s", msg)
+	}
+	if msg := ValidateRPC("set_auto_layout", []string{"1:1"}, map[string]interface{}{"counterAxisAlignItems": "STRETCH"}); msg == "" {
+		t.Fatal("counterAxisAlignItems STRETCH should be rejected on parent auto-layout")
 	}
 }
 
