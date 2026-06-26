@@ -22,7 +22,20 @@ look right at one wrapper width.
 
 Set FILL sizing after placement. A parentless node cannot meaningfully fill its
 future parent: create/place it first, then use `resize_nodes` with
-`layoutSizingHorizontal:"FILL"` or `layoutSizingVertical:"FILL"`.
+`layoutSizingHorizontal:"FILL"` or `layoutSizingVertical:"FILL"`. This applies to
+`layoutAlign:"STRETCH"` and `layoutGrow` too — all of them set at create time (the
+`create_frame` / `create_text` ops) are **silently ignored** (sizing is meaningless before
+the node sits in a parent with a settled `layoutMode`), so the node hugs its content instead.
+Two failure modes this causes, both from skipping the follow-up `resize_nodes` pass:
+
+- **Ragged card row** — a row of cards whose bottoms should align comes out uneven, each
+  card hugging its own content height. Fix: after creating the cards, run `resize_nodes` with
+  `layoutSizingVertical:"FILL"` on them.
+- **Chart bars overflow the title** — a bars-row inside a card hugs and the bars grow
+  upward past the card, over the heading. Fix the card height first, then fill the row: set
+  the card's `primaryAxisSizingMode:"FIXED"` via `set_auto_layout`, give the card a fixed
+  `height` with `resize_nodes`, then `resize_nodes` the bars-row with
+  `layoutSizingVertical:"FILL"`.
 
 Responsive bounds: `minWidth` / `maxWidth` / `minHeight` / `maxHeight` are
 settable on auto-layout containers — frames, components, and component sets —

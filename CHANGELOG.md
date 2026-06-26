@@ -6,7 +6,21 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.7.1] — 2026-06-25
+### Documentation
+
+- **Skill craft/mechanics hardened from a real deck build** (figma-automation `/figma-slides`
+  retrospective):
+  - `figma-design-patterns/references/auto-layout.md` — expanded the "set FILL after placement"
+    rule to cover `layoutAlign:STRETCH` / `layoutGrow` (all silently ignored at create), with the
+    two recurring failures (ragged card row; chart bars overflowing the title) and their
+    `resize_nodes` fixes.
+  - `figma-design-patterns/references/visual-craft.md` — added "depth must vary by hierarchy":
+    one elevation tier applied uniformly is monotone, not restraint; the focal element must sit
+    forward even in a flat aesthetic.
+  - `figma-mcp-express/references/gotchas.md` — documented SECTION local-origin coordinates and
+    the build-into-the-section-from-the-start convention (reparent only as recovery).
+  - `figma-mcp-express/references/mcp-known-bugs.md` — tracked the batch `$`+digit op-ref
+    collision (#82) with the U+200B workaround tagged revise-when-fixed.
 
 ### Changed
 

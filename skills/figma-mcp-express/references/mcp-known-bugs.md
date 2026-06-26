@@ -4,7 +4,17 @@ Server bugs confirmed in production, with workarounds. Each links a GitHub issue
 Check the running server version (`figma-mcp-express --version`) — a fix on `main` only
 takes effect once it ships in a tagged release.
 
-No open server bugs are currently tracked.
+## `$`+digit in batch text parsed as an op-ref (issue #82)
+
+Inside `batch(ops:[...])`, a text value where `$` is immediately followed by digits — e.g.
+`set_text`/`create_text` with `"$12.2B"` — collides with the op-ref syntax (`$N` = "result of
+op N"): `$12` resolves as "ref points to op #12" and the build fails. Common in finance / IR /
+pricing copy. A leading lone `$` (no trailing digit) is safe.
+
+**Workaround (revise-when-fixed):** insert a zero-width space (U+200B) between `$` and the
+first digit so the adjacency breaks — but this injects an invisible char into the deliverable
+copy, so prefer a non-`batch` `set_text` for dollar-heavy text until the fix ships. The fix
+(issue #82) makes `$N` resolution skip quoted string values.
 
 ---
 
