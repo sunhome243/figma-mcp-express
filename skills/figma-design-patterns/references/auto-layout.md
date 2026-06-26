@@ -20,9 +20,23 @@ look right at one wrapper width.
 `itemSpacing` is visual rhythm only: usually 8 / 12 / 16 / 24 / 32. If you need
 `itemSpacing` above 48 to spread items, set children to `FILL` instead.
 
-Set FILL sizing after placement. A parentless node cannot meaningfully fill its
-future parent: create/place it first, then use `resize_nodes` with
-`layoutSizingHorizontal:"FILL"` or `layoutSizingVertical:"FILL"`.
+Apply FILL sizing only after the child is in an auto-layout parent. `create_frame`
+accepts `layoutSizingHorizontal`, `layoutSizingVertical`, `layoutAlign`, and
+`layoutGrow` at creation and applies them after parenting the new frame. For an
+existing frame or another resizable child, create/place it first, then use
+`resize_nodes`. `create_text` does not accept layout-sizing params; create it under
+the intended parent, then size it with `resize_nodes`.
+
+Two failure modes caused by leaving the intended child sizing unset:
+
+- **Ragged card row** — a row of cards whose bottoms should align comes out uneven, each
+  card hugging its own content height. Fix: after creating the cards, run `resize_nodes` with
+  `layoutSizingVertical:"FILL"` on them.
+- **Chart bars overflow the title** — a bars-row inside a card hugs and the bars grow
+  upward past the card, over the heading. Fix the card height first, then fill the row: set
+  the card's `primaryAxisSizingMode:"FIXED"` via `set_auto_layout`, give the card a fixed
+  `height` with `resize_nodes`, then `resize_nodes` the bars-row with
+  `layoutSizingVertical:"FILL"`.
 
 Responsive bounds: `minWidth` / `maxWidth` / `minHeight` / `maxHeight` are
 settable on auto-layout containers — frames, components, and component sets —
@@ -81,7 +95,7 @@ constraints to prevent drift; do not promise token-bound x/y.
 |---|---|
 | HUG children + giant `itemSpacing` | FILL children + small gap |
 | WRAP + FILL cards | GRID or computed FIXED card width |
-| FILL before placement | Place first, then `resize_nodes` |
+| Layout sizing passed to an op that does not support it | Place first, then use `resize_nodes`; `create_frame` is the create-time exception |
 | Sidebar set to FILL | Keep sidebar FIXED |
 | Wrapper has no auto layout | Add direction, padding, gap, child sizing |
 | `SPACE_BETWEEN` with many siblings | Use FILL children + small gap |

@@ -6,6 +6,21 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Skill craft/mechanics hardened from a real deck build** (figma-automation `/figma-slides`
+  retrospective):
+  - `figma-design-patterns/references/auto-layout.md` — clarified when layout sizing can be
+    supplied to `create_frame` and when an existing child needs a follow-up `resize_nodes`
+    call, with fixes for ragged card rows and overflowing chart bars.
+  - `figma-design-patterns/references/visual-craft.md` — added "depth must vary by hierarchy":
+    one elevation tier applied uniformly is monotone, not restraint; the focal element must sit
+    forward even in a flat aesthetic.
+  - `figma-mcp-express/references/gotchas.md` — documented SECTION local-origin coordinates and
+    the build-into-the-section-from-the-start convention (reparent only as recovery).
+  - `figma-mcp-express/references/mcp-known-bugs.md` — tracked standalone currency strings
+    that collide with the batch `$N.path` grammar (#82), with profile-aware workarounds.
+
 ### Changed
 
 - **License simplified to standard MIT with original upstream attribution.** Removed the
