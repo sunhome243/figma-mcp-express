@@ -6,6 +6,27 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.0] — 2026-07-11
+
+### Added
+
+- **Remote Follower mode.** `--mode remote-follower` now serves the existing MCP tools and prompts at
+  a loopback-only Streamable HTTP `/mcp` endpoint while forwarding `/rpc`, `/channels`, and `/ping`
+  through a dedicated Tailscale HTTPS leader path.
+- **Remote-mode supervisor contract validation.** `--leader-url`, `--outbound-proxy`, and
+  `--mcp-listen` are validated before startup side effects, rejecting non-`.ts.net` leaders,
+  non-loopback proxies/listeners, credentials, fragments, queries, and unexpected paths.
+- **Remote Follower regression coverage.** Added unit, Streamable HTTP MCP, race, and tagged binary
+  E2E coverage for proxy isolation, read/write forwarding, gzip responses, schema validation before
+  forwarding, response-loss no-retry behavior, shutdown, and log/error redaction.
+
+### Security
+
+- **Follower transport hardening.** Remote follower HTTP traffic uses a dedicated client/proxy,
+  preserves default TLS verification, disables redirects, bounds response bodies, checks non-2xx
+  statuses before decoding, and avoids logging endpoint URLs, proxy URLs, params, node/channel IDs,
+  file metadata, request bodies, and upstream response bodies.
+
 ## [2.7.1] — 2026-06-25
 
 ### Changed
