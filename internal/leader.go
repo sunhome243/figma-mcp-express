@@ -140,18 +140,18 @@ func (l *Leader) handleRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	leaderLogger.Printf("rpc %s nodeIDs=%v from %s", req.Tool, req.NodeIDs, r.RemoteAddr)
+	leaderLogger.Printf("tool=%s status=rpc_received", req.Tool)
 	normalizeRPCNodeReferences(req.NodeIDs, req.Params)
 
 	if req.Tool == "batch" {
 		if err := validateAndPrepareBatchParams(req.Params); err != nil {
-			leaderLogger.Printf("rpc %s validation error: %s", req.Tool, err)
+			leaderLogger.Printf("tool=%s status=validation_error", req.Tool)
 			l.sendJSON(w, http.StatusBadRequest, RPCResponse{Error: err.Error()})
 			return
 		}
 	} else {
 		if validationErr := ValidateRPC(req.Tool, req.NodeIDs, req.Params); validationErr != "" {
-			leaderLogger.Printf("rpc %s validation error: %s", req.Tool, validationErr)
+			leaderLogger.Printf("tool=%s status=validation_error", req.Tool)
 			l.sendJSON(w, http.StatusBadRequest, RPCResponse{Error: validationErr})
 			return
 		}
@@ -162,13 +162,13 @@ func (l *Leader) handleRPC(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := l.bridge.Send(r.Context(), req.Tool, req.NodeIDs, req.Params)
 	if err != nil {
-		leaderLogger.Printf("rpc %s bridge error: %v", req.Tool, err)
+		leaderLogger.Printf("tool=%s status=bridge_error", req.Tool)
 		l.sendJSON(w, http.StatusOK, RPCResponse{Error: err.Error()})
 		return
 	}
 
 	if resp.Error != "" {
-		leaderLogger.Printf("rpc %s plugin error: %s", req.Tool, resp.Error)
+		leaderLogger.Printf("tool=%s status=plugin_error", req.Tool)
 		l.sendJSON(w, http.StatusOK, RPCResponse{Error: resp.Error})
 		return
 	}
