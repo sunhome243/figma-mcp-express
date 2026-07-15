@@ -23,7 +23,7 @@ Follow AI agents live as they fix issues, edit layouts, and design screens direc
 ## Why teams use it
 
 - **More automation, fewer quota walls.** Normal plugin-side work is not capped by the official Figma MCP server's seat-based tool-call limits.
-- **Compact tool surface.** Compared with [`vkhanhqui/figma-mcp-go@fe6cd768`](https://github.com/vkhanhqui/figma-mcp-go) (the upstream fork baseline), the default `tools/list` drops from 73 tools / 12,214 `o200k_base` tokens to 21 tools / 3,283 tokens (73.1% smaller) — less context burned before the agent does any work.
+- **Compact tool surface.** Compared with [`vkhanhqui/figma-mcp-go@fe6cd768`](https://github.com/vkhanhqui/figma-mcp-go) (the intermediate fork baseline used for this measurement), the default `tools/list` drops from 73 tools / 12,214 `o200k_base` tokens to 21 tools / 3,283 tokens (73.1% smaller) — less context burned before the agent does any work.
 - **Real Figma context, not screenshots.** Agents work with live nodes, components, variables, styles, frames, screenshots, and prototype links in the open Desktop file.
 - **Built for design-system migration.** Route a source library and product file through separate channels, then rebuild screens with the right components and tokens.
 - **Made for multi-agent runs.** Watch agent activity live, follow one agent's edits, and keep file sessions separated by channel.
@@ -168,4 +168,8 @@ Shell environment variables take precedence over `.env`.
 
 ## Credits
 
-Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MIT). The original established the core idea: skip the REST API for live file work and talk directly to Figma Desktop over WebSocket.
+The original bridge architecture and implementation underlying this project were created by [GETHOPP LTD in gethopp/figma-mcp-bridge@82b28bc](https://github.com/gethopp/figma-mcp-bridge/tree/82b28bc) and released under the MIT License.
+
+figma-mcp-express was initially created from an intermediate fork without knowing this earlier provenance. After learning the full lineage, we restored GETHOPP LTD's copyright notice and now credit the original project directly. We value a healthy, transparent open-source ecosystem and aim to make authorship and derivation explicit.
+
+Required third-party copyright notices are preserved in [LICENSE](LICENSE). figma-mcp-express is MIT-licensed and permits commercial use.

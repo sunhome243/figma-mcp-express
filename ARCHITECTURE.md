@@ -83,7 +83,7 @@ This means the plugin never needs to reconnect when you restart your AI tool —
 
 ## Improvements Over the Original
 
-The original [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) is a solid foundation: no REST API, no rate limits, ~73 tools covering read/write access to a single open Figma file. This fork adds the systems needed for **enterprise-scale automation** — working with multiple files simultaneously, automating library migration workflows, reducing LLM round-trips, and preventing the plugin from jamming on large files.
+The original [gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge) established the bridge architecture: no REST API, no rate limits, and direct read/write access to an open Figma file. figma-mcp-express reached this codebase through an intermediate Go fork and adds the systems needed for **enterprise-scale automation** — working with multiple files simultaneously, automating library migration workflows, reducing LLM round-trips, and preventing the plugin from jamming on large files.
 
 ### 1. Multi-file channel routing
 

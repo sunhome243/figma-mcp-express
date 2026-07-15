@@ -8,6 +8,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **License simplified to standard MIT with original upstream attribution.** Removed the
+  Commons Clause restriction, restored GETHOPP LTD's original copyright notice, preserved
+  required downstream notices, and included the MIT license in npm and plugin release
+  artifacts. Commercial use is now expressly permitted by the repository license.
 - **figma-design-patterns: folded in two universal craft principles surfaced by a real build.**
   (1) **Contrast/readability** — the color ladder now states the bright foreground token is the DEFAULT for
   all primary content; muted/dim is for secondary lines only, and contrast is never used to encode emphasis

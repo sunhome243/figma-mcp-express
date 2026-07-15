@@ -8,7 +8,7 @@
 [![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-compatible-8A2BE2?logo=anthropic)](https://claude.ai/code)
 [![Works with Codex](https://img.shields.io/badge/Codex-compatible-000000)](https://github.com/openai/codex)
 
-Enhanced fork of [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go).
+Built on the original MIT-licensed work of [GETHOPP LTD in gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge).
 
 ---
 
@@ -286,7 +286,11 @@ The binary loads `.env` from its working directory at startup. Shell env always 
 
 ## Credits
 
-Built on [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) (MIT). The original established the core insight: skip the REST API, talk directly to Figma Desktop over WebSocket. figma-mcp-express adds multi-channel routing, batch ops, response spill-to-disk, library automation, codegen context, library catalog discovery, cooperative yield, and depth-limited traversal.
+The original bridge architecture and implementation underlying this project were created by [GETHOPP LTD in gethopp/figma-mcp-bridge@82b28bc](https://github.com/gethopp/figma-mcp-bridge/tree/82b28bc) and released under the MIT License.
+
+figma-mcp-express was initially created from an intermediate fork without knowing this earlier provenance. After learning the full lineage, we restored GETHOPP LTD's copyright notice and now credit the original project directly. We value a healthy, transparent open-source ecosystem and aim to make authorship and derivation explicit.
+
+Required third-party copyright notices are preserved in [LICENSE](LICENSE). figma-mcp-express is MIT-licensed and permits commercial use. It adds multi-channel routing, batch ops, response spill-to-disk, library automation, codegen context, library catalog discovery, cooperative yield, and depth-limited traversal.
 
 ---
 
