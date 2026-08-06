@@ -55,6 +55,10 @@ func positiveEnvInt(name string, fallback int) int {
 func main() {
 	ip := flag.String("ip", "127.0.0.1", "IP address to listen on (use 0.0.0.0 to accept remote connections)")
 	port := flag.Int("port", 1994, "port to listen on")
+	mode := flag.String("mode", "local", "startup mode: local or remote-follower")
+	leaderURL := flag.String("leader-url", "", "remote-follower leader URL")
+	outboundProxy := flag.String("outbound-proxy", "", "remote-follower outbound HTTP proxy")
+	mcpListen := flag.String("mcp-listen", "", "remote-follower MCP listen address")
 	showVersion := flag.Bool("version", false, "print the build version and exit")
 	flag.Parse()
 
@@ -63,6 +67,19 @@ func main() {
 	if *showVersion {
 		fmt.Println(version)
 		return
+	}
+
+	var remoteCfg internal.RemoteFollowerConfig
+	switch *mode {
+	case "local", "":
+	case "remote-follower":
+		cfg, err := internal.NewRemoteFollowerConfig(*leaderURL, *outboundProxy, *mcpListen)
+		if err != nil {
+			logger.Fatalf("remote follower config: %v", err)
+		}
+		remoteCfg = cfg
+	default:
+		logger.Fatalf("invalid mode: %q", *mode)
 	}
 
 	// Load .env from the working directory (project root) so secrets like
@@ -74,6 +91,17 @@ func main() {
 		logger.Printf("loaded %d var(s) from .env", n)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if *mode == "remote-follower" {
+		logger.Printf("Starting figma-mcp-express %s (mode: remote-follower)", version)
+		if err := internal.RunRemoteFollower(ctx, remoteCfg, version); err != nil {
+			logger.Fatalf("%v", err)
+		}
+		return
+	}
+
 	parsedIP := net.ParseIP(*ip)
 	if parsedIP == nil {
 		logger.Fatalf("invalid IP address: %q", *ip)
@@ -81,9 +109,6 @@ func main() {
 	if !parsedIP.IsLoopback() {
 		logger.Printf("WARNING: binding to %s — server will be reachable from the network with no authentication", *ip)
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	node := internal.NewNode(*ip, *port, version)
 	election := internal.NewElection(*ip, *port, node)
@@ -94,10 +119,7 @@ func main() {
 
 	logger.Printf("Starting figma-mcp-express %s (role: %s)", version, node.RoleName())
 
-	s := server.NewMCPServer("figma-mcp-express", version,
-		server.WithInstructions(internal.BuildCapabilitySeed()))
-	internal.RegisterTools(s, node)
-	internal.RegisterPrompts(s)
+	s := internal.NewFigmaMCPServer(version, node)
 	stdioConfig := stdioRuntimeConfigFromEnv()
 	logger.Printf("stdio workers=%d queue=%d", stdioConfig.workerPoolSize, stdioConfig.queueSize)
 

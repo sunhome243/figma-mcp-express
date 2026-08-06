@@ -37,6 +37,25 @@ func TestNewNode_StartsUnknown(t *testing.T) {
 	}
 }
 
+func TestNewRemoteFollowerNode_startsFollowerWithoutLeader(t *testing.T) {
+	// Given
+	client := &http.Client{}
+
+	// When
+	n := NewRemoteFollowerNode("https://design-mac.example.ts.net", client, "test")
+
+	// Then
+	if n.Role() != RoleFollower {
+		t.Fatalf("remote node role = %v, want FOLLOWER", n.Role())
+	}
+	if n.leader != nil {
+		t.Fatal("remote follower must not create a leader")
+	}
+	if n.follower == nil {
+		t.Fatal("remote follower must create follower transport")
+	}
+}
+
 // ── BecomeLeader ─────────────────────────────────────────────────────────────
 
 func TestNodeBecomeLeader(t *testing.T) {

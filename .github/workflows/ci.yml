@@ -24,6 +24,9 @@ jobs:
       - name: Build Go binary
         run: make build-go
 
+      - name: Test remote follower binary
+        run: FIGMA_MCP_E2E_BINARY="$PWD/bin/figma-mcp-express" go test -tags=e2e -count=1 -run '^TestRemoteFollowerBinaryE2E_' ./internal
+
   verify-plugin:
     runs-on: ubuntu-latest
     timeout-minutes: 5
