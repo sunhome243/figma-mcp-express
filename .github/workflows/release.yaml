@@ -56,7 +56,7 @@ jobs:
         run: bun install && bun run build
 
       - name: Package plugin
-        run: zip -r plugin.zip plugin/manifest.json plugin/dist/
+        run: zip -r plugin.zip LICENSE plugin/manifest.json plugin/dist/
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -79,6 +79,7 @@ jobs:
           npm install -g npm@latest
           npm --version
           cp ../README.md .
+          cp ../LICENSE .
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           # Idempotent: re-running a tag (e.g. to fix a later step) must not 404 on an
           # already-published version — skip publish if this version is already on npm.

@@ -22,7 +22,7 @@ reads under `## Read — Document` not named above (`get_document`, `get_reactio
 `get_viewport`, `get_fonts`, `get_annotations`, `get_screenshot`) are
 full-profile-only — use `get_metadata` / `get_node` / `save_screenshots` in `core`.
 
-Plugin-facing top-level tools expose optional `channel` routing and required `origin` presence params (omitted from most param tables for brevity — see the Channel and multi-agent skill docs). Local/meta tools (`list_channels`, `search_batch_ops`, `get_batch_op_spec`, and REST-backed `fetch_library_catalog`) do not expose `origin`. For `batch`, pass `channel` and `origin` on the outer `batch` call only; per-op `params.channel` and `params.origin` are rejected because op contracts come from `BatchOpCatalog`. Node IDs are documented and returned in colon format, e.g. `4029:12345`; the runtime normalizes common Figma URL hyphen IDs before validation as a recovery path.
+Plugin-facing top-level tools expose optional `channel` routing and required `origin` presence params (omitted from most param tables for brevity — see the Channel and multi-agent skill docs). Local/meta tools (`list_channels`, `search_batch_ops`, `get_batch_op_spec`, and REST-backed `fetch_library_catalog`) do not expose `origin`. `search_batch_ops`, `get_batch_op_spec`, and `batch(validateOnly:true)` are server-local and do not wait behind the Figma plugin's per-file serial queue; actual `batch` execution does. For `batch`, pass `channel` and `origin` on the outer `batch` call only; per-op `params.channel` and `params.origin` are rejected because op contracts come from `BatchOpCatalog`. Node IDs are documented and returned in colon format, e.g. `4029:12345`; the runtime normalizes common Figma URL hyphen IDs before validation as a recovery path.
 
 ---
 
@@ -304,7 +304,7 @@ Export screenshots for multiple nodes and write them to the local filesystem. Re
 
 ### create_frame
 
-Create a new frame on the current page or inside a parent node. Optional layout-sizing params (FILL/HUG) size the frame within an auto-layout parent.
+Create a new frame on the current page or inside a parent node. Optional layout-sizing params (FILL/HUG) size the frame within an auto-layout parent. Parent cross-axis alignment is `counterAxisAlignItems` (`MIN`/`CENTER`/`MAX`/`BASELINE`); child stretch uses `layoutAlign:"STRETCH"` or `layoutSizingHorizontal/Vertical:"FILL"`.
 
 | Name                   | Type   | Required | Description                                                                   |
 | ---------------------- | ------ | -------- | ----------------------------------------------------------------------------- |
@@ -1025,7 +1025,7 @@ Resize one or more nodes and/or set their sizing-within-parent (FILL/HUG). FILL/
 
 ### set_auto_layout
 
-Set or update auto-layout (flex) properties on an existing frame.
+Set or update auto-layout (flex) properties on an existing frame. `counterAxisAlignItems` aligns children as a parent setting and does not accept `STRETCH`; use child layout sizing (`layoutAlign:"STRETCH"` or `layoutSizingHorizontal/Vertical:"FILL"`) on `resize_nodes`/`create_frame` when a child should stretch in its auto-layout parent.
 
 | Name                  | Type   | Required | Description                                                         |
 | --------------------- | ------ | -------- | ------------------------------------------------------------------- |
@@ -1560,7 +1560,7 @@ Requires `FIGMA_TOKEN` env (read-only PAT, auto-loaded from `.env`). Writes the 
 ### search_batch_ops
 
 Search the validated `BatchOpCatalog` without loading every op's full schema.
-Use this when you know the capability but not the exact op name.
+Use this when you know the capability but not the exact op name. This is a server-local catalog lookup, not a Figma plugin call.
 
 | Name     | Type    | Required | Description                                                            |
 | -------- | ------- | -------- | ---------------------------------------------------------------------- |
@@ -1576,7 +1576,7 @@ Returns `{matches, count, total}` with compact op metadata.
 
 Return the structured schema for one batch/FigmaPlan op. This is the
 authoritative contract for hidden/core-profile write ops and batch-only
-ops.
+ops. This is a server-local catalog lookup, not a Figma plugin call.
 
 | Name            | Type    | Required | Description                                               |
 | --------------- | ------- | -------- | --------------------------------------------------------- |
@@ -1594,7 +1594,7 @@ Use when you have a known multi-step sequence, a bulk apply, a read chain, or wa
 
 Reads inside a batch are always live and bypass the singleflight cache. Do not use batch as a bypass for heavy catalog reads — use `fetch_library_catalog` or `get_local_components` directly.
 
-**Safety caps.** `batch` fails fast before plugin execution when top-level ops exceed `FIGMA_MCP_BATCH_MAX_OPS` (default `200`) or encoded `ops` exceed `FIGMA_MCP_BATCH_MAX_BYTES` (default `2097152`). Split large work into logical sections; raise caps only for controlled local runs.
+**Safety caps.** `batch` fails fast before plugin execution when top-level ops exceed `FIGMA_MCP_BATCH_MAX_OPS` (default `200`) or encoded `ops` exceed `FIGMA_MCP_BATCH_MAX_BYTES` (default `2097152`). `validateOnly:true` stops after server validation and does not enter the plugin bridge queue. Split large work into logical sections; raise caps only for controlled local runs.
 
 **`$N.field` ref resolution.** A string value of the form `$N.field.subfield` in `nodeIds` or `params` resolves to op N's result data at that path before the op runs. Refs may only point to earlier ops (N < current index). Array indices use dot notation: `$0.nodes.0.id`.
 

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/mark3labs/mcp-go/server"
@@ -20,6 +21,36 @@ import (
 var version = "dev"
 
 var logger = log.New(os.Stderr, "", 0)
+
+const (
+	defaultStdioWorkerPoolSize = 16
+	defaultStdioQueueSize      = 1000
+)
+
+type stdioRuntimeConfig struct {
+	workerPoolSize int
+	queueSize      int
+}
+
+func stdioRuntimeConfigFromEnv() stdioRuntimeConfig {
+	return stdioRuntimeConfig{
+		workerPoolSize: positiveEnvInt("FIGMA_MCP_STDIO_WORKERS", defaultStdioWorkerPoolSize),
+		queueSize:      positiveEnvInt("FIGMA_MCP_STDIO_QUEUE", defaultStdioQueueSize),
+	}
+}
+
+func positiveEnvInt(name string, fallback int) int {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		logger.Printf("WARNING: invalid %s=%q; using %d", name, raw, fallback)
+		return fallback
+	}
+	return n
+}
 
 func main() {
 	ip := flag.String("ip", "127.0.0.1", "IP address to listen on (use 0.0.0.0 to accept remote connections)")
@@ -67,6 +98,8 @@ func main() {
 		server.WithInstructions(internal.BuildCapabilitySeed()))
 	internal.RegisterTools(s, node)
 	internal.RegisterPrompts(s)
+	stdioConfig := stdioRuntimeConfigFromEnv()
+	logger.Printf("stdio workers=%d queue=%d", stdioConfig.workerPoolSize, stdioConfig.queueSize)
 
 	go func() {
 		<-ctx.Done()
@@ -75,7 +108,10 @@ func main() {
 		node.Stop()
 	}()
 
-	if err := server.ServeStdio(s); err != nil {
+	if err := server.ServeStdio(s,
+		server.WithWorkerPoolSize(stdioConfig.workerPoolSize),
+		server.WithQueueSize(stdioConfig.queueSize),
+	); err != nil {
 		logger.Fatalf("mcp serve: %v", err)
 	}
 }

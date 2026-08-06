@@ -36,7 +36,7 @@ Hierarchy is a **ladder across three axes used together** — size, weight, colo
 
 - **Hero metrics / KPIs:** oversized numerals (a display style, 2–4× body), tight to a small muted label. The number is the hero; the label recedes. Dashboards, stat cells, pricing, balance screens.
 - **The ladder:** display → title → body → caption/label, each a real text style (never an ad-hoc size). Jump *two* steps for a true focal moment, *one* for ordinary grouping.
-- **Color ladder:** foreground for primary text, a muted token for secondary/labels, accent reserved for **one** emphasis per view. If everything is bold or colored, nothing leads.
+- **Color ladder:** the **foreground (bright) token is the DEFAULT** for every piece of primary content the reader must actually read — body, list items, table cells, values, node labels. A muted/dim token is for *secondary support only* (a caption under a value, an eyebrow, a footnote) — never the body default, and never a multi-word sentence in the dimmest token. Accent is reserved for **one** emphasis per view. **Never encode emphasis or de-emphasis by lowering text contrast** — a "fade" just makes content unreadable; show rank with size, position, the accent, or a chip/border, keeping every label legible. If a whole column or card body reads gray, that's the bug, not a style. (Doubly true on dark surfaces, where a muted token sits close to the background.)
 
 ## Imagery
 

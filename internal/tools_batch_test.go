@@ -742,6 +742,60 @@ func TestRegisterBatchTools_ValidateOnlyDoesNotCallBridge(t *testing.T) {
 	}
 }
 
+func TestRegisterBatchTools_ActualBatchCallsBridge(t *testing.T) {
+	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},
+	})
+
+	res := callToolResult(t, s, "batch", map[string]any{
+		"ops": []any{map[string]any{
+			"type":   "create_frame",
+			"params": map[string]any{"name": "Card"},
+		}},
+	})
+	if res.IsError {
+		t.Fatalf("expected actual batch success, got %s", resultText(t, res))
+	}
+	if captured.Tool != "batch" {
+		t.Fatalf("actual batch must call bridge with tool batch, got %q", captured.Tool)
+	}
+}
+
+func TestRegisterBatchTools_ServerLocalCallsDoNotReportBridgeQueue(t *testing.T) {
+	s, _ := newBatchTestServerWithBackend(t, RPCResponse{
+		Data: map[string]any{
+			"queueWaitMs": float64(999),
+			"queueDepth":  float64(99),
+		},
+	})
+
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"search_batch_ops", map[string]any{"query": "frame"}},
+		{"get_batch_op_spec", map[string]any{"op": "create_frame"}},
+		{"batch", map[string]any{
+			"validateOnly": true,
+			"ops": []any{map[string]any{
+				"type":   "create_frame",
+				"params": map[string]any{"name": "Card"},
+			}},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := callToolResult(t, s, tc.name, tc.args)
+			if res.IsError {
+				t.Fatalf("%s returned error: %s", tc.name, resultText(t, res))
+			}
+			text := resultText(t, res)
+			if strings.Contains(text, "queueWaitMs") || strings.Contains(text, "queueDepth") {
+				t.Fatalf("%s should not expose bridge queue metadata, got %s", tc.name, text)
+			}
+		})
+	}
+}
+
 func TestRegisterBatchTools_ValidateOnlyRejectsBadImportKeysBeforeBridge(t *testing.T) {
 	s, captured := newBatchTestServerWithBackend(t, RPCResponse{
 		Data: map[string]any{"okCount": float64(1), "failCount": float64(0)},

@@ -83,7 +83,7 @@ This means the plugin never needs to reconnect when you restart your AI tool —
 
 ## Improvements Over the Original
 
-The original [vkhanhqui/figma-mcp-go](https://github.com/vkhanhqui/figma-mcp-go) is a solid foundation: no REST API, no rate limits, ~73 tools covering read/write access to a single open Figma file. This fork adds the systems needed for **enterprise-scale automation** — working with multiple files simultaneously, automating library migration workflows, reducing LLM round-trips, and preventing the plugin from jamming on large files.
+The original [gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge) established the bridge architecture: no REST API, no rate limits, and direct read/write access to an open Figma file. figma-mcp-express reached this codebase through an intermediate Go fork and adds the systems needed for **enterprise-scale automation** — working with multiple files simultaneously, automating library migration workflows, reducing LLM round-trips, and preventing the plugin from jamming on large files.
 
 ### 1. Multi-file channel routing
 
@@ -361,6 +361,11 @@ catalog progressively:
 3. `batch(validateOnly:true)` checks a composed plan without sending it to the
    plugin.
 4. `batch` executes the validated plan.
+
+The first three steps are server-local. They do not acquire the bridge's
+per-channel plugin slot, so catalog discovery and validate-only checks stay
+responsive even while a file has plugin-bound work queued. Only actual `batch`
+execution enters the Figma plugin queue.
 
 Raw script execution is intentionally not part of this architecture. Fields such
 as `script`, `code`, `js`, `eval`, and `function` are rejected before plugin
