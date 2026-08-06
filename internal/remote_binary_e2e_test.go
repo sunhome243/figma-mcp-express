@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 	"testing"
@@ -25,6 +26,9 @@ func TestRemoteFollowerBinaryE2E_proxiesMCPCallsThroughHTTPSLeader(t *testing.T)
 	binary := os.Getenv("FIGMA_MCP_E2E_BINARY")
 	if binary == "" {
 		t.Skip("set FIGMA_MCP_E2E_BINARY to run binary E2E")
+	}
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS SystemCertPool does not honor SSL_CERT_FILE; this E2E runs on Linux CI")
 	}
 
 	caPath, cert := writeTestCAAndCert(t, "design-mac.example.ts.net")

@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.1] — 2026-08-06
+
 ### Documentation
 
 - **Skill craft/mechanics hardened from a real deck build** (figma-automation `/figma-slides`
