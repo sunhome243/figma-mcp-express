@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"sync"
 )
@@ -37,6 +38,15 @@ func NewNode(ip string, port int, version string) *Node {
 		version:   version,
 		sessionID: newSessionID(),
 		follower:  NewFollower(fmt.Sprintf("http://%s:%d", ip, port)),
+	}
+}
+
+func NewRemoteFollowerNode(leaderURL string, client *http.Client, version string) *Node {
+	return &Node{
+		role:      RoleFollower,
+		version:   version,
+		sessionID: newSessionID(),
+		follower:  NewFollowerWithClient(leaderURL, client),
 	}
 }
 
@@ -96,7 +106,7 @@ func (n *Node) Send(ctx context.Context, tool string, nodeIDs []string, params m
 		}
 	}
 
-	nodeLogger.Printf("tool=%s role=%s nodeIDs=%v", tool, n.RoleName(), nodeIDs)
+	nodeLogger.Printf("tool=%s status=dispatch", tool)
 
 	// Stamp this process's sessionID so it rides params through the follower /rpc
 	// hop to the leader and on to the plugin (presence keys by (sessionId, origin)).

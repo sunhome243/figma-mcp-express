@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-express",
-  "version": "2.7.1",
+  "version": "2.8.0",
   "description": "Compact Figma MCP with validated batch ops, multi-channel routing, library automation, and design skills.",
   "author": { "name": "sunhome243" },
   "license": "MIT",
