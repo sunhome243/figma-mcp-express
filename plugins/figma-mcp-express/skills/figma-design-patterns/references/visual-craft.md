@@ -17,6 +17,8 @@ Elevation encodes **z-order meaning**, not taste. Pick a shadow tier per layer a
 
 **When to elevate:** a surface that floats above content, or that the user can move. **When NOT:** a card flush to the page background — flat-on-flat reads unfinished. Separate it by *one* of elevation **or** a token border, not both heavily.
 
+**Depth must vary by hierarchy — uniform-tier is its own failure.** Applying one elevation tier (or one flat fill + one hairline) identically to every surface is not restraint, it's monotone: when the hero card and a footnote chip carry the *same* shadow, you've thrown away your strongest z-order lever. Let the one focal element per view sit visibly forward (a step up in elevation, a richer surface) while supporting elements stay quiet. Even a deliberately flat aesthetic needs this — flat means restrained materials, not zero hierarchy.
+
 **How (judgment):** use bound effect styles via `set_effects` / `create_effect_style` — manual per-node shadows are a Stop-Flag. Higher float = larger, softer, lower-opacity blur with a small downward offset. Never let an elevation effect clip: inset the content, don't flush-fit the frame.
 
 **Receding depth:** push background elements back with a slight `LAYER_BLUR` plus reduced scale/opacity so the foreground advances — modal scrims, hero backdrops, a focused card over a dimmed list.

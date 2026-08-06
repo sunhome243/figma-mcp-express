@@ -39,6 +39,14 @@ Do not trust ids or x/y from summaries, briefs, or old screenshots. URL ids use
 hyphens; API ids use colons. After rebuilds, delete superseded frames and confirm one
 remaining frame by name.
 
+A **SECTION establishes a local coordinate origin** — its children's `x`/`y` are
+section-local, not page-absolute. Building nodes on the bare page and reparenting them into
+a section afterward forces an offset correction: read the origin from the reparent transform
+(e.g. `[[1,0,0],[0,1,11934]]` → local y0 is page y=11934), then `move_nodes` every child to
+local grid coords. Avoid the correction entirely: **create the section first and parent each
+node into it as you build**, laying them out on a fixed local grid. Keep reparent-and-re-grid
+only as recovery for nodes already built outside.
+
 ## Spilled responses
 
 `.json` holds nested payloads; `.ndjson` holds flat records. Use `jq` for the nested
