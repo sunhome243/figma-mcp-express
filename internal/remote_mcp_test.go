@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -112,6 +113,132 @@ func TestRemoteFollowerMCP_doesNotAddPermissiveCORS(t *testing.T) {
 	defer resp.Body.Close()
 	if got := resp.Header.Get("Access-Control-Allow-Origin"); got == "*" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want no permissive browser CORS", got)
+	}
+}
+
+func TestRemoteFollowerMCP_rejectsBrowserOrigins(t *testing.T) {
+	// Given
+	node := NewRemoteFollowerNode("https://design-mac.example.ts.net", &http.Client{}, "test")
+	mcpServer := NewFigmaMCPServer("test", node)
+	transport := server.NewStreamableHTTPServer(mcpServer)
+	httpServer := httptest.NewServer(newRemoteFollowerHTTPHandler(transport, node))
+	t.Cleanup(httpServer.Close)
+	req, err := http.NewRequest(http.MethodPost, httpServer.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("new POST /mcp request: %v", err)
+	}
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("Content-Type", "application/json")
+
+	// When
+	resp, err := http.DefaultClient.Do(req)
+
+	// Then
+	if err != nil {
+		t.Fatalf("POST /mcp: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST /mcp status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestRemoteFollowerMCP_rejectsOversizedRequests(t *testing.T) {
+	// Given
+	node := NewRemoteFollowerNode("https://design-mac.example.ts.net", &http.Client{}, "test")
+	mcpServer := NewFigmaMCPServer("test", node)
+	transport := server.NewStreamableHTTPServer(mcpServer)
+	handler := newRemoteFollowerHTTPHandler(transport, node)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.ContentLength = remoteMCPMaxRequestBytes + 1
+
+	// When
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	// Then
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("POST /mcp status = %d, want %d", resp.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestRemoteFollowerMCP_rejectsOversizedStreamedRequests(t *testing.T) {
+	node := NewRemoteFollowerNode("https://design-mac.example.ts.net", &http.Client{}, "test")
+	mcpServer := NewFigmaMCPServer("test", node)
+	transport := server.NewStreamableHTTPServer(mcpServer)
+	handler := newRemoteFollowerHTTPHandler(transport, node)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", io.LimitReader(repeatedByteReader('x'), remoteMCPMaxRequestBytes+1))
+	req.Header.Set("Content-Type", "application/json")
+	req.ContentLength = -1
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("POST /mcp status = %d, want %d", resp.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestRemoteFollowerMCP_readinessRequiresAnAvailableChannel(t *testing.T) {
+	// Given
+	rec := newRemoteLeaderRecorder(t)
+	node := NewRemoteFollowerNode(rec.server.URL, &http.Client{}, "test")
+	mcpServer := NewFigmaMCPServer("test", node)
+	transport := server.NewStreamableHTTPServer(mcpServer)
+	httpServer := httptest.NewServer(newRemoteFollowerHTTPHandler(transport, node))
+	t.Cleanup(httpServer.Close)
+
+	// When
+	resp, err := http.Get(httpServer.URL + "/readyz") //nolint:gosec,noctx
+
+	// Then
+	if err != nil {
+		t.Fatalf("GET /readyz: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /readyz status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var body struct {
+		Status   string `json:"status"`
+		Channels int    `json:"channels"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode readiness response: %v", err)
+	}
+	if body.Status != "ready" || body.Channels != 1 {
+		t.Fatalf("readiness response = %#v, want ready with one channel", body)
+	}
+}
+
+func TestRemoteFollowerMCP_readinessRejectsLeaderWithoutChannels(t *testing.T) {
+	// Given
+	leader := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/channels" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+	}))
+	t.Cleanup(leader.Close)
+	node := NewRemoteFollowerNode(leader.URL, &http.Client{}, "test")
+	mcpServer := NewFigmaMCPServer("test", node)
+	transport := server.NewStreamableHTTPServer(mcpServer)
+	httpServer := httptest.NewServer(newRemoteFollowerHTTPHandler(transport, node))
+	t.Cleanup(httpServer.Close)
+
+	// When
+	resp, err := http.Get(httpServer.URL + "/readyz") //nolint:gosec,noctx
+
+	// Then
+	if err != nil {
+		t.Fatalf("GET /readyz: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("GET /readyz status = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
 	}
 }
 

@@ -66,7 +66,12 @@ func (l *Leader) Start() error {
 	mux.HandleFunc("/ws", l.handleWS)
 	mux.HandleFunc("/channels", withGzip(l.handleChannels))
 
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: remoteHTTPReadHeaderTimeout,
+		IdleTimeout:       remoteHTTPIdleTimeout,
+		MaxHeaderBytes:    remoteHTTPMaxHeaderBytes,
+	}
 	l.server = srv
 
 	go func() {
@@ -127,9 +132,19 @@ func (l *Leader) handleRPC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if r.ContentLength > maxRPCPayloadBytes {
+		l.sendJSON(w, http.StatusRequestEntityTooLarge, RPCResponse{Error: "request body too large"})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRPCPayloadBytes)
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			l.sendJSON(w, http.StatusRequestEntityTooLarge, RPCResponse{Error: "request body too large"})
+			return
+		}
 		l.sendJSON(w, http.StatusBadRequest, RPCResponse{Error: "failed to read body"})
 		return
 	}
