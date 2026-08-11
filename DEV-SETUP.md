@@ -32,9 +32,9 @@ Two processes must be running simultaneously: the **Go binary** (MCP server, spe
 
 ---
 
-## Remote follower (private Tailnet only)
+## Remote follower (beta; private Tailnet only)
 
-Use this only when Figma Desktop stays on a leader Mac while the AI client runs in a separate Tailscale-connected runtime. It is **not** a public MCP server and it does not expose `https://<leader>.ts.net/mcp`.
+Remote follower is **beta**. Use this only when Figma Desktop stays on a leader Mac while the AI client runs in a separate Tailscale-connected runtime. It is **not** a public MCP server and it does not expose `https://<leader>.ts.net/mcp`.
 
 ```
 Leader Mac                                      AI runtime

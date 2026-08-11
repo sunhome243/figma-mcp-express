@@ -1,6 +1,6 @@
-# Remote follower: private Tailnet setup
+# Remote follower (beta): private Tailnet setup
 
-Use remote follower only when Figma Desktop remains on a leader Mac and the AI client runs elsewhere in the same private Tailnet.
+Remote follower is **beta**. Use it only when Figma Desktop remains on a leader Mac and the AI client runs elsewhere in the same private Tailnet.
 
 ## Agent rules
 

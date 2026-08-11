@@ -85,7 +85,7 @@ codex plugin add figma-mcp-express@figma-mcp-express
 - `fetch_library_catalog` is the main REST-only exception and requires `FIGMA_TOKEN`.
 - Plugin execution is still single-threaded per file; the server reduces contention, but it does not make one file fully parallel.
 - Community kits must be published as a library before `import_component_by_key` can use them.
-- **Remote follower is private Tailnet-only.** It is not a public MCP URL: keep the leader loopback-only, expose it with Tailscale Serve (never Funnel), and connect the AI client to the follower's local `/mcp`. See [DEV-SETUP.md](DEV-SETUP.md#remote-follower-private-tailnet-only).
+- **Remote follower (beta) is private Tailnet-only.** It is not a public MCP URL: keep the leader loopback-only, expose it with Tailscale Serve (never Funnel), and connect the AI client to the follower's local `/mcp`. See [DEV-SETUP.md](DEV-SETUP.md#remote-follower-beta-private-tailnet-only).
 
 <details>
 <summary>Build from source</summary>
