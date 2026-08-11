@@ -32,6 +32,73 @@ Two processes must be running simultaneously: the **Go binary** (MCP server, spe
 
 ---
 
+## Remote follower (beta; private Tailnet only)
+
+Remote follower is **beta**. Use this only when Figma Desktop stays on a leader Mac while the AI client runs in a separate Tailscale-connected runtime. It is **not** a public MCP server and it does not expose `https://<leader>.ts.net/mcp`.
+
+```
+Leader Mac                                      AI runtime
+----------                                      ----------
+Figma Desktop plugin                            local Tailscale outbound HTTP proxy
+        |                                                |
+Go leader :1994 (loopback + stdio) <- Serve HTTPS -> remote-follower :45124 (loopback /mcp)
+                                                               |
+                                                         Codex / Claude
+```
+
+### 1. Prepare the leader Mac
+
+1. Start the normal server through the existing stdio setup in §2 and run the Figma plugin in the target file.
+2. Confirm a local `get_metadata` succeeds before adding any remote hop.
+3. Use **Tailscale Serve**, not Funnel, to privately proxy the loopback leader:
+
+   ```bash
+   tailscale serve --bg 1994
+   tailscale serve status --json
+   ```
+
+   Copy the HTTPS `.ts.net` URL shown by the status command. Tailnet ACLs are the access boundary; do not bind the leader to `0.0.0.0` and do not enable Funnel.
+
+### 2. Prepare the AI runtime
+
+The runtime needs a Tailscale **outbound HTTP proxy** that already listens only on `127.0.0.1:<proxy-port>`. Its provisioning belongs to the runtime supervisor/Tailscale deployment; this binary never starts or configures that proxy.
+
+Start the follower in the same runtime as the MCP client:
+
+```bash
+figma-mcp-express --mode remote-follower \
+  --leader-url https://<leader>.<tailnet>.ts.net \
+  --outbound-proxy http://127.0.0.1:<proxy-port> \
+  --mcp-listen 127.0.0.1:45124
+```
+
+`--leader-url` must be a root HTTPS `.ts.net` URL. The follower rejects non-loopback proxy/listen addresses and never follows redirects.
+
+### 3. Register and verify the local MCP endpoint
+
+Codex:
+
+```bash
+codex mcp add figma-mcp-express-remote --url http://127.0.0.1:45124/mcp
+codex mcp list
+```
+
+Claude Code:
+
+```bash
+claude mcp add --transport http figma-mcp-express-remote http://127.0.0.1:45124/mcp
+```
+
+Before an agent writes to Figma, verify the whole route:
+
+```bash
+curl --fail http://127.0.0.1:45124/readyz
+```
+
+Then call `get_metadata`. `readyz` returns success only when the follower can reach the leader and the leader reports at least one connected Figma channel. A `503` means: check the local outbound proxy, `tailscale serve status --json`, and that the Figma plugin is still running in the intended file — in that order.
+
+---
+
 ## 1. Build
 
 ```bash

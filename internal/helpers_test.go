@@ -19,6 +19,15 @@ func freePort(t *testing.T) int {
 	return port
 }
 
+type repeatedByteReader byte
+
+func (r repeatedByteReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(r)
+	}
+	return len(p), nil
+}
+
 // extractResultText extracts the text from the first TextContent in a
 // CallToolResult, or returns "" if there is no text content.
 func extractResultText(r *mcp.CallToolResult) string {

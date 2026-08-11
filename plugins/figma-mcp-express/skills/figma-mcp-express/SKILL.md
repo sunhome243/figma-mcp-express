@@ -16,6 +16,7 @@ Use the compact `core` tool surface first. Full plugin capability lives behind v
 3. For multi-file work, `channel is mandatory`: pass it on every file-specific tool. For `batch`, put `channel` only on the outer call.
 4. If the plugin is not connected, ask the user to open the file and run the plugin. Do not retry in a loop.
 5. Empty `get_variable_defs` means no local variables, not no design system. Check subscribed libraries with `list_library_variable_collections`.
+6. For the beta remote follower, read `references/remote-follower.md`. The AI client connects to the follower's local `/mcp`, never the leader `.ts.net` URL; ask the user to set up Tailnet services rather than attempting it itself.
 
 ## Tool Surface
 
@@ -41,6 +42,7 @@ Use the compact `core` tool surface first. Full plugin capability lives behind v
 | Permanent Figma Plugin API constraints (instance children, clone IDs, auto-layout children, etc.) | `references/platform-constraints.md` |
 | Server bugs + workarounds with issue tracking (#33, #34) | `references/mcp-known-bugs.md` |
 | Remaining failure modes: stale IDs, node format, spilled cache, text/font/image | `references/gotchas.md` |
+| Beta private-Tailnet leader/follower setup and remote readiness | `references/remote-follower.md` |
 | Parallel agents, channel partitioning, shared-resource handoff | `references/multi-agent.md` |
 | Watch-agent presence (`origin`, `set_presence`, status/task, per-session no-clobber) | `references/presence.md` |
 | Parameterized generators (type scale, color palette, component variants, design tokens) | MCP prompts: `generate_type_scale`, `generate_color_palette`, `generate_component_variants`, `design_token_generation_strategy` — invoke via the MCP prompts list |

@@ -24,7 +24,7 @@ var (
 const (
 	maxPingResponseBytes     = 4 << 10
 	maxChannelsResponseBytes = 4 << 20
-	maxRPCResponseBytes      = 64 << 20
+	maxRPCPayloadBytes       = 64 << 20
 )
 
 // Follower proxies MCP tool calls to the leader via HTTP /rpc.
@@ -119,7 +119,7 @@ func (f *Follower) Send(ctx context.Context, tool string, nodeIDs []string, para
 	}
 
 	var rpcResp RPCResponse
-	if err := decodeLimitedJSON(resp.Body, maxRPCResponseBytes, &rpcResp); err != nil {
+	if err := decodeLimitedJSON(resp.Body, maxRPCPayloadBytes, &rpcResp); err != nil {
 		followerLogger.Printf("tool=%s status=decode_error duration_ms=%d", tool, time.Since(start).Milliseconds())
 		return BridgeResponse{}, fmt.Errorf("rpc decode: %w", err)
 	}

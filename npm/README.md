@@ -201,6 +201,12 @@ Restart Claude Code / Codex. Tools load on demand.
 
 ---
 
+## Remote follower (beta; private Tailnet only)
+
+Remote follower is **beta**. It keeps the Figma leader on its Mac and gives an AI runtime a **local** Streamable HTTP endpoint. It is not a public MCP URL: keep the leader loopback-only, expose it with Tailscale Serve (never Funnel), and configure the client to use the follower's `http://127.0.0.1:<port>/mcp`. The full leader/follower setup and readiness checks are in [DEV-SETUP.md](https://github.com/sunhome243/figma-mcp-express/blob/main/DEV-SETUP.md#remote-follower-beta-private-tailnet-only).
+
+---
+
 ## Figma Desktop plugin setup
 
 The plugin runs inside **Figma Desktop** (not the browser). It connects to the local MCP server over WebSocket and gives the AI agent direct access to the open file.

@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -76,6 +77,39 @@ func TestLeaderHandleRPC_InvalidJSON(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp.Error == "" {
 		t.Error("expected error in response body")
+	}
+}
+
+func TestLeaderHandleRPC_RejectsOversizedRequest(t *testing.T) {
+	l := NewLeader("127.0.0.1", 0, "")
+	req := httptest.NewRequest(http.MethodPost, "/rpc", nil)
+	req.ContentLength = maxRPCPayloadBytes + 1
+	w := httptest.NewRecorder()
+
+	l.handleRPC(w, req)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusRequestEntityTooLarge)
+	}
+	var resp RPCResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Error != "request body too large" {
+		t.Fatalf("error = %q, want request body too large", resp.Error)
+	}
+}
+
+func TestLeaderHandleRPC_RejectsOversizedStreamedRequest(t *testing.T) {
+	l := NewLeader("127.0.0.1", 0, "")
+	req := httptest.NewRequest(http.MethodPost, "/rpc", io.LimitReader(repeatedByteReader('x'), maxRPCPayloadBytes+1))
+	req.ContentLength = -1
+	w := httptest.NewRecorder()
+
+	l.handleRPC(w, req)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusRequestEntityTooLarge)
 	}
 }
 
@@ -165,6 +199,27 @@ func TestLeaderStart_BindsPort(t *testing.T) {
 	if err := l2.Start(); err == nil {
 		l2.Stop()
 		t.Error("expected error when binding already-used port")
+	}
+}
+
+func TestLeaderStart_usesBoundedHTTPServer(t *testing.T) {
+	l := NewLeader("127.0.0.1", freePort(t), "")
+	if err := l.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(l.Stop)
+
+	if l.server.ReadHeaderTimeout != remoteHTTPReadHeaderTimeout {
+		t.Fatalf("ReadHeaderTimeout = %v, want %v", l.server.ReadHeaderTimeout, remoteHTTPReadHeaderTimeout)
+	}
+	if l.server.WriteTimeout != 0 {
+		t.Fatalf("WriteTimeout = %v, want 0 for long-lived WebSocket connections", l.server.WriteTimeout)
+	}
+	if l.server.IdleTimeout != remoteHTTPIdleTimeout {
+		t.Fatalf("IdleTimeout = %v, want %v", l.server.IdleTimeout, remoteHTTPIdleTimeout)
+	}
+	if l.server.MaxHeaderBytes != remoteHTTPMaxHeaderBytes {
+		t.Fatalf("MaxHeaderBytes = %d, want %d", l.server.MaxHeaderBytes, remoteHTTPMaxHeaderBytes)
 	}
 }
 
