@@ -65,9 +65,16 @@ func TestSkillFrontmatterProductionRules(t *testing.T) {
 }
 
 func TestSkillFoldersStayLeanAndDiscoverable(t *testing.T) {
-	skillDirs, err := filepath.Glob(filepath.Join("..", "skills", "*"))
+	matches, err := filepath.Glob(filepath.Join("..", "skills", "*"))
 	if err != nil {
 		t.Fatalf("glob skill dirs: %v", err)
+	}
+	// Skip stray files (e.g. a local macOS .DS_Store) — only folders are skills.
+	var skillDirs []string
+	for _, m := range matches {
+		if info, err := os.Stat(m); err == nil && info.IsDir() {
+			skillDirs = append(skillDirs, m)
+		}
 	}
 	if len(skillDirs) == 0 {
 		t.Fatal("no skills found")

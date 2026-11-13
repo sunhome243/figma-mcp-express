@@ -20,6 +20,7 @@
 import { handleWriteRequest } from "./write-handlers";
 import { handleReadRequest } from "./read-handlers";
 import { withTimeout } from "./timeout";
+import { STROKE_GEOMETRY_KEYS } from "./write-helpers";
 
 // Per-op timeout for a batch dispatch (issue #31). A hung Figma API call inside
 // an op would otherwise hold the channel's serial slot until the SERVER's
@@ -424,8 +425,20 @@ function validateResolvedOp(type: string, nodeIds: any, params: any): void {
       return;
     case "set_strokes":
       requireNodeIds(type, nodeIds);
-      requireColorOrPaints(type, params);
+      // Geometry-only (dashPattern / strokeAlign / per-side weights …) restyles the
+      // existing stroke, so color/paints are optional when any stroke prop is given.
+      if (!params?.variableId && !STROKE_GEOMETRY_KEYS.some((k) => hasOwn(params, k))) {
+        requireColorOrPaints(type, params);
+      }
       validateMode(type, params);
+      return;
+    case "set_layout_grids":
+      requireNodeIds(type, nodeIds);
+      if (!Array.isArray(params?.grids)) throw new Error("set_layout_grids: grids[] is required");
+      validateMode(type, params);
+      return;
+    case "set_mask":
+      requireNodeIds(type, nodeIds);
       return;
     case "set_corner_radius":
       requireNodeIds(type, nodeIds);
@@ -434,10 +447,11 @@ function validateResolvedOp(type: string, nodeIds: any, params: any): void {
         !hasOwn(params, "topLeftRadius") &&
         !hasOwn(params, "topRightRadius") &&
         !hasOwn(params, "bottomLeftRadius") &&
-        !hasOwn(params, "bottomRightRadius")
+        !hasOwn(params, "bottomRightRadius") &&
+        !hasOwn(params, "cornerSmoothing")
       ) {
         throw new Error(
-          "set_corner_radius: at least one of cornerRadius, topLeftRadius, topRightRadius, bottomLeftRadius, or bottomRightRadius is required",
+          "set_corner_radius: at least one of cornerRadius, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius, or cornerSmoothing is required",
         );
       }
       return;

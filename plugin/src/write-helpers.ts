@@ -195,6 +195,66 @@ export const applyTextStyleProps = async (node: any, p: any) => {
   if (p.maxLines !== undefined) node.maxLines = p.maxLines === null ? null : Number(p.maxLines);
 };
 
+// Stroke geometry shared by both set_strokes paths (paint + geometry-only). strokeWeight
+// is written first so the per-side weights that follow can override it. Every prop is
+// opt-in; a prop the node type lacks (per-side weights on an ellipse, strokeJoin on a
+// text node) is skipped and returned so the caller can surface it as a warning.
+const STROKE_SIDE_WEIGHTS = ["strokeTopWeight", "strokeRightWeight", "strokeBottomWeight", "strokeLeftWeight"];
+export const STROKE_GEOMETRY_KEYS = [
+  "strokeWeight", "strokeAlign", "strokeCap", "strokeJoin", "strokeMiterLimit", "dashPattern",
+  ...STROKE_SIDE_WEIGHTS,
+];
+
+export const applyStrokeProps = (node: any, p: any): string[] => {
+  const skipped: string[] = [];
+  const set = (key: string, value: any) => {
+    if (value == null) return;
+    if (key in node) node[key] = value;
+    else skipped.push(key);
+  };
+  if (p.strokeWeight != null) node.strokeWeight = Number(p.strokeWeight);
+  set("strokeAlign", p.strokeAlign);
+  set("strokeCap", p.strokeCap);
+  set("strokeJoin", p.strokeJoin);
+  set("strokeMiterLimit", p.strokeMiterLimit != null ? Number(p.strokeMiterLimit) : null);
+  // [] clears dashes back to a solid line.
+  set("dashPattern", Array.isArray(p.dashPattern) ? p.dashPattern.map(Number) : null);
+  for (const key of STROKE_SIDE_WEIGHTS) set(key, p[key] != null ? Number(p[key]) : null);
+  return skipped;
+};
+
+export const strokeSkipWarning = (skipped: string[]) =>
+  skipped.length ? `node type does not support: ${skipped.join(", ")} (skipped)` : undefined;
+
+// Builds one LayoutGrid from a flat spec (shared by create_grid_style + set_layout_grids).
+// COLUMNS/ROWS with a non-STRETCH alignment need a fixed sectionSize; STRETCH must not have one.
+export const buildLayoutGrid = (s: any): LayoutGrid => {
+  const pattern = s.pattern || "GRID";
+  const visible = s.visible != null ? !!s.visible : true;
+  if (pattern === "COLUMNS" || pattern === "ROWS") {
+    const alignment = s.alignment || "STRETCH";
+    const base: any = {
+      pattern,
+      count: Number(s.count ?? 12),
+      gutterSize: Number(s.gutterSize ?? 16),
+      offset: Number(s.offset ?? 0),
+      alignment,
+      visible,
+    };
+    const sized = alignment === "STRETCH" ? base : { ...base, sectionSize: Number(s.sectionSize ?? 64) };
+    if (!s.color) return sized as LayoutGrid;
+    const { r, g, b, a } = hexToRgb(s.color);
+    return { ...sized, color: { r, g, b, a: s.opacity != null ? Number(s.opacity) : (a !== 1 ? a : 0.1) } } as LayoutGrid;
+  }
+  const { r, g, b, a } = hexToRgb(s.color || "#FF0000");
+  return {
+    pattern: "GRID",
+    sectionSize: Number(s.sectionSize ?? 8),
+    visible,
+    color: { r, g, b, a: s.opacity != null ? Number(s.opacity) : (a !== 1 ? a : 0.1) },
+  };
+};
+
 // Sizing-WITHIN-parent props (FILL/HUG/FIXED etc). Require an auto-layout parent —
 // Figma throws "layoutSizing requires a parent" / "...auto-layout" otherwise, so the
 // caller should wrap this in try/catch and surface a clear error. Positioning is set

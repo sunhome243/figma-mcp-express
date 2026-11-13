@@ -92,6 +92,9 @@ Tables:
 - Fixed widths for predictable fields; FILL for variable text.
 - Header component/variant, visible row dividers, aligned columns, real pagination/sort
   controls.
+- Row dividers are real single-side borders: `set_strokes` with `strokeBottomWeight:1` and
+  the other side weights `0`, `strokeAlign:"INSIDE"`. Don't fake them with 1px gaps or spacer
+  rectangles. Use `dashPattern:[4,4]` for dashed dividers or drop zones.
 - Empty state required.
 
 Lists:

@@ -1,4 +1,4 @@
-import { makeSolidPaint, hexToRgb, bulkApply } from "./write-helpers";
+import { makeSolidPaint, hexToRgb, bulkApply, buildLayoutGrid } from "./write-helpers";
 
 // Native advanced effects (Figma 2025): GLASS, NOISE, TEXTURE. These have no shadow/blur
 // geometry — we pass them through to node.effects / style.effects with sane defaults so a
@@ -213,27 +213,7 @@ export const handleWriteStyleRequest = async (request: any) => {
       if (existing) {
         return { type: request.type, requestId: request.requestId, data: { id: existing.id, name: existing.name } };
       }
-      const pattern = p.pattern || "GRID";
-      let grid: LayoutGrid;
-      if (pattern === "COLUMNS" || pattern === "ROWS") {
-        grid = {
-          pattern,
-          count: Number(p.count ?? 12),
-          gutterSize: Number(p.gutterSize ?? 16),
-          offset: Number(p.offset ?? 0),
-          alignment: p.alignment || "STRETCH",
-          visible: true,
-        };
-      } else {
-        // GRID
-        const { r, g, b, a } = hexToRgb(p.color || "#FF0000");
-        grid = {
-          pattern: "GRID",
-          sectionSize: Number(p.sectionSize ?? 8),
-          visible: true,
-          color: { r, g, b, a: p.opacity != null ? Number(p.opacity) : (a !== 1 ? a : 0.1) },
-        };
-      }
+      const grid = buildLayoutGrid(p);
       const style = figma.createGridStyle();
       style.name = p.name;
       style.layoutGrids = [grid];

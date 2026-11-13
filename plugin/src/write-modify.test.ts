@@ -1374,3 +1374,156 @@ describe("reparent_nodes — auto-layout parent gating (new feature)", () => {
     expect(node.y).toBe(300);
   });
 });
+
+// ── set_strokes — stroke geometry (dash / align / per-side / cap / join) ───────
+
+describe("set_strokes — stroke geometry", () => {
+  const strokeNode = (extra: any = {}) => ({
+    id: "1:1", name: "Cell", strokes: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }],
+    strokeWeight: 1, strokeAlign: "CENTER", strokeCap: "NONE", strokeJoin: "MITER",
+    strokeMiterLimit: 4, dashPattern: [],
+    strokeTopWeight: 1, strokeRightWeight: 1, strokeBottomWeight: 1, strokeLeftWeight: 1,
+    ...extra,
+  });
+
+  it("geometry-only call keeps the existing paint and applies dashPattern + strokeAlign", async () => {
+    mockNodes["1:1"] = strokeNode();
+    const before = mockNodes["1:1"].strokes;
+    const res = await handleWriteModifyRequest(
+      makeRequest("set_strokes", ["1:1"], { dashPattern: [4, 2], strokeAlign: "INSIDE" }),
+    );
+    expect(mockNodes["1:1"].strokes).toBe(before);
+    expect(mockNodes["1:1"].dashPattern).toEqual([4, 2]);
+    expect(mockNodes["1:1"].strokeAlign).toBe("INSIDE");
+    expect(res?.data.results[0].warning).toBeUndefined();
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("per-side weights override the uniform strokeWeight (single bottom border)", async () => {
+    mockNodes["1:1"] = strokeNode();
+    await handleWriteModifyRequest(makeRequest("set_strokes", ["1:1"], {
+      color: "#E5E5E5", strokeWeight: 1,
+      strokeTopWeight: 0, strokeRightWeight: 0, strokeLeftWeight: 0, strokeBottomWeight: 1,
+    }));
+    expect(mockNodes["1:1"].strokeTopWeight).toBe(0);
+    expect(mockNodes["1:1"].strokeLeftWeight).toBe(0);
+    expect(mockNodes["1:1"].strokeBottomWeight).toBe(1);
+    expect(mockNodes["1:1"].strokes).toHaveLength(1);
+  });
+
+  it("applies strokeCap, strokeJoin and strokeMiterLimit", async () => {
+    mockNodes["1:1"] = strokeNode();
+    await handleWriteModifyRequest(makeRequest("set_strokes", ["1:1"], {
+      strokeCap: "ROUND", strokeJoin: "BEVEL", strokeMiterLimit: 10,
+    }));
+    expect(mockNodes["1:1"].strokeCap).toBe("ROUND");
+    expect(mockNodes["1:1"].strokeJoin).toBe("BEVEL");
+    expect(mockNodes["1:1"].strokeMiterLimit).toBe(10);
+  });
+
+  it("warns (does not fail) when the node type lacks per-side weights", async () => {
+    mockNodes["1:1"] = { id: "1:1", name: "Ellipse", strokes: [], strokeWeight: 1, dashPattern: [] };
+    const res = await handleWriteModifyRequest(
+      makeRequest("set_strokes", ["1:1"], { dashPattern: [2, 2], strokeTopWeight: 2 }),
+    );
+    expect(mockNodes["1:1"].dashPattern).toEqual([2, 2]);
+    expect(res?.data.results[0].error).toBeUndefined();
+    expect(res?.data.results[0].warning).toContain("strokeTopWeight");
+  });
+
+  it("empty dashPattern restores a solid line", async () => {
+    mockNodes["1:1"] = strokeNode({ dashPattern: [4, 4] });
+    await handleWriteModifyRequest(makeRequest("set_strokes", ["1:1"], { dashPattern: [] }));
+    expect(mockNodes["1:1"].dashPattern).toEqual([]);
+  });
+
+  it("applies geometry alongside paints[] passthrough", async () => {
+    mockNodes["1:1"] = strokeNode();
+    const paint = { type: "SOLID", color: { r: 1, g: 0, b: 0 } };
+    await handleWriteModifyRequest(makeRequest("set_strokes", ["1:1"], { paints: [paint], dashPattern: [1, 3] }));
+    expect(mockNodes["1:1"].strokes[0]).toBe(paint);
+    expect(mockNodes["1:1"].dashPattern).toEqual([1, 3]);
+  });
+});
+
+// ── set_corner_radius — cornerSmoothing ───────────────────────────────────────
+
+describe("set_corner_radius — cornerSmoothing", () => {
+  it("sets cornerSmoothing alone", async () => {
+    mockNodes["1:1"] = { id: "1:1", cornerRadius: 12, cornerSmoothing: 0 };
+    const res = await handleWriteModifyRequest(makeRequest("set_corner_radius", ["1:1"], { cornerSmoothing: 0.6 }));
+    expect(mockNodes["1:1"].cornerSmoothing).toBe(0.6);
+    expect(res?.data.results[0].error).toBeUndefined();
+  });
+
+  it("reports a per-node error when the node lacks cornerSmoothing", async () => {
+    mockNodes["1:1"] = { id: "1:1", cornerRadius: 12 };
+    const res = await handleWriteModifyRequest(makeRequest("set_corner_radius", ["1:1"], { cornerSmoothing: 0.6 }));
+    expect(res?.data.results[0].error).toContain("cornerSmoothing");
+  });
+});
+
+// ── set_mask ──────────────────────────────────────────────────────────────────
+
+describe("set_mask", () => {
+  it("defaults isMask to true and sets maskType", async () => {
+    mockNodes["1:1"] = { id: "1:1", isMask: false, maskType: "ALPHA" };
+    const res = await handleWriteModifyRequest(makeRequest("set_mask", ["1:1"], { maskType: "LUMINANCE" }));
+    expect(mockNodes["1:1"].isMask).toBe(true);
+    expect(res?.data.results[0]).toMatchObject({ isMask: true, maskType: "LUMINANCE" });
+    expect(commitUndoCalled).toBe(true);
+  });
+
+  it("unsets a mask with isMask:false", async () => {
+    mockNodes["1:1"] = { id: "1:1", isMask: true, maskType: "ALPHA" };
+    await handleWriteModifyRequest(makeRequest("set_mask", ["1:1"], { isMask: false }));
+    expect(mockNodes["1:1"].isMask).toBe(false);
+  });
+
+  it("reports per-node error for unsupported nodes", async () => {
+    mockNodes["1:1"] = { id: "1:1", name: "Page" };
+    const res = await handleWriteModifyRequest(makeRequest("set_mask", ["1:1"], {}));
+    expect(res?.data.results[0].error).toContain("masking");
+  });
+});
+
+// ── set_layout_grids ──────────────────────────────────────────────────────────
+
+describe("set_layout_grids", () => {
+  it("replaces grids with a 12-column stretch grid", async () => {
+    mockNodes["1:1"] = { id: "1:1", layoutGrids: [{ pattern: "GRID", sectionSize: 8 }] };
+    const res = await handleWriteModifyRequest(makeRequest("set_layout_grids", ["1:1"], {
+      grids: [{ pattern: "COLUMNS", count: 12, gutterSize: 24, offset: 80 }],
+    }));
+    expect(mockNodes["1:1"].layoutGrids).toHaveLength(1);
+    expect(mockNodes["1:1"].layoutGrids[0]).toMatchObject({ pattern: "COLUMNS", count: 12, gutterSize: 24, offset: 80, alignment: "STRETCH" });
+    expect(mockNodes["1:1"].layoutGrids[0].sectionSize).toBeUndefined();
+    expect(res?.data.results[0].layoutGridCount).toBe(1);
+  });
+
+  it("adds sectionSize for non-STRETCH alignment and appends in append mode", async () => {
+    mockNodes["1:1"] = { id: "1:1", layoutGrids: [{ pattern: "GRID", sectionSize: 8 }] };
+    await handleWriteModifyRequest(makeRequest("set_layout_grids", ["1:1"], {
+      grids: [{ pattern: "ROWS", alignment: "MIN", count: 4, sectionSize: 40 }], mode: "append",
+    }));
+    expect(mockNodes["1:1"].layoutGrids).toHaveLength(2);
+    expect(mockNodes["1:1"].layoutGrids[1]).toMatchObject({ pattern: "ROWS", alignment: "MIN", sectionSize: 40 });
+  });
+
+  it("clears grids with an empty array", async () => {
+    mockNodes["1:1"] = { id: "1:1", layoutGrids: [{ pattern: "GRID", sectionSize: 8 }] };
+    await handleWriteModifyRequest(makeRequest("set_layout_grids", ["1:1"], { grids: [] }));
+    expect(mockNodes["1:1"].layoutGrids).toEqual([]);
+  });
+
+  it("throws when grids is missing", async () => {
+    mockNodes["1:1"] = { id: "1:1", layoutGrids: [] };
+    await expect(handleWriteModifyRequest(makeRequest("set_layout_grids", ["1:1"], {}))).rejects.toThrow("grids");
+  });
+
+  it("reports per-node error for nodes without layoutGrids", async () => {
+    mockNodes["1:1"] = { id: "1:1", name: "Rect" };
+    const res = await handleWriteModifyRequest(makeRequest("set_layout_grids", ["1:1"], { grids: [] }));
+    expect(res?.data.results[0].error).toContain("layout grids");
+  });
+});

@@ -120,7 +120,8 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 	})
 
 	s.AddTool(mcp.NewTool("set_strokes",
-		mcp.WithDescription("Set the stroke color and weight on a single node (this top-level tool takes one nodeId, not an array). Returns {results:[{nodeId,…}]}, a 1-element array. PREFER variableId over a raw hex — bind a design token. Use mode='append' to stack a new stroke on top of existing strokes instead of replacing them. "+
+		mcp.WithDescription("Set the stroke color, weight and geometry on a single node (this top-level tool takes one nodeId, not an array). Returns {results:[{nodeId,…}]}, a 1-element array. PREFER variableId over a raw hex — bind a design token. Use mode='append' to stack a new stroke on top of existing strokes instead of replacing them. "+
+			"Geometry: strokeAlign, dashPattern (dashed/dotted), strokeCap, strokeJoin, strokeMiterLimit, per-side strokeTop/Right/Bottom/LeftWeight. Omit color/paints/variableId to restyle the EXISTING stroke without touching its paint. "+
 			"Also a `batch` op type — and in `batch` it accepts nodeIds[] (all→all bulk: the same stroke applied to every node) and returns {results:[{nodeId,…}]}. Fan a scan into it in ONE round-trip with the projection ref nodeIds:[\"$0.matchingNodes[*].id\"]."),
 		mcp.WithString("nodeId",
 			mcp.Required(),
@@ -130,6 +131,18 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 			mcp.Description("Solid stroke color as hex e.g. #000000. Required unless paints[] is given."),
 		),
 		mcp.WithNumber("strokeWeight", mcp.Description("Stroke weight in pixels (default 1)")),
+		mcp.WithString("strokeAlign", mcp.Description("Stroke position relative to the outline: CENTER | INSIDE | OUTSIDE")),
+		mcp.WithArray("dashPattern",
+			mcp.Description("Dashed/dotted stroke as alternating dash,gap lengths in px e.g. [4,4]; dotted = [0,4] with strokeCap ROUND; [] restores a solid line"),
+			mcp.Items(map[string]any{"type": "number"}),
+		),
+		mcp.WithString("strokeCap", mcp.Description("Line end cap: NONE | ROUND | SQUARE | ARROW_LINES | ARROW_EQUILATERAL | DIAMOND_FILLED | TRIANGLE_FILLED | CIRCLE_FILLED")),
+		mcp.WithString("strokeJoin", mcp.Description("Corner join: MITER | BEVEL | ROUND")),
+		mcp.WithNumber("strokeMiterLimit", mcp.Description("Miter limit for sharp MITER joins")),
+		mcp.WithNumber("strokeTopWeight", mcp.Description("Per-side weight (frames/rectangles). Set others to 0 for a single-side border, e.g. a table row divider")),
+		mcp.WithNumber("strokeRightWeight", mcp.Description("Per-side weight (frames/rectangles)")),
+		mcp.WithNumber("strokeBottomWeight", mcp.Description("Per-side weight (frames/rectangles)")),
+		mcp.WithNumber("strokeLeftWeight", mcp.Description("Per-side weight (frames/rectangles)")),
 		mcp.WithString("mode", mcp.Description("'replace' (default) overwrites all strokes; 'append' stacks on top of existing strokes")),
 		mcp.WithString("variableId", mcp.Description("Optional design variable ID to bind the stroke color to (setBoundVariableForPaint). When provided, the stroke is token-driven and the color hex acts as a fallback.")),
 		mcp.WithArray("paints",
@@ -143,8 +156,10 @@ func registerWriteModifyTools(s *server.MCPServer, node *Node) {
 		if c, ok := req.GetArguments()["color"]; ok {
 			params["color"] = c
 		}
-		if sw, ok := req.GetArguments()["strokeWeight"].(float64); ok {
-			params["strokeWeight"] = sw
+		for _, key := range strokeGeometryKeys {
+			if v, ok := req.GetArguments()[key]; ok {
+				params[key] = v
+			}
 		}
 		if m, ok := req.GetArguments()["mode"].(string); ok {
 			params["mode"] = m
