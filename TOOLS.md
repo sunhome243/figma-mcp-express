@@ -923,17 +923,26 @@ Set the fill color on a single node. Use `mode='append'` to stack a new fill on 
 
 ### set_strokes
 
-Set the stroke color and weight on a single node. Use `mode='append'` to stack. Supports token binding via `variableId`. Pass `paints[]` for full control over multiple strokes — takes precedence over `color` when both are provided.
+Set the stroke color, weight and geometry on a single node. Use `mode='append'` to stack. Supports token binding via `variableId`. Pass `paints[]` for full control over multiple strokes — takes precedence over `color` when both are provided. Omit `color`/`paints`/`variableId` and pass only geometry params to restyle the **existing** stroke (e.g. make a border dashed) without touching its paint. Geometry params a node type lacks (per-side weights on an ellipse) are skipped with a `warning`, not an error.
 
-| Name         | Type     | Required | Description                                                                        |
-| ------------ | -------- | -------- | ---------------------------------------------------------------------------------- |
-| nodeId       | string   | Yes      | Node ID                                                                            |
-| color        | string   | No       | Stroke color as hex e.g. `#000000`. Required unless `paints` is given.             |
-| strokeWeight | number   | No       | Stroke weight in pixels (default 1)                                                |
-| mode         | string   | No       | `replace` (default) overwrites all strokes; `append` stacks                        |
-| variableId   | string   | No       | Design variable ID to bind the stroke color to                                     |
-| paints       | object[] | No       | Full paint array (Figma Paint objects). Takes precedence over `color` when provided. |
-| channel      | string   | No       | Target a specific connected file by channel id.                                    |
+| Name               | Type     | Required | Description                                                                        |
+| ------------------ | -------- | -------- | ---------------------------------------------------------------------------------- |
+| nodeId             | string   | Yes      | Node ID                                                                            |
+| color              | string   | No       | Stroke color as hex e.g. `#000000`. Required unless `paints`, `variableId`, or a geometry param is given. |
+| strokeWeight       | number   | No       | Stroke weight in pixels (default 1)                                                |
+| strokeAlign        | string   | No       | `CENTER`, `INSIDE`, or `OUTSIDE`                                                   |
+| dashPattern        | number[] | No       | Alternating dash/gap lengths, e.g. `[4,4]`. Dotted: `[0,4]` + `strokeCap:"ROUND"`. `[]` restores solid. |
+| strokeCap          | string   | No       | `NONE`, `ROUND`, `SQUARE`, `ARROW_LINES`, `ARROW_EQUILATERAL`, `DIAMOND_FILLED`, `TRIANGLE_FILLED`, `CIRCLE_FILLED` |
+| strokeJoin         | string   | No       | `MITER`, `BEVEL`, or `ROUND`                                                       |
+| strokeMiterLimit   | number   | No       | Miter limit for sharp `MITER` joins                                                |
+| strokeTopWeight    | number   | No       | Per-side weight (frames/rectangles). Override `strokeWeight`; set the other sides to `0` for a single-side border. |
+| strokeRightWeight  | number   | No       | Per-side weight                                                                    |
+| strokeBottomWeight | number   | No       | Per-side weight                                                                    |
+| strokeLeftWeight   | number   | No       | Per-side weight                                                                    |
+| mode               | string   | No       | `replace` (default) overwrites all strokes; `append` stacks                        |
+| variableId         | string   | No       | Design variable ID to bind the stroke color to                                     |
+| paints             | object[] | No       | Full paint array (Figma Paint objects). Takes precedence over `color` when provided. |
+| channel            | string   | No       | Target a specific connected file by channel id.                                    |
 
 ### set_effects
 
@@ -980,6 +989,31 @@ Set corner radius on one or more nodes. Provide a uniform `cornerRadius` or per-
 | topRightRadius    | number   | No       | Top-right corner radius                         |
 | bottomLeftRadius  | number   | No       | Bottom-left corner radius                       |
 | bottomRightRadius | number   | No       | Bottom-right corner radius                      |
+| cornerSmoothing   | number   | No       | 0–1 squircle smoothing; ~0.6 matches iOS continuous corners |
+
+### set_mask [BATCH OP]
+
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
+
+Turn nodes into masks. A mask clips the sibling layers stacked above it inside the same parent.
+
+| Name     | Type     | Required | Description                                                                 |
+| -------- | -------- | -------- | --------------------------------------------------------------------------- |
+| nodeIds  | string[] | Yes      | Node IDs                                                                    |
+| isMask   | boolean  | No       | `true` (default) makes the node a mask; `false` releases it                 |
+| maskType | string   | No       | `ALPHA` (opacity, default), `VECTOR` (outline only), or `LUMINANCE` (brightness) |
+
+### set_layout_grids [BATCH OP]
+
+> **Catalog-backed batch op.** Hidden from top-level tool surfaces where profiles omit it; invoke as a `batch` op `type`. Use `get_batch_op_spec` for the authoritative schema. Pass `channel` on the outer `batch` call, not inside this op's params.
+
+Set layout grids directly on frames, components, or instances, with no grid style needed.
+
+| Name    | Type     | Required | Description                                                                 |
+| ------- | -------- | -------- | --------------------------------------------------------------------------- |
+| nodeIds | string[] | Yes      | Node IDs                                                                    |
+| grids   | object[] | Yes      | Each `{pattern: COLUMNS\|ROWS\|GRID, count, gutterSize, offset, alignment: MIN\|MAX\|CENTER\|STRETCH, sectionSize, color, opacity, visible}`. Non-`STRETCH` columns/rows use `sectionSize` (default 64). `[]` clears. |
+| mode    | string   | No       | `replace` (default) or `append`                                             |
 
 ### set_constraints
 

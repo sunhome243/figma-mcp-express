@@ -1,5 +1,5 @@
 import { getBounds } from "./serializers";
-import { makeSolidPaint, getParentNode, applyAutoLayout, applyTextStyleProps, applyLayoutSizing, bulkApply, WRITE_PROGRESS_EVERY } from "./write-helpers";
+import { makeSolidPaint, getParentNode, applyAutoLayout, applyTextStyleProps, applyLayoutSizing, bulkApply, applyStrokeProps, strokeSkipWarning, buildLayoutGrid, WRITE_PROGRESS_EVERY } from "./write-helpers";
 import { makeProgress } from "./progress";
 
 export const handleWriteModifyRequest = async (request: any) => {
@@ -125,14 +125,25 @@ export const handleWriteModifyRequest = async (request: any) => {
       const p = request.params || {};
       // Advanced paints: a direct paints[] (gradient / image / mixed solids) applied verbatim,
       // bypassing the single-solid shorthand. For a reusable stroke prefer create_paint_style +
-      // apply_style_to_node(target:"stroke"); this is the one-off direct path. strokeWeight is
-      // still honored alongside.
+      // apply_style_to_node(target:"stroke"); this is the one-off direct path. Stroke
+      // geometry (weight/align/dash/cap/join/per-side) is still honored alongside.
       if (Array.isArray(p.paints)) {
         return bulkApply(request, (node) => {
           if (!("strokes" in node)) throw new Error(`Node ${node.id} does not support strokes`);
           node.strokes = p.mode === "append" ? [...(node.strokes as Paint[]), ...p.paints] : p.paints;
-          if (p.strokeWeight != null) node.strokeWeight = p.strokeWeight;
-          return { name: node.name, warning: "direct paints applied — for a reusable/tokenized stroke prefer create_paint_style + apply_style_to_node" };
+          const skip = strokeSkipWarning(applyStrokeProps(node, p));
+          const direct = "direct paints applied — for a reusable/tokenized stroke prefer create_paint_style + apply_style_to_node";
+          return { name: node.name, warning: skip ? `${direct}; ${skip}` : direct };
+        });
+      }
+      // Geometry-only: no color/paints/variableId → keep the existing stroke paints and only
+      // restyle them (dashed border, inside/outside align, single-side weights, caps).
+      const hasPaint = (typeof p.color === "string" && p.color !== "") || !!p.variableId;
+      if (!hasPaint) {
+        return bulkApply(request, (node) => {
+          if (!("strokes" in node)) throw new Error(`Node ${node.id} does not support strokes`);
+          const warning = strokeSkipWarning(applyStrokeProps(node, p));
+          return warning ? { name: node.name, warning } : { name: node.name };
         });
       }
       // Stroke paint + variable + warning are request-level → build the paint ONCE here
@@ -151,8 +162,8 @@ export const handleWriteModifyRequest = async (request: any) => {
       return bulkApply(request, (node) => {
         if (!("strokes" in node)) throw new Error(`Node ${node.id} does not support strokes`);
         node.strokes = p.mode === "append" ? [...(node.strokes as Paint[]), stroke] : [stroke];
-        if (p.strokeWeight != null) node.strokeWeight = p.strokeWeight;
-        return strokeWarning ? { name: node.name, warning: strokeWarning } : { name: node.name };
+        const warning = [strokeWarning, strokeSkipWarning(applyStrokeProps(node, p))].filter(Boolean).join("; ");
+        return warning ? { name: node.name, warning } : { name: node.name };
       });
     }
 
@@ -334,6 +345,11 @@ export const handleWriteModifyRequest = async (request: any) => {
         if (p.topRightRadius != null) n.topRightRadius = p.topRightRadius;
         if (p.bottomLeftRadius != null) n.bottomLeftRadius = p.bottomLeftRadius;
         if (p.bottomRightRadius != null) n.bottomRightRadius = p.bottomRightRadius;
+        // iOS-style squircle: 0 = plain arc, ~0.6 = Apple continuous corners, 1 = max.
+        if (p.cornerSmoothing != null) {
+          if (!("cornerSmoothing" in n)) throw new Error("Node does not support cornerSmoothing");
+          n.cornerSmoothing = Number(p.cornerSmoothing);
+        }
         const cr = typeof n.cornerRadius === "symbol" ? "mixed" : n.cornerRadius;
         if (cr === "mixed") {
           return {
@@ -364,6 +380,29 @@ export const handleWriteModifyRequest = async (request: any) => {
         requestId: request.requestId,
         data: { id: node.id, name: node.name },
       };
+    }
+
+    case "set_mask": {
+      const p = request.params || {};
+      const isMask = p.isMask != null ? !!p.isMask : true;
+      return bulkApply(request, (n: any) => {
+        if (!("isMask" in n)) throw new Error("Node does not support masking");
+        n.isMask = isMask;
+        // maskType: ALPHA (default, uses opacity) | VECTOR (outline only) | LUMINANCE (brightness).
+        if (p.maskType != null) n.maskType = p.maskType;
+        return { isMask: n.isMask, maskType: n.maskType };
+      });
+    }
+
+    case "set_layout_grids": {
+      const p = request.params || {};
+      if (!Array.isArray(p.grids)) throw new Error("grids[] is required ([] clears all grids)");
+      const grids = p.grids.map(buildLayoutGrid);
+      return bulkApply(request, (n: any) => {
+        if (!("layoutGrids" in n)) throw new Error("Node does not support layout grids (needs a FRAME, COMPONENT, or INSTANCE)");
+        n.layoutGrids = p.mode === "append" ? [...n.layoutGrids, ...grids] : grids;
+        return { layoutGridCount: n.layoutGrids.length };
+      });
     }
 
     case "set_visible": {

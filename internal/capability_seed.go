@@ -48,7 +48,7 @@ var batchOpIntent = map[string]string{
 	"set_effects": "effects", "create_effect_style": "effects",
 
 	// layout — responsive auto-layout (featured)
-	"set_auto_layout": "layout", "set_constraints": "layout",
+	"set_auto_layout": "layout", "set_constraints": "layout", "set_layout_grids": "layout",
 
 	// tokens — variables, modes, theming (featured)
 	"create_variable": "tokens", "create_variable_collection": "tokens",
@@ -64,7 +64,7 @@ var batchOpIntent = map[string]string{
 	// vector — custom shapes & paths (featured)
 	"boolean_operation": "vector", "create_vector": "vector", "create_text_path": "vector",
 	"create_line": "vector", "create_ellipse": "vector", "create_polygon": "vector",
-	"create_star": "vector", "set_corner_radius": "vector",
+	"create_star": "vector", "set_corner_radius": "vector", "set_mask": "vector",
 
 	// components — components, instances, variants (featured)
 	"create_component": "components", "create_instance": "components",
@@ -109,7 +109,8 @@ var novelBatchOps = map[string]bool{
 	"bind_variable_to_layout_grid": true, "resolve_variable_for_consumer": true,
 	"get_remote_variable_collection": true,
 	"boolean_operation":              true, "create_text_path": true, "create_vector": true,
-	"create_polygon": true, "create_star": true, "set_corner_radius": true,
+	"create_polygon": true, "create_star": true, "set_corner_radius": true, "set_mask": true,
+	"set_layout_grids":        true,
 	"set_instance_properties": true, "swap_component": true,
 	"set_reactions": true, "set_prototype_start": true, "pin_child": true,
 	"set_fixed_children": true,

@@ -6,6 +6,20 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Stroke geometry on `set_strokes`.** New params: `strokeAlign` (CENTER/INSIDE/OUTSIDE),
+  `dashPattern` (dashed/dotted strokes), `strokeCap`, `strokeJoin`, `strokeMiterLimit`, and
+  per-side `strokeTopWeight`/`strokeRightWeight`/`strokeBottomWeight`/`strokeLeftWeight` (real
+  single-side borders such as table row dividers). Omitting `color`/`paints`/`variableId` now
+  restyles the existing stroke without replacing its paint. Unsupported props for a node type
+  are skipped with a per-node `warning`.
+- **`cornerSmoothing` on `set_corner_radius`.** 0–1 squircle smoothing (≈0.6 = iOS corners).
+- **`set_mask` batch op.** Toggle `isMask` and set `maskType` (ALPHA/VECTOR/LUMINANCE).
+- **`set_layout_grids` batch op.** Apply column/row/pixel layout grids directly to frames,
+  replace or append, without creating a grid style first. `create_grid_style` now shares the
+  same grid builder, so non-STRETCH column/row grids get the `sectionSize` they require.
+
 ## [2.8.1] — 2026-08-06
 
 ### Documentation

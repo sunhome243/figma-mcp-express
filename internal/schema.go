@@ -208,6 +208,89 @@ func validateOptionalNumberMin(params map[string]interface{}, key, prefix string
 	return ""
 }
 
+// strokeGeometryKeys mirrors plugin STROKE_GEOMETRY_KEYS (write-helpers.ts).
+var strokeGeometryKeys = []string{
+	"strokeWeight", "strokeAlign", "strokeCap", "strokeJoin", "strokeMiterLimit", "dashPattern",
+	"strokeTopWeight", "strokeRightWeight", "strokeBottomWeight", "strokeLeftWeight",
+}
+
+func hasAnyKey(params map[string]interface{}, keys []string) bool {
+	for _, k := range keys {
+		if _, ok := params[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func validateOptionalEnum(params map[string]interface{}, key string, allowed ...string) string {
+	v, ok := params[key]
+	if !ok || v == nil {
+		return ""
+	}
+	str, _ := v.(string)
+	for _, a := range allowed {
+		if str == a {
+			return ""
+		}
+	}
+	return fmt.Sprintf("%s %v must be one of %s", key, v, strings.Join(allowed, ", "))
+}
+
+func validateStrokeGeometry(params map[string]interface{}) string {
+	if msg := validateOptionalEnum(params, "strokeAlign", "CENTER", "INSIDE", "OUTSIDE"); msg != "" {
+		return msg
+	}
+	if msg := validateOptionalEnum(params, "strokeJoin", "MITER", "BEVEL", "ROUND"); msg != "" {
+		return msg
+	}
+	if msg := validateOptionalEnum(params, "strokeCap", "NONE", "ROUND", "SQUARE", "ARROW_LINES", "ARROW_EQUILATERAL", "DIAMOND_FILLED", "TRIANGLE_FILLED", "CIRCLE_FILLED"); msg != "" {
+		return msg
+	}
+	for _, k := range []string{"strokeWeight", "strokeMiterLimit", "strokeTopWeight", "strokeRightWeight", "strokeBottomWeight", "strokeLeftWeight"} {
+		if msg := validateOptionalNumberMin(params, k, "", 0); msg != "" {
+			return msg
+		}
+	}
+	if dp, ok := params["dashPattern"]; ok && dp != nil {
+		arr, ok := dp.([]interface{})
+		if !ok {
+			return "dashPattern must be an array of numbers e.g. [4,4]"
+		}
+		for i, v := range arr {
+			n, ok := v.(float64)
+			if !ok || n < 0 || math.IsNaN(n) || math.IsInf(n, 0) {
+				return fmt.Sprintf("dashPattern[%d] must be a non-negative number", i)
+			}
+		}
+	}
+	return ""
+}
+
+func validateLayoutGridSpec(g map[string]interface{}, prefix string) string {
+	if msg := validateOptionalEnum(g, "pattern", "COLUMNS", "ROWS", "GRID"); msg != "" {
+		return prefix + msg
+	}
+	if msg := validateOptionalEnum(g, "alignment", "MIN", "MAX", "CENTER", "STRETCH"); msg != "" {
+		return prefix + msg
+	}
+	if msg := validateOptionalPositiveNumber(g, "count", prefix); msg != "" {
+		return msg
+	}
+	if msg := validateOptionalPositiveNumber(g, "sectionSize", prefix); msg != "" {
+		return msg
+	}
+	for _, k := range []string{"gutterSize", "offset"} {
+		if msg := validateOptionalNumberMin(g, k, prefix, 0); msg != "" {
+			return msg
+		}
+	}
+	if msg := validateOptionalNumberRange(g, "opacity", prefix, 0, 1); msg != "" {
+		return msg
+	}
+	return validateOptionalBool(g, "visible", prefix)
+}
+
 func validateOptionalBool(params map[string]interface{}, key, prefix string) string {
 	v, ok := params[key]
 	if !ok || v == nil {
@@ -637,8 +720,12 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		_, hasTR := params["topRightRadius"]
 		_, hasBL := params["bottomLeftRadius"]
 		_, hasBR := params["bottomRightRadius"]
-		if !hasUniform && !hasTL && !hasTR && !hasBL && !hasBR {
-			return "at least one of cornerRadius, topLeftRadius, topRightRadius, bottomLeftRadius, or bottomRightRadius is required"
+		_, hasSmoothing := params["cornerSmoothing"]
+		if !hasUniform && !hasTL && !hasTR && !hasBL && !hasBR && !hasSmoothing {
+			return "at least one of cornerRadius, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius, or cornerSmoothing is required"
+		}
+		if msg := validateOptionalNumberRange(params, "cornerSmoothing", "", 0, 1); msg != "" {
+			return msg
 		}
 
 	case "group_nodes":
@@ -929,9 +1016,51 @@ func ValidateRPC(tool string, nodeIDs []string, params map[string]interface{}) s
 		if !ValidNodeID(nodeIDs[0]) {
 			return fmt.Sprintf("nodeId must use colon format e.g. 4029:12345, got: %s", nodeIDs[0])
 		}
-		if _, hasPaints := params["paints"]; !hasPaints {
+		// Geometry-only calls restyle the existing stroke, so color/paints become optional.
+		_, hasPaints := params["paints"]
+		vid, _ := params["variableId"].(string)
+		if !hasPaints && vid == "" && !hasAnyKey(params, strokeGeometryKeys) {
 			if color, _ := params["color"].(string); color == "" {
-				return "color or paints is required (a hex string e.g. #FF5733, or a paints[] array for gradients/images)"
+				return "color or paints is required (or variableId, or a stroke geometry param: strokeWeight, strokeAlign, dashPattern, strokeCap, strokeJoin, strokeMiterLimit, stroke{Top,Right,Bottom,Left}Weight)"
+			}
+		}
+		if mode, ok := params["mode"].(string); ok && mode != "replace" && mode != "append" {
+			return "mode must be 'replace' or 'append'"
+		}
+		if msg := validateStrokeGeometry(params); msg != "" {
+			return msg
+		}
+
+	case "set_mask":
+		if len(nodeIDs) == 0 {
+			return "nodeIds is required"
+		}
+		if msg := validateOptionalBool(params, "isMask", ""); msg != "" {
+			return msg
+		}
+		if mt, ok := params["maskType"]; ok && mt != nil {
+			switch mt {
+			case "ALPHA", "VECTOR", "LUMINANCE":
+			default:
+				return fmt.Sprintf("maskType %v must be ALPHA, VECTOR, or LUMINANCE", mt)
+			}
+		}
+
+	case "set_layout_grids":
+		if len(nodeIDs) == 0 {
+			return "nodeIds is required"
+		}
+		grids, ok := params["grids"].([]interface{})
+		if !ok {
+			return "grids[] is required ([] clears all layout grids)"
+		}
+		for i, raw := range grids {
+			g, ok := raw.(map[string]interface{})
+			if !ok {
+				return fmt.Sprintf("grids[%d] must be an object", i)
+			}
+			if msg := validateLayoutGridSpec(g, fmt.Sprintf("grids[%d].", i)); msg != "" {
+				return msg
 			}
 		}
 		if mode, ok := params["mode"].(string); ok && mode != "replace" && mode != "append" {

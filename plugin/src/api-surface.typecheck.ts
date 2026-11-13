@@ -167,3 +167,20 @@ export function _assertConstraints(n: SceneNode & ConstraintMixin): void {
   const cons: Constraints = { horizontal: "STRETCH", vertical: "CENTER" };
   n.constraints = cons;
 }
+
+// ── Stroke geometry, corner smoothing, masks, direct layout grids ──
+export function _assertStrokeAndShape(f: FrameNode, r: RectangleNode, v: VectorNode): void {
+  f.strokeAlign = "INSIDE";
+  f.dashPattern = [4, 2];
+  f.strokeJoin = "BEVEL";
+  f.strokeMiterLimit = 10;
+  f.strokeTopWeight = 0;
+  f.strokeRightWeight = 0;
+  f.strokeBottomWeight = 1;
+  f.strokeLeftWeight = 0;
+  v.strokeCap = "ROUND";
+  r.cornerSmoothing = 0.6;
+  r.isMask = true;
+  r.maskType = "LUMINANCE";
+  f.layoutGrids = [{ pattern: "COLUMNS", alignment: "STRETCH", count: 12, gutterSize: 24, offset: 80, visible: true }];
+}
