@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-11-13
+
 ### Added
 
 - **Stroke geometry on `set_strokes`.** New params: `strokeAlign` (CENTER/INSIDE/OUTSIDE),
